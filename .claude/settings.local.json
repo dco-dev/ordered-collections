@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(lein test:*)",
+      "Bash(lein run:*)"
+    ]
+  }
+}

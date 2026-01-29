@@ -79,3 +79,74 @@
 (definline -x  [n] `(.x  ~(with-meta n {:tag 'com.dean.interval_tree.tree.node.IBalancedNode})))
 (definline -z  [n] `(.z  ~(with-meta n {:tag 'com.dean.interval_tree.tree.node.IAugmentedNode})))
 (definline -kv [n] `(.kv ~(with-meta n {:tag 'com.dean.interval_tree.tree.node.INode})))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Mutable Node Capability
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(definterface-once IMutableNode
+  (setK  [nk])
+  (setV  [nv])
+  (setL  [nl])
+  (setR  [nr]))
+
+(definterface-once IMutableBalancedNode
+  (setX  [^long nx]))
+
+(definterface-once IMutableAugmentedNode
+  (setZ  [nz]))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Mutable Storage Model
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftype MutableSimpleNode
+    [^:unsynchronized-mutable k
+     ^:unsynchronized-mutable v
+     ^:unsynchronized-mutable l
+     ^:unsynchronized-mutable r
+     ^:unsynchronized-mutable ^long x]
+  IBalancedNode (x [_] x)
+  INode
+  (k  [_] k) (v [_] v) (l [_] l) (r [_] r)
+  (kv [_] (MapEntry. k v))
+  IMutableNode
+  (setK [_ nk] (set! k nk))
+  (setV [_ nv] (set! v nv))
+  (setL [_ nl] (set! l nl))
+  (setR [_ nr] (set! r nr))
+  IMutableBalancedNode
+  (setX [_ nx] (set! x nx)))
+
+(deftype MutableIntervalNode
+    [^:unsynchronized-mutable k
+     ^:unsynchronized-mutable v
+     ^:unsynchronized-mutable l
+     ^:unsynchronized-mutable r
+     ^:unsynchronized-mutable ^long x
+     ^:unsynchronized-mutable z]
+  IBalancedNode (x [_] x)
+  IAugmentedNode (z [_] z)
+  INode
+  (k  [_] k) (v [_] v) (l [_] l) (r [_] r)
+  (kv [_] (MapEntry. k v))
+  IMutableNode
+  (setK [_ nk] (set! k nk))
+  (setV [_ nv] (set! v nv))
+  (setL [_ nl] (set! l nl))
+  (setR [_ nr] (set! r nr))
+  IMutableBalancedNode
+  (setX [_ nx] (set! x nx))
+  IMutableAugmentedNode
+  (setZ [_ nz] (set! z nz)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Mutable Constituent Setters
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(definline -set-k! [n nk] `(.setK ~(with-meta n {:tag 'com.dean.interval_tree.tree.node.IMutableNode}) ~nk))
+(definline -set-v! [n nv] `(.setV ~(with-meta n {:tag 'com.dean.interval_tree.tree.node.IMutableNode}) ~nv))
+(definline -set-l! [n nl] `(.setL ~(with-meta n {:tag 'com.dean.interval_tree.tree.node.IMutableNode}) ~nl))
+(definline -set-r! [n nr] `(.setR ~(with-meta n {:tag 'com.dean.interval_tree.tree.node.IMutableNode}) ~nr))
+(definline -set-x! [n nx] `(.setX ~(with-meta n {:tag 'com.dean.interval_tree.tree.node.IMutableBalancedNode}) ~nx))
+(definline -set-z! [n nz] `(.setZ ~(with-meta n {:tag 'com.dean.interval_tree.tree.node.IMutableAugmentedNode}) ~nz))
