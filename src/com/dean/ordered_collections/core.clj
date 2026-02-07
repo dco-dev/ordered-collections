@@ -85,8 +85,9 @@
   ([]
    (interval-map nil))
   ([coll]
-   (binding [tree/*t-join*  tree/node-create-weight-balanced-interval
-             order/*compare* order/normal-compare]
+   (binding [tree/*t-join*        tree/node-create-weight-balanced-interval
+             order/*compare*       order/normal-compare
+             tree/*use-array-leaf* false]  ;; IntervalMap uses IntervalNode, not ArrayLeaf
      (->IntervalMap (reduce (fn [n [k v]] (tree/node-add n k v)) (node/leaf) coll)
                     order/*compare* tree/*t-join* nil {}))))
 
@@ -98,8 +99,9 @@
   ([]
    (interval-set nil))
   ([coll]
-   (binding [tree/*t-join*   tree/node-create-weight-balanced-interval
-             order/*compare* order/normal-compare]
+   (binding [tree/*t-join*        tree/node-create-weight-balanced-interval
+             order/*compare*       order/normal-compare
+             tree/*use-array-leaf* false]  ;; IntervalSet uses IntervalNode, not ArrayLeaf
      (->IntervalSet (reduce #(tree/node-add %1 (interval/ordered-pair %2)) (node/leaf) coll)
                      order/*compare* tree/*t-join* nil {}))))
 

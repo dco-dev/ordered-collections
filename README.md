@@ -107,19 +107,22 @@ Benchmarks at N=500,000 elements (JVM 25, Clojure 1.12.4):
 
 | Operation | sorted-set | ordered-set | Notes |
 |-----------|------------|-------------|-------|
-| Construction | 1.6s | 1.3s | **20% faster** (parallel fold) |
-| Lookup | 15.3ms | 16.0ms | ~equal |
-| Iteration | 77ms | 46ms | **40% faster** (IReduceInit) |
-| r/fold | 92ms | 40ms | **2.3x faster** (CollFold) |
-| Split ops | — | 2.7ms | **4x faster** than data.avl |
+| Construction | 1.5s | **1.2s** | **20% faster** (parallel fold) |
+| Lookup | 12ms | 15ms | ~equal |
+| Iteration | 96ms | **81ms** | **16% faster** (IReduceInit) |
+| r/fold | 98ms | **42ms** | **2.3x faster** (CollFold) |
+| Split ops | — | 2.5ms | **4.5x faster** than data.avl |
+| Union | 1.1s | **190ms** | **5.8x faster** vs clojure.set |
+| Intersection | 870ms | **164ms** | **5.3x faster** vs clojure.set |
+| Difference | 977ms | **114ms** | **8.6x faster** vs clojure.set |
 
 **Maps** — ordered-map vs sorted-map:
 
 | Operation | sorted-map | ordered-map | Notes |
 |-----------|------------|-------------|-------|
-| Construction | 1.3s | 2.7s | 2.1x (weight-balanced overhead) |
-| Lookup | 15.5ms | 17.3ms | ~equal |
-| Iteration | 129ms | 116ms | **10% faster** (IReduceInit) |
+| Construction | 1.2s | 2.5s | 2.1x (weight-balanced overhead) |
+| Lookup | 14ms | 16ms | ~equal |
+| Delete | 649ms | **1.2s** | Matches data.avl |
 
 #### Efficient Set Operations
 
@@ -130,21 +133,23 @@ on foldably parallel ordered sets:
 (def foo (shuffle (range 500000)))
 
 ;; Construction: ordered-set is faster than sorted-set
-(time (def x (dean/ordered-set foo)))      ;; 500K: ~1.3s
-(time (def v (into (sorted-set) foo)))     ;; 500K: ~1.6s
+(time (def x (dean/ordered-set foo)))      ;; 500K: ~1.2s
+(time (def v (into (sorted-set) foo)))     ;; 500K: ~1.5s
 
 ;; Parallel fold: ordered-set is 2.3x faster
-(time (r/fold + + x))                      ;; 500K: ~40ms
-(time (r/fold + + v))                      ;; 500K: ~92ms
+(time (r/fold + + x))                      ;; 500K: ~42ms
+(time (r/fold + + v))                      ;; 500K: ~98ms
 
 ;; subseq/rsubseq support (clojure.lang.Sorted)
 (subseq x >= 100 < 200)                    ;; efficient range queries
 (rsubseq x > 500)                          ;; reverse range queries
 
-;; Set operations via divide-and-conquer (O(m+n) time)
-(def s0 (dean/ordered-set (range 0 1000000 2)))
-(def s1 (dean/ordered-set (range 0 1000000 3)))
-(time (dean/intersection s0 s1))           ;; 833K elements, ~1.2s
+;; Set operations via divide-and-conquer (5-9x faster than clojure.set)
+(def s0 (dean/ordered-set (range 0 500000)))
+(def s1 (dean/ordered-set (range 250000 750000)))
+(time (dean/union s0 s1))                  ;; 500K: ~190ms (clojure.set: 1.1s)
+(time (dean/intersection s0 s1))           ;; 500K: ~164ms (clojure.set: 870ms)
+(time (dean/difference s0 s1))             ;; 500K: ~114ms (clojure.set: 977ms)
 ```
 
 ### Testing

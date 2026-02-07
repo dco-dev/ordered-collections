@@ -8,4 +8,5 @@ pom.xml.asc
 /.lein-*
 /.nrepl-port
 *~
-/.claude/settings.local.json
+# Claude Code
+/.claude/

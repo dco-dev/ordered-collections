@@ -104,9 +104,11 @@
 
   clojure.lang.IPersistentCollection
   (cons [this k]
-    (let [entry [k seqnum]
-          new-root (tree/node-add root entry entry cmp tree/node-create-weight-balanced)]
-      (OrderedMultiset. new-root cmp base-cmp (unchecked-inc seqnum) _meta)))
+    ;; Disable ArrayLeaf - multiset has custom traversal using base-cmp
+    (binding [tree/*use-array-leaf* false]
+      (let [entry [k seqnum]
+            new-root (tree/node-add root entry entry cmp tree/node-create-weight-balanced)]
+        (OrderedMultiset. new-root cmp base-cmp (unchecked-inc seqnum) _meta))))
   (empty [_]
     (OrderedMultiset. (node/leaf) cmp base-cmp 0 {}))
   (equiv [this o]
