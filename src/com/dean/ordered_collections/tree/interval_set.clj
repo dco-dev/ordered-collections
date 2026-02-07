@@ -1,26 +1,28 @@
-(ns com.dean.interval-tree.tree.interval-set
+(ns com.dean.ordered-collections.tree.interval-set
   (:require [clojure.core.reducers       :as r :refer [coll-fold]]
             [clojure.set]
-            [com.dean.interval-tree.tree.interval :as interval]
-            [com.dean.interval-tree.tree.node     :as node]
-            [com.dean.interval-tree.tree.order    :as order]
-            [com.dean.interval-tree.tree.protocol :as proto]
-            [com.dean.interval-tree.tree.root]
-            [com.dean.interval-tree.tree.tree     :as tree])
+            [com.dean.ordered-collections.tree.interval :as interval]
+            [com.dean.ordered-collections.tree.node     :as node]
+            [com.dean.ordered-collections.tree.order    :as order]
+            [com.dean.ordered-collections.tree.protocol :as proto]
+            [com.dean.ordered-collections.tree.root]
+            [com.dean.ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang                RT]
-            [com.dean.interval_tree.tree.protocol PExtensibleSet]
-            [com.dean.interval_tree.tree.root     INodeCollection
+            [com.dean.ordered_collections.tree.protocol PExtensibleSet]
+            [com.dean.ordered_collections.tree.root     INodeCollection
                                          IBalancedCollection
                                          IOrderedCollection
                                          IIntervalCollection]))
+
+(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Dynamic Environment
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmacro with-interval-set [x & body]
-  `(binding [order/*compare* (.getCmp ~(with-meta x {:tag 'com.dean.interval_tree.tree.root.IOrderedCollection}))
-             tree/*t-join*   (.getAllocator ~(with-meta x {:tag 'com.dean.interval_tree.tree.root.INodeCollection}))]
+  `(binding [order/*compare* (.getCmp ~(with-meta x {:tag 'com.dean.ordered_collections.tree.root.IOrderedCollection}))
+             tree/*t-join*   (.getAllocator ~(with-meta x {:tag 'com.dean.ordered_collections.tree.root.INodeCollection}))]
      ~@body))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -39,7 +41,7 @@
   (getCmp [_]
     cmp)
   (isCompatible [_ o]
-    (and (instance? IntervalSet o) (= cmp (.getCmp o))))
+    (and (instance? IntervalSet o) (= cmp (.getCmp ^IOrderedCollection o))))
   (isSimilar [_ _]
     false)
 
@@ -55,34 +57,34 @@
     (with-interval-set this
       (cond
         (identical? this that)    this
-        (.isCompatible this that) (IntervalSet. (tree/node-set-intersection root (.getRoot that))
+        (.isCompatible this that) (IntervalSet. (tree/node-set-intersection root (.getRoot ^INodeCollection that))
                                        cmp alloc stitch {})
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
   (union [this that]
     (with-interval-set this
       (cond
         (identical? this that)    this
-        (.isCompatible this that) (IntervalSet. (tree/node-set-union root (.getRoot that))
+        (.isCompatible this that) (IntervalSet. (tree/node-set-union root (.getRoot ^INodeCollection that))
                                        cmp alloc stitch {})
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
   (difference [this that]
     (with-interval-set this
       (cond
         (identical? this that)    (.empty this)
-        (.isCompatible this that) (IntervalSet. (tree/node-set-difference root (.getRoot that))
+        (.isCompatible this that) (IntervalSet. (tree/node-set-difference root (.getRoot ^INodeCollection that))
                                        cmp alloc stitch {})
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
   (subset [this that]
     (with-interval-set this
       (cond
         (identical? this that)    true
-        (.isCompatible this that) (tree/node-subset? (.getRoot that) root) ;; Grr. reverse args of tree/subset
+        (.isCompatible this that) (tree/node-subset? (.getRoot ^INodeCollection that) root) ;; Grr. reverse args of tree/subset
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
   (superset [this that]
     (with-interval-set this
       (cond
         (identical? this that)    true
-        (.isCompatible this that) (tree/node-subset? root (.getRoot that)) ;; Grr. reverse args of tree/subset
+        (.isCompatible this that) (tree/node-subset? root (.getRoot ^INodeCollection that)) ;; Grr. reverse args of tree/subset
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
 
   clojure.lang.IMeta
@@ -135,7 +137,7 @@
     (with-interval-set this
       (cond
         (identical? this o)   0
-        (.isCompatible this o) (tree/node-set-compare root (.getRoot o))
+        (.isCompatible this o) (tree/node-set-compare root (.getRoot ^INodeCollection o))
         true (throw (ex-info "unsupported comparison: " {:this this :o o})))))
 
   java.util.Collection
@@ -180,8 +182,8 @@
     (with-interval-set this
       (cond
         (identical? this o) true
-        (.isCompatible this o) (and (= (.count this) (.count o))
-                                    (zero? (tree/node-set-compare root (.getRoot o))))
+        (.isCompatible this o) (and (= (.count this) (.count ^clojure.lang.Counted o))
+                                    (zero? (tree/node-set-compare root (.getRoot ^INodeCollection o))))
         true (throw (ex-info "unsupported comparison: " {:this this :o o})))))
   (count [_]
     (tree/node-size root))
@@ -191,11 +193,24 @@
     (with-interval-set this
       (some? (seq (tree/node-find-intervals this (interval/ordered-pair k))))))
   (disjoin [this k]
-    (with-interval-set this
-      (IntervalSet. (tree/node-remove root (interval/ordered-pair k)) cmp alloc stitch _meta)))
+    (IntervalSet. (tree/node-remove root (interval/ordered-pair k) cmp alloc) cmp alloc stitch _meta))
   (cons [this k]
-    (with-interval-set this
-      (IntervalSet. (tree/node-add root (interval/ordered-pair k)) cmp alloc stitch _meta)))
+    (IntervalSet. (tree/node-add root (interval/ordered-pair k) (interval/ordered-pair k) cmp alloc) cmp alloc stitch _meta))
+
+  clojure.lang.IReduceInit
+  (reduce [this f init]
+    (tree/node-reduce (fn [acc n] (f acc (node/-k n))) init root))
+
+  clojure.lang.IReduce
+  (reduce [this f]
+    (let [sentinel (Object.)
+          result (tree/node-reduce
+                   (fn [acc n]
+                     (if (identical? acc sentinel)
+                       (node/-k n)
+                       (f acc (node/-k n))))
+                   sentinel root)]
+      (if (identical? result sentinel) (f) result)))
 
   clojure.core.reducers.CollFold
   (coll-fold [this n combinef reducef]

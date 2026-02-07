@@ -1,7 +1,9 @@
-(ns com.dean.interval-tree.interval-test
+(ns com.dean.ordered-collections.interval-test
   (:require [clojure.test :refer :all]
-            [com.dean.interval-tree.tree.interval :as interval :refer :all])
+            [com.dean.ordered-collections.tree.interval :as interval :refer :all])
   (:import  [clojure.lang MapEntry]))
+
+(set! *warn-on-reflection* true)
 
 (deftest pair-check
   (is (ordered-pair? (MapEntry. 0 1)))

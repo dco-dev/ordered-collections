@@ -1,0 +1,334 @@
+(ns com.dean.ordered-collections.core
+  (:require [clojure.core.reducers                            :as r]
+            [com.dean.ordered-collections.tree.interval             :as interval]
+            [com.dean.ordered-collections.tree.interval-map         :refer [->IntervalMap]]
+            [com.dean.ordered-collections.tree.interval-set         :refer [->IntervalSet]]
+            [com.dean.ordered-collections.tree.fuzzy-map            :as fuzzy-map]
+            [com.dean.ordered-collections.tree.fuzzy-set            :as fuzzy-set]
+            [com.dean.ordered-collections.tree.node                 :as node]
+            [com.dean.ordered-collections.tree.order                :as order]
+            [com.dean.ordered-collections.tree.ordered-multiset     :as multiset]
+            [com.dean.ordered-collections.tree.priority-queue       :as pq]
+            [com.dean.ordered-collections.tree.protocol             :as proto]
+            [com.dean.ordered-collections.tree.ordered-map          :refer [->OrderedMap]]
+            [com.dean.ordered-collections.tree.ordered-set          :refer [->OrderedSet]]
+            [com.dean.ordered-collections.tree.tree                 :as tree]))
+
+(set! *warn-on-reflection* true)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Set Algebra
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def intersection proto/intersection)
+(def union        proto/union)
+(def difference   proto/difference)
+(def subset       proto/subset)
+(def superset     proto/superset)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Ordered Set
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; TODO: allow high speed construction AND custom compare-fn
+;; TODO: refactor
+
+;; NOTE: subject to change!
+;; experimentally determined to be in the ballpark, given the current
+;; performance characteristics upstream
+
+(def ^:private +chunk-size+ 2048)
+
+(defn- ordered-set* [compare-fn coll]
+  (binding [order/*compare* compare-fn]
+    (->OrderedSet
+      (r/fold +chunk-size+
+              (fn
+                ([]      (node/leaf))
+                ([n0 n1] (tree/node-set-union n0 n1))) tree/node-add coll)
+      compare-fn nil nil {})))
+
+(defn ordered-set
+  ([]
+   (ordered-set* order/normal-compare nil))
+  ([coll]
+   (ordered-set* order/normal-compare coll)))
+
+(defn ordered-set-by [pred coll]
+  (-> pred order/compare-by (ordered-set* (seq coll))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Ordered Map
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn ordered-map
+  ([]
+   (ordered-map order/normal-compare nil))
+  ([coll]
+   (ordered-map order/normal-compare coll))
+  ([compare-fn coll]
+   (binding [order/*compare* compare-fn]
+     (->OrderedMap (reduce (fn [n [k v]] (tree/node-add n k v)) (node/leaf) coll)
+                   compare-fn nil nil {}))))
+
+(defn ordered-map-by [pred coll]
+  (-> pred order/compare-by (ordered-map coll)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Interval Map
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn interval-map
+  ([]
+   (interval-map nil))
+  ([coll]
+   (binding [tree/*t-join*  tree/node-create-weight-balanced-interval
+             order/*compare* order/normal-compare]
+     (->IntervalMap (reduce (fn [n [k v]] (tree/node-add n k v)) (node/leaf) coll)
+                    order/*compare* tree/*t-join* nil {}))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Interval Set
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn interval-set
+  ([]
+   (interval-set nil))
+  ([coll]
+   (binding [tree/*t-join*   tree/node-create-weight-balanced-interval
+             order/*compare* order/normal-compare]
+     (->IntervalSet (reduce #(tree/node-add %1 (interval/ordered-pair %2)) (node/leaf) coll)
+                     order/*compare* tree/*t-join* nil {}))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Priority Queue
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn priority-queue
+  "Create a persistent priority queue from a collection.
+  Elements are used as their own priority.
+
+  Supports O(log n) push/peek/pop operations, plus parallel fold.
+
+  Options:
+    :comparator - priority comparator (default: < for min-heap)
+
+  Examples:
+    (priority-queue [3 1 4 1 5])           ; min-heap
+    (priority-queue [3 1 4] :comparator >) ; max-heap
+
+  Use (peek pq) for min element, (pop pq) to remove it."
+  [coll & opts]
+  (apply pq/priority-queue coll opts))
+
+(defn priority-queue-by
+  "Create a priority queue with [priority value] pairs.
+
+  Example:
+    (priority-queue-by < [[3 :c] [1 :a] [2 :b]])
+    (peek pq) ; => :a"
+  [comparator pairs]
+  (pq/priority-queue-by comparator pairs))
+
+(def push
+  "Add an element to a priority queue with given priority.
+  (push pq priority value) => new-pq"
+  pq/push)
+
+(def push-all
+  "Add multiple [priority value] pairs to a priority queue.
+  (push-all pq [[p1 v1] [p2 v2]]) => new-pq"
+  pq/push-all)
+
+(def peek-with-priority
+  "Return [priority value] of the minimum element.
+  (peek-with-priority pq) => [priority value] or nil"
+  pq/peek-with-priority)
+
+(def peek-max
+  "Return the maximum-priority element (value only).
+  (peek-max pq) => value or nil"
+  pq/peek-max)
+
+(def pop-max
+  "Remove the maximum-priority element.
+  (pop-max pq) => new-pq"
+  pq/pop-max)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Ordered Multiset
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn ordered-multiset
+  "Create an ordered multiset (sorted bag) from a collection.
+  Unlike ordered-set, allows duplicate elements.
+
+  Supports O(log n) add/remove, nth access, and parallel fold.
+
+  Example:
+    (ordered-multiset [3 1 4 1 5 9 2 6 5 3 5])
+    ;; => #OrderedMultiset[1 1 2 3 3 4 5 5 5 6 9]"
+  [coll]
+  (multiset/ordered-multiset coll))
+
+(defn ordered-multiset-by
+  "Create an ordered multiset with a custom comparator.
+
+  Example:
+    (ordered-multiset-by > [3 1 4 1 5])
+    ;; => #OrderedMultiset[5 4 3 1 1]"
+  [comparator coll]
+  (multiset/ordered-multiset-by comparator coll))
+
+(def multiplicity
+  "Return the number of occurrences of x in a multiset.
+  (multiplicity ms x) => count"
+  multiset/multiplicity)
+
+(def disj-one
+  "Remove one occurrence of x from a multiset.
+  (disj-one ms x) => new-ms"
+  multiset/disj-one)
+
+(def disj-all
+  "Remove all occurrences of x from a multiset.
+  (disj-all ms x) => new-ms"
+  multiset/disj-all)
+
+(def distinct-elements
+  "Return a lazy seq of distinct elements in sorted order.
+  (distinct-elements ms) => seq"
+  multiset/distinct-elements)
+
+(def element-frequencies
+  "Return a map of {element -> count} for all elements.
+  (element-frequencies ms) => map"
+  multiset/element-frequencies)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Fuzzy Set
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn fuzzy-set
+  "Create a fuzzy set that returns the closest element to a query.
+
+   When looking up a value, returns the element in the set that is closest
+   to the query. For numeric keys, distance is |query - element|.
+
+   Options:
+     :tiebreak - :< (prefer smaller, default) or :> (prefer larger) when equidistant
+     :distance - custom distance function (fn [a b] -> number)
+
+   Examples:
+     (def fs (fuzzy-set [1 5 10 20]))
+     (fs 7)   ; => 5 (closest to 7)
+     (fs 15)  ; => 10 or 20 depending on tiebreak
+
+     ;; With tiebreak
+     (def fs (fuzzy-set [1 5 10 20] :tiebreak :>))
+     (fs 15)  ; => 20 (prefer larger when equidistant)
+
+     ;; With custom distance
+     (def fs (fuzzy-set [\"apple\" \"banana\" \"cherry\"]
+               :distance (fn [a b] (Math/abs (- (count a) (count b))))))
+     (fs \"pear\")  ; => closest by string length"
+  [coll & {:keys [tiebreak distance] :or {tiebreak :< distance fuzzy-set/numeric-distance}}]
+  (binding [order/*compare* order/normal-compare]
+    (fuzzy-set/->FuzzySet
+      (reduce (fn [n k] (tree/node-add n k k)) (node/leaf) coll)
+      order/normal-compare
+      distance
+      tiebreak
+      {})))
+
+(defn fuzzy-set-by
+  "Create a fuzzy set with a custom comparator.
+
+   Example:
+     (fuzzy-set-by > [1 5 10 20])  ; reverse order"
+  [comparator coll & {:keys [tiebreak distance] :or {tiebreak :< distance fuzzy-set/numeric-distance}}]
+  (let [cmp (order/compare-by comparator)]
+    (binding [order/*compare* cmp]
+      (fuzzy-set/->FuzzySet
+        (reduce (fn [n k] (tree/node-add n k k)) (node/leaf) coll)
+        cmp
+        distance
+        tiebreak
+        {}))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Fuzzy Map
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn fuzzy-map
+  "Create a fuzzy map that returns the value for the closest key.
+
+   When looking up a key, returns the value for the key in the map that is
+   closest to the query. For numeric keys, distance is |query - key|.
+
+   Options:
+     :tiebreak - :< (prefer smaller, default) or :> (prefer larger) when equidistant
+     :distance - custom distance function (fn [a b] -> number)
+
+   Examples:
+     (def fm (fuzzy-map {0 :zero 10 :ten 100 :hundred}))
+     (fm 7)   ; => :ten (closest key to 7 is 10)
+     (fm 42)  ; => :ten (closest key to 42 is 10 or 100)
+
+     ;; With tiebreak
+     (def fm (fuzzy-map {0 :zero 10 :ten 100 :hundred} :tiebreak :>))
+     (fm 55)  ; => :hundred (prefer larger when equidistant)
+
+   The collection should be a map or sequence of [key value] pairs."
+  [coll & {:keys [tiebreak distance] :or {tiebreak :< distance fuzzy-set/numeric-distance}}]
+  (binding [order/*compare* order/normal-compare]
+    (fuzzy-map/->FuzzyMap
+      (reduce (fn [n [k v]] (tree/node-add n k v)) (node/leaf) coll)
+      order/normal-compare
+      distance
+      tiebreak
+      {})))
+
+(defn fuzzy-map-by
+  "Create a fuzzy map with a custom comparator.
+
+   Example:
+     (fuzzy-map-by > {1 :a 5 :b 10 :c})  ; reverse key order"
+  [comparator coll & {:keys [tiebreak distance] :or {tiebreak :< distance fuzzy-set/numeric-distance}}]
+  (let [cmp (order/compare-by comparator)]
+    (binding [order/*compare* cmp]
+      (fuzzy-map/->FuzzyMap
+        (reduce (fn [n [k v]] (tree/node-add n k v)) (node/leaf) coll)
+        cmp
+        distance
+        tiebreak
+        {}))))
+
+;; Re-export fuzzy-specific functions
+(def fuzzy-nearest
+  "Find the nearest element/entry and its distance.
+   For fuzzy-set: (fuzzy-nearest fs query) => [element distance]
+   For fuzzy-map: (fuzzy-nearest fm query) => [key value distance]"
+  (fn [coll query]
+    (cond
+      (instance? com.dean.ordered_collections.tree.fuzzy_set.FuzzySet coll)
+      (fuzzy-set/nearest coll query)
+      (instance? com.dean.ordered_collections.tree.fuzzy_map.FuzzyMap coll)
+      (fuzzy-map/nearest coll query)
+      :else (throw (ex-info "fuzzy-nearest requires a FuzzySet or FuzzyMap" {:coll coll})))))
+
+(def fuzzy-exact-contains?
+  "Check if the fuzzy collection contains exactly the given element/key.
+   Unlike regular lookup, this does not do fuzzy matching."
+  (fn [coll k]
+    (cond
+      (instance? com.dean.ordered_collections.tree.fuzzy_set.FuzzySet coll)
+      (fuzzy-set/exact-contains? coll k)
+      (instance? com.dean.ordered_collections.tree.fuzzy_map.FuzzyMap coll)
+      (fuzzy-map/exact-contains? coll k)
+      :else (throw (ex-info "fuzzy-exact-contains? requires a FuzzySet or FuzzyMap" {:coll coll})))))
+
+(def fuzzy-exact-get
+  "Get the value for exactly the given key (no fuzzy matching).
+   Only for fuzzy-map."
+  fuzzy-map/exact-get)

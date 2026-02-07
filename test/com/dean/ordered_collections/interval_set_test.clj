@@ -1,6 +1,8 @@
-(ns com.dean.interval-tree.interval-set-test
+(ns com.dean.ordered-collections.interval-set-test
   (:require [clojure.test                :refer :all]
-            [com.dean.interval-tree.core :refer [interval-set]]))
+            [com.dean.ordered-collections.core :refer [interval-set]]))
+
+(set! *warn-on-reflection* true)
 
 ;; TODO: more
 

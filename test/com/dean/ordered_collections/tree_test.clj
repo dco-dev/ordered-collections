@@ -1,7 +1,9 @@
-(ns com.dean.interval-tree.tree-test
+(ns com.dean.ordered-collections.tree-test
   (:require [clojure.test :refer :all]
-            [com.dean.interval-tree.tree.node :as node]
-            [com.dean.interval-tree.tree.tree :as tree]))
+            [com.dean.ordered-collections.tree.node :as node]
+            [com.dean.ordered-collections.tree.tree :as tree]))
+
+(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Fixtures

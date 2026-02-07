@@ -1,6 +1,8 @@
-(ns com.dean.interval-tree.tree.interval
-  (:require [com.dean.interval-tree.tree.order :as order])
+(ns com.dean.ordered-collections.tree.interval
+  (:require [com.dean.ordered-collections.tree.order :as order])
   (:import  [clojure.lang MapEntry PersistentVector]))
+
+(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Representation

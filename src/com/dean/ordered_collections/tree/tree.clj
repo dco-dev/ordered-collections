@@ -1,9 +1,12 @@
-(ns com.dean.interval-tree.tree.tree
+(ns com.dean.ordered-collections.tree.tree
   (:require [clojure.core.reducers       :as r]
-            [com.dean.interval-tree.tree.interval :as interval]
-            [com.dean.interval-tree.tree.order    :as order]
-            [com.dean.interval-tree.tree.node     :as node  :refer [leaf? leaf -k -v -l -r -x -z -kv]])
-  (:import  [clojure.lang MapEntry]))
+            [com.dean.ordered-collections.tree.interval :as interval]
+            [com.dean.ordered-collections.tree.order    :as order]
+            [com.dean.ordered-collections.tree.node     :as node  :refer [leaf? leaf -k -v -l -r -x -z -kv]])
+  (:import  [clojure.lang MapEntry]
+            [java.util Comparator]))
+
+(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Weight Balanced Functional Binary Interval Tree (Hirai-Yamamoto Tree)
@@ -208,6 +211,51 @@
 ;; Tree Rotations (Weight Balanced)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defn- rotate-sl
+  "Parameterized single left rotation (private, takes explicit create fn)."
+  [create ak av x b]
+  (kvlr [bk bv y z] b
+    (create bk bv (create ak av x y) z)))
+
+(defn- rotate-dl
+  "Parameterized double left rotation (private, takes explicit create fn)."
+  [create ak av x c]
+  (kvlr [ck cv b z] c
+    (kvlr [bk bv y1 y2] b
+      (create bk bv (create ak av x y1) (create ck cv y2 z)))))
+
+(defn- rotate-sr
+  "Parameterized single right rotation (private, takes explicit create fn)."
+  [create bk bv a z]
+  (kvlr [ak av x y] a
+    (create ak av x (create bk bv y z))))
+
+(defn- rotate-dr
+  "Parameterized double right rotation (private, takes explicit create fn)."
+  [create ck cv a z]
+  (kvlr [ak av x b] a
+    (kvlr [bk bv y1 y2] b
+      (create bk bv (create ak av x y1) (create ck cv y2 z)))))
+
+(defn- stitch-wb
+  "Parameterized weight-balanced stitch (private, takes explicit create fn).
+  Same algorithm as node-stitch-weight-balanced but avoids dynamic var deref."
+  [create k v l r]
+  (let [lw (node-weight l)
+        rw (node-weight r)]
+    (cond
+      (> rw (* +delta+ lw)) (let [rlw (node-weight (-l r))
+                                  rrw (node-weight (-r r))]
+                              (if (< rlw (* +gamma+ rrw))
+                                (rotate-sl create k v l r)
+                                (rotate-dl create k v l r)))
+      (> lw (* +delta+ rw)) (let [llw (node-weight (-l l))
+                                  lrw (node-weight (-r l))]
+                              (if (< lrw (* +gamma+ llw))
+                                (rotate-sr create k v l r)
+                                (rotate-dr create k v l r)))
+      :else                 (create k v l r))))
+
 (defn rotate-single-left
   "Perform a single left rotation, moving Y, the left subtree of the
   right subtree of A, into the left subtree (shown below).  This must
@@ -363,13 +411,19 @@
   ([n k]
    (node-add n k k))
   ([n k v]
-   (if (leaf? n)
-     (node-singleton k v)
-     (kvlr [key val l r] n
-       (case (order/compare k key)
-         -1 (node-stitch key val (node-add l k v) r)
-         +1 (node-stitch key val l (node-add r k v))
-         (node-create key v l r))))))
+   (node-add n k v order/*compare* *t-join*))
+  ([n k v ^Comparator cmp create]
+   (letfn [(add [n]
+             (if (leaf? n)
+               (create k v (leaf) (leaf))
+               (kvlr [key val l r] n
+                 (let [c (.compare cmp k key)]
+                   (if (zero? c)
+                     (create key v l r)
+                     (if (neg? c)
+                       (stitch-wb create key val (add l) r)
+                       (stitch-wb create key val l (add r))))))))]
+     (add n))))
 
 (defn node-concat3
   "Join two trees, the left rooted at l, and the right at r,
@@ -378,19 +432,43 @@
   r, and the relative balance of l and r is such that no more than one
   rotation operation will be required to balance the resulting tree."
   [k v l r]
-  (cond
-    (leaf? l) (node-add r k v)
-    (leaf? r) (node-add l k v)
-    true      (let [lw (node-weight l)
-                    rw (node-weight r)]
-                (cond
-                  (< (* +delta+ lw) rw) (kvlr [k2 v2 l2 r2] r
-                                          (node-stitch k2 v2
-                                            (node-concat3 k v l l2) r2))
-                  (< (* +delta+ rw) lw) (kvlr [k1 v1 l1 r1] l
-                                          (node-stitch k1 v1 l1
-                                            (node-concat3 k v r1 r)))
-                  true                  (node-create k v l r)))))
+  (let [^Comparator cmp order/*compare*
+        create *t-join*]
+    (letfn [(cat3 [k v l r]
+              (cond
+                (leaf? l) (let [add (fn add [n]
+                                     (if (leaf? n)
+                                       (create k v (leaf) (leaf))
+                                       (kvlr [key val l r] n
+                                         (let [c (.compare cmp k key)]
+                                           (if (zero? c)
+                                             (create key v l r)
+                                             (if (neg? c)
+                                               (stitch-wb create key val (add l) r)
+                                               (stitch-wb create key val l (add r))))))))]
+                            (add r))
+                (leaf? r) (let [add (fn add [n]
+                                     (if (leaf? n)
+                                       (create k v (leaf) (leaf))
+                                       (kvlr [key val l r] n
+                                         (let [c (.compare cmp k key)]
+                                           (if (zero? c)
+                                             (create key v l r)
+                                             (if (neg? c)
+                                               (stitch-wb create key val (add l) r)
+                                               (stitch-wb create key val l (add r))))))))]
+                            (add l))
+                true      (let [lw (node-weight l)
+                                rw (node-weight r)]
+                            (cond
+                              (< (* +delta+ lw) rw) (kvlr [k2 v2 l2 r2] r
+                                                      (stitch-wb create k2 v2
+                                                        (cat3 k v l l2) r2))
+                              (< (* +delta+ rw) lw) (kvlr [k1 v1 l1 r1] l
+                                                      (stitch-wb create k1 v1 l1
+                                                        (cat3 k v r1 r)))
+                              true                  (create k v l r)))))]
+      (cat3 k v l r))))
 
 (defn node-least
   "Return the node containing the minimum key of the tree rooted at n"
@@ -412,21 +490,27 @@
   "Return a tree the same as the one rooted at n, with the node
   containing the minimum key removed. See node-least."
   [n]
-  (cond
-    (leaf? n)       (throw (ex-info "remove-least: empty tree" {:node n}))
-    (leaf? (-l n))  (-r n)
-    true            (node-stitch (-k n) (-v n)
-                      (node-remove-least (-l n)) (-r n))))
+  (let [create *t-join*]
+    (letfn [(rm-least [n]
+              (cond
+                (leaf? n)       (throw (ex-info "remove-least: empty tree" {:node n}))
+                (leaf? (-l n))  (-r n)
+                true            (stitch-wb create (-k n) (-v n)
+                                  (rm-least (-l n)) (-r n))))]
+      (rm-least n))))
 
 (defn node-remove-greatest
   "Return a tree the same as the one rooted at n, with the node
   containing the maximum key removed. See node-greatest."
   [n]
-  (cond
-    (leaf? n)       (throw (ex-info "remove-greatest: empty tree" {:node n}))
-    (leaf? (-r n))  (-l n)
-    true            (node-stitch (-k n) (-v n) (-l n)
-                      (node-remove-greatest (-r n)))))
+  (let [create *t-join*]
+    (letfn [(rm-greatest [n]
+              (cond
+                (leaf? n)       (throw (ex-info "remove-greatest: empty tree" {:node n}))
+                (leaf? (-r n))  (-l n)
+                true            (stitch-wb create (-k n) (-v n) (-l n)
+                                  (rm-greatest (-r n)))))]
+      (rm-greatest n))))
 
 (defn node-concat2
   "Join two trees, the left rooted at l, and the right at r,
@@ -435,22 +519,41 @@
   the relative balance of l and r is such that no more than one rotation
   operation will be required to balance the resulting tree."
   [l r]
-  (cond
-    (leaf? l) r
-    (leaf? r) l
-    true      (kvlr [k v _ _] (node-least r)
-                (node-stitch k v l (node-remove-least r)))))
+  (let [create *t-join*]
+    (cond
+      (leaf? l) r
+      (leaf? r) l
+      true      (kvlr [k v _ _] (node-least r)
+                  (stitch-wb create k v l (node-remove-least r))))))
 
 (defn node-remove
   "remove the node whose key is equal to k, if present."
-  [n k]
-  (if (leaf? n)
-    (leaf)
-    (kvlr [key val l r] n
-      (case (order/compare k key)
-        -1 (node-stitch key val (node-remove l k) r)
-        +1 (node-stitch key val l (node-remove r k))
-        (node-concat2 l r)))))
+  ([n k]
+   (node-remove n k order/*compare* *t-join*))
+  ([n k ^Comparator cmp create]
+   (letfn [(concat2 [l r]
+             (cond
+               (leaf? l) r
+               (leaf? r) l
+               :else (kvlr [k v _ _] (node-least r)
+                       (stitch-wb create k v l (rm-least r)))))
+           (rm-least [n]
+             (cond
+               (leaf? n)      (throw (ex-info "rm-least: empty" {}))
+               (leaf? (-l n)) (-r n)
+               :else          (stitch-wb create (-k n) (-v n)
+                                (rm-least (-l n)) (-r n))))
+           (rm [n]
+             (if (leaf? n)
+               (leaf)
+               (kvlr [key val l r] n
+                 (let [c (.compare cmp k key)]
+                   (if (zero? c)
+                     (concat2 l r)
+                     (if (neg? c)
+                       (stitch-wb create key val (rm l) r)
+                       (stitch-wb create key val l (rm r))))))))]
+     (rm n))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Tree Search
@@ -458,26 +561,27 @@
 
 (defn node-find
   "find a node in n whose key = k"
-  [n k]
-  (when-not (leaf? n)
-    (case (order/compare k (-k n))
-      -1 (recur (-l n) k)
-      +1 (recur (-r n) k)
-      n)))
+  ([n k]
+   (node-find n k order/*compare*))
+  ([n k ^Comparator cmp]
+   (loop [n n]
+     (when-not (leaf? n)
+       (let [c (.compare cmp k (-k n))]
+         (if (zero? c) n (recur (if (neg? c) (-l n) (-r n)))))))))
 
 (defn node-find-nearest
   "Find the nearest k according to relation expressed by :< or :>"
   [n k & [gt-or-lt]]
   (let [gt-or-lt (or gt-or-lt :<)
+        ^Comparator cmp-fn order/*compare*
         [cmp fwd rev] (case gt-or-lt
-                        :< [order/compare< -l -r]
-                        :> [order/compare> -r -l])
-        srch (fn [this best]
-               (cond
-                 (leaf? this)      best
-                 (cmp k (-k this)) (recur (fwd this) best)
-                 true              (recur (rev this) this)))]
-    (srch n nil)))
+                        :< [(fn [x y] (neg? (.compare cmp-fn x y))) -l -r]
+                        :> [(fn [x y] (pos? (.compare cmp-fn x y))) -r -l])]
+    (loop [this n best nil]
+      (cond
+        (leaf? this)      best
+        (cmp k (-k this)) (recur (fwd this) best)
+        true              (recur (rev this) this)))))
 
 (defn- node-find-interval-fn [i pred]
   (let [i      (interval/ordered-pair i)
@@ -551,6 +655,65 @@
   ([f n] (node-fold-right f nil n))
   ([f base n] ((node-fold-fn :>) f base n)))
 
+(defn node-reduce
+  "Stack-based in-order reduction. Faster than enumerator-based node-fold-left
+   because it uses a mutable ArrayDeque instead of allocating lists.
+   Supports early termination via clojure.core/reduced."
+  ([f init root]
+   (if (leaf? root)
+     init
+     (let [stack (java.util.ArrayDeque.)]
+       ;; Push leftmost spine
+       (loop [n root]
+         (when-not (leaf? n)
+           (.push stack n)
+           (recur (-l n))))
+       ;; Process nodes
+       (loop [acc init]
+         (if (.isEmpty stack)
+           acc
+           (let [node (.pop stack)
+                 res  (f acc node)]
+             (if (reduced? res)
+               @res
+               (do
+                 ;; Push left spine of right subtree
+                 (loop [n (-r node)]
+                   (when-not (leaf? n)
+                     (.push stack n)
+                     (recur (-l n))))
+                 (recur res)))))))))
+  ([f root]
+   (if (leaf? root)
+     (f)
+     (let [stack (java.util.ArrayDeque.)]
+       ;; Push leftmost spine
+       (loop [n root]
+         (when-not (leaf? n)
+           (.push stack n)
+           (recur (-l n))))
+       ;; First element as initial accumulator
+       (let [first-node (.pop stack)]
+         ;; Push left spine of right subtree of first node
+         (loop [n (-r first-node)]
+           (when-not (leaf? n)
+             (.push stack n)
+             (recur (-l n))))
+         ;; Process remaining nodes
+         (loop [acc first-node]
+           (if (.isEmpty stack)
+             acc
+             (let [node (.pop stack)
+                   res  (f acc node)]
+               (if (reduced? res)
+                 @res
+                 (do
+                   (loop [n (-r node)]
+                     (when-not (leaf? n)
+                       (.push stack n)
+                       (recur (-l n))))
+                   (recur res)))))))))))
+
 ;; MAYBE: i'm not convinced these are necessary
 
 (defn- node-fold*-fn [dir]
@@ -610,26 +773,32 @@
 (defn node-split-lesser
   "return a tree of all nodes whose key is less than k (Logarithmic time)."
   [n k]
-  (if (leaf? n)
-    n
-    (kvlr [kn vn ln rn] n
-      (case (order/compare k kn)
-        -1 (recur ln k)
-        +1 (node-concat3 kn vn ln
-             (node-split-lesser rn k))
-         0 ln))))
+  (let [^Comparator cmp order/*compare*]
+    (loop [n n]
+      (if (leaf? n)
+        n
+        (kvlr [kn vn ln rn] n
+          (let [c (.compare cmp k kn)]
+            (if (zero? c) ln
+              (if (neg? c)
+                (recur ln)
+                (node-concat3 kn vn ln
+                  (node-split-lesser rn k))))))))))
 
 (defn node-split-greater
   "return a tree of all nodes whose key is greater than k (Logarithmic time)."
   [n k]
-  (if (leaf? n)
-    n
-    (kvlr [kn vn ln rn] n
-      (case (order/compare k kn)
-        -1 (node-concat3 kn vn
-             (node-split-greater ln k) rn)
-        +1 (recur rn k)
-         0 rn))))
+  (let [^Comparator cmp order/*compare*]
+    (loop [n n]
+      (if (leaf? n)
+        n
+        (kvlr [kn vn ln rn] n
+          (let [c (.compare cmp k kn)]
+            (if (zero? c) rn
+              (if (neg? c)
+                (node-concat3 kn vn
+                  (node-split-greater ln k) rn)
+                (recur rn)))))))))
 
 (defn node-split
   "returns a triple (l present r) where: l is the set of elements of
@@ -637,15 +806,20 @@
   is false if n contains no element equal to k, or (k v) if n contains
   an element with key equal to k."
   [n k]
-  (if (leaf? n)
-    [nil nil nil]
-    (kvlr [ak v l r] n
-      (case (order/compare k ak)
-        0  [l (list k v) r]
-        -1 (let [[ll pres rl] (node-split l k)]
-             [ll pres (node-concat3 ak v rl r)])
-        +1 (let [[lr pres rr] (node-split r k)]
-             [(node-concat3 ak v l lr) pres rr])))))
+  (let [^Comparator cmp order/*compare*]
+    (letfn [(split [n]
+              (if (leaf? n)
+                [nil nil nil]
+                (kvlr [ak v l r] n
+                  (let [c (.compare cmp k ak)]
+                    (if (zero? c)
+                      [l (list k v) r]
+                      (if (neg? c)
+                        (let [[ll pres rl] (split l)]
+                          [ll pres (node-concat3 ak v rl r)])
+                        (let [[lr pres rr] (split r)]
+                          [(node-concat3 ak v l lr) pres rr])))))))]
+      (split n))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Tree Comparator (Worst-Case Linear Time)
@@ -661,7 +835,8 @@
    +1  -> n1 is GREATER-THAN n2"
   [accessor n1 n2]
   (let [acc-fn (cond-> accessor
-                 (not (fn? accessor)) node-accessor)]
+                 (not (fn? accessor)) node-accessor)
+        ^Comparator cmp order/*compare*]
     (loop [e1 (node-enumerator n1 nil)
            e2 (node-enumerator n2 nil)]
       (cond
@@ -670,7 +845,7 @@
         (nil? e2)                  1
         true                       (let [[x1 r1 ee1] e1
                                          [x2 r2 ee2] e2
-                                         c (order/compare (acc-fn x1) (acc-fn x2))]
+                                         c (.compare cmp (acc-fn x1) (acc-fn x2))]
                                      (if-not (zero? c)
                                        c
                                        (recur
@@ -723,24 +898,20 @@
 (defn node-subset?
   "return true if `sub` is a subset of `super`"
   [super sub]
-  (letfn [(subset? [n1 n2]
-            (or (leaf? n1)
-              (and (<= (node-size n1) (node-size n2))
-                (kvlr [k1 _ l1 r1] n1
-                  (kvlr [k2 _ l2 r2] n2
-                    (case (order/compare k1 k2)
-                      -1 (and
-                           (subset?   l1 l2)
-                           (node-find n2 k1)
-                           (subset?   r1 n2))
-                      1  (and
-                           (subset?   r1 r2)
-                           (node-find n2 k1)
-                           (subset?   l1 n2))
-                      (and
-                        (subset? l1 l2)
-                        (subset? r1 r2))))))))]
-    (or (leaf? sub) (boolean (subset? sub super)))))
+  (let [^Comparator cmp order/*compare*]
+    (letfn [(subset? [n1 n2]
+              (or (leaf? n1)
+                (and
+                  (<= (node-size n1) (node-size n2))
+                  (kvlr [k1 _ l1 r1] n1
+                    (kvlr [k2 _ l2 r2] n2
+                      (let [c (.compare cmp k1 k2)]
+                        (if (zero? c)
+                          (and (subset? l1 l2) (subset? r1 r2))
+                          (if (neg? c)
+                            (and (subset? l1 l2) (node-find n2 k1 cmp) (subset? r1 n2))
+                            (and (subset? r1 r2) (node-find n2 k1 cmp) (subset? l1 n2))))))))))]
+      (or (leaf? sub) (boolean (subset? sub super))))))
 
 (def node-set-compare (partial node-compare :k))
 
@@ -790,13 +961,15 @@
   "Return the rank (sequential position) of a given KEY within the
   ordered tree rooted at n. (Logarithmic Time)"
   [n k]
-  (letfn [(srch [n k ^long rank]
-            (if-not (leaf? n)
-              (case (order/compare k (-k n))
-              -1 (recur (-l n) k rank)
-              +1 (recur (-r n) k (+ 1 rank (node-size (-l n))))
-              (+ rank (node-size (-l n))))))]
-    (srch n k 0)))
+  (let [^Comparator cmp order/*compare*]
+    (loop [n n k k rank (long 0)]
+      (when-not (leaf? n)
+        (let [c (.compare cmp k (-k n))]
+          (if (zero? c)
+            (+ rank (node-size (-l n)))
+            (if (neg? c)
+              (recur (-l n) k rank)
+              (recur (-r n) k (+ 1 rank (node-size (-l n)))))))))))
 
 ;; MAYBE: other splits? <= < > ?
 

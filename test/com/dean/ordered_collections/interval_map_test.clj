@@ -1,6 +1,8 @@
-(ns com.dean.interval-tree.interval-map-test
+(ns com.dean.ordered-collections.interval-map-test
   (:require [clojure.test       :refer :all]
-            [com.dean.interval-tree.core :refer [interval-map]]))
+            [com.dean.ordered-collections.core :refer [interval-map]]))
+
+(set! *warn-on-reflection* true)
 
 
 ;; x8:                         +-----+

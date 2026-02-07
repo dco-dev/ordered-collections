@@ -1,11 +1,15 @@
-(ns com.dean.interval-tree.tree.order
-  (:refer-clojure :exclude [compare <= >= max]))
+(ns com.dean.ordered-collections.tree.order
+  (:refer-clojure :exclude [compare <= >= max])
+  (:import [java.util Comparator]))
+
+(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Comparator
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; TODO: note about fanciness
+;; All comparators implement java.util.Comparator for fast .compare dispatch.
+;; This avoids IFn invoke overhead (~5-10ns per call vs ~1-2ns for invokeinterface).
 
 (defn normalize ^long [^long x]
   (if (zero? x)
@@ -15,21 +19,26 @@
 
 (defn compare-by
   "Given a predicate that defines a total order over some domain,
-  return a three-way comparator built from it."
-  [pred]
-  (fn [x y]
-    (cond
-      (pred x y) -1
-      (pred y x) +1
-      true        0)))
+  return a three-way Comparator built from it."
+  ^Comparator [pred]
+  (reify Comparator
+    (compare [_ x y]
+      (cond
+        (pred x y) -1
+        (pred y x) +1
+        :else       0))))
 
-(defn normal-compare ^long [x y]
-  (normalize (clojure.core/compare x y)))
+(def ^Comparator normal-compare
+  "Default comparator using clojure.core/compare. Implements java.util.Comparator
+   for fast .compare dispatch in tree operations."
+  (reify Comparator
+    (compare [_ x y]
+      (clojure.core/compare x y))))
 
-(def ^:dynamic *compare* normal-compare)
+(def ^:dynamic ^Comparator *compare* normal-compare)
 
 (defn compare ^long [x y]
-  (*compare* x y))
+  (.compare ^Comparator *compare* x y))
 
 (defn compare< [x y]
   (neg? (compare x y)))

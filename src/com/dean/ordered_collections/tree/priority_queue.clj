@@ -1,0 +1,233 @@
+(ns com.dean.ordered-collections.tree.priority-queue
+  "Persistent priority queue implemented using weight-balanced trees.
+
+  Provides O(log n) push, peek, and pop operations with efficient
+  iteration and parallel fold support.
+
+  Unlike ordered-set, allows duplicate priorities (elements are
+  distinguished by insertion order via an internal sequence counter)."
+  (:require [clojure.core.reducers :as r :refer [coll-fold]]
+            [com.dean.ordered-collections.tree.node  :as node]
+            [com.dean.ordered-collections.tree.order :as order]
+            [com.dean.ordered-collections.tree.tree  :as tree])
+  (:import  [clojure.lang RT]
+            [java.util Comparator]))
+
+(set! *warn-on-reflection* true)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Priority Queue Comparator
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- make-pq-comparator
+  "Create a comparator for priority queue entries.
+  Entries are [priority seqnum value] triples.
+  Comparison is first by priority (using the user's comparator),
+  then by seqnum (for stable ordering of equal priorities)."
+  ^Comparator [^Comparator priority-cmp]
+  (reify Comparator
+    (compare [_ a b]
+      (let [[pa sa _] a
+            [pb sb _] b
+            c (.compare priority-cmp pa pb)]
+        (if (zero? c)
+          (Long/compare ^long sa ^long sb)
+          c)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Priority Queue
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftype PriorityQueue [root ^Comparator cmp ^long seqnum _meta]
+
+  java.io.Serializable
+
+  clojure.lang.IMeta
+  (meta [_] _meta)
+
+  clojure.lang.IObj
+  (withMeta [_ m]
+    (PriorityQueue. root cmp seqnum m))
+
+  clojure.lang.IPersistentStack
+  (peek [_]
+    ;; Return the minimum element (by priority)
+    (when-not (node/leaf? root)
+      (let [[_ _ v] (node/-k (tree/node-least root))]
+        v)))
+  (pop [this]
+    (if (node/leaf? root)
+      (throw (IllegalStateException. "Can't pop empty queue"))
+      (let [least (tree/node-least root)
+            new-root (tree/node-remove root (node/-k least) cmp tree/node-create-weight-balanced)]
+        (PriorityQueue. new-root cmp seqnum _meta))))
+  (cons [this x]
+    ;; Default: use x as both priority and value
+    (let [entry [x seqnum x]
+          new-root (tree/node-add root entry entry cmp tree/node-create-weight-balanced)]
+      (PriorityQueue. new-root cmp (unchecked-inc seqnum) _meta)))
+
+  clojure.lang.Seqable
+  (seq [_]
+    (when-not (node/leaf? root)
+      (map (fn [n] (let [[_ _ v] (node/-k n)] v))
+           (tree/node-seq root))))
+
+  clojure.lang.Reversible
+  (rseq [_]
+    (when-not (node/leaf? root)
+      (map (fn [n] (let [[_ _ v] (node/-k n)] v))
+           (tree/node-seq-reverse root))))
+
+  clojure.lang.Counted
+  (count [_]
+    (tree/node-size root))
+
+  clojure.lang.IPersistentCollection
+  (empty [_]
+    (PriorityQueue. (node/leaf) cmp 0 {}))
+  (equiv [this o]
+    (and (instance? PriorityQueue o)
+         (= (count this) (count o))
+         (= (seq this) (seq o))))
+
+  clojure.lang.IReduceInit
+  (reduce [_ f init]
+    (tree/node-reduce
+      (fn [acc n]
+        (let [[_ _ v] (node/-k n)]
+          (f acc v)))
+      init root))
+
+  clojure.lang.IReduce
+  (reduce [_ f]
+    (let [sentinel (Object.)
+          result (tree/node-reduce
+                   (fn [acc n]
+                     (let [[_ _ v] (node/-k n)]
+                       (if (identical? acc sentinel)
+                         v
+                         (f acc v))))
+                   sentinel root)]
+      (if (identical? result sentinel) (f) result)))
+
+  clojure.core.reducers.CollFold
+  (coll-fold [_ chunk-size combinef reducef]
+    (tree/node-chunked-fold chunk-size root combinef
+      (fn [acc n]
+        (let [[_ _ v] (node/-k n)]
+          (reducef acc v)))))
+
+  clojure.lang.Indexed
+  (nth [_ i]
+    (let [[_ _ v] (node/-k (tree/node-nth root i))]
+      v))
+
+  java.lang.Iterable
+  (iterator [this]
+    (clojure.lang.SeqIterator. (seq this)))
+
+  Object
+  (toString [this]
+    (str "#PriorityQueue" (vec (seq this))))
+  (hashCode [this]
+    (.hashCode ^Object (vec (seq this))))
+  (equals [this o]
+    (and (instance? PriorityQueue o)
+         (.equiv this o))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Extended API
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn push
+  "Add an element to the priority queue with the given priority.
+  Returns a new queue. O(log n)."
+  [^PriorityQueue pq priority value]
+  (let [entry [priority (.-seqnum pq) value]
+        new-root (tree/node-add (.-root pq) entry entry (.-cmp pq) tree/node-create-weight-balanced)]
+    (PriorityQueue. new-root (.-cmp pq) (unchecked-inc (.-seqnum pq)) (.-_meta pq))))
+
+(defn push-all
+  "Add multiple [priority value] pairs to the queue. O(k log n)."
+  [^PriorityQueue pq pairs]
+  (reduce (fn [q [p v]] (push q p v)) pq pairs))
+
+(defn peek-with-priority
+  "Return [priority value] of the minimum element, or nil if empty. O(log n)."
+  [^PriorityQueue pq]
+  (when-not (node/leaf? (.-root pq))
+    (let [[p _ v] (node/-k (tree/node-least (.-root pq)))]
+      [p v])))
+
+(defn peek-max
+  "Return the maximum-priority element (value only), or nil if empty. O(log n)."
+  [^PriorityQueue pq]
+  (when-not (node/leaf? (.-root pq))
+    (let [[_ _ v] (node/-k (tree/node-greatest (.-root pq)))]
+      v)))
+
+(defn peek-max-with-priority
+  "Return [priority value] of the maximum element, or nil if empty. O(log n)."
+  [^PriorityQueue pq]
+  (when-not (node/leaf? (.-root pq))
+    (let [[p _ v] (node/-k (tree/node-greatest (.-root pq)))]
+      [p v])))
+
+(defn pop-max
+  "Remove and return a new queue without the maximum-priority element. O(log n)."
+  [^PriorityQueue pq]
+  (if (node/leaf? (.-root pq))
+    (throw (IllegalStateException. "Can't pop-max empty queue"))
+    (let [greatest (tree/node-greatest (.-root pq))
+          new-root (tree/node-remove (.-root pq) (node/-k greatest) (.-cmp pq) tree/node-create-weight-balanced)]
+      (PriorityQueue. new-root (.-cmp pq) (.-seqnum pq) (.-_meta pq)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Constructors
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn priority-queue
+  "Create a priority queue from a collection of values.
+  Values are used as their own priority (must be Comparable).
+
+  Options:
+    :comparator - custom priority comparator (default: clojure.core/compare)
+
+  Examples:
+    (priority-queue [3 1 4 1 5])           ; min-heap by value
+    (priority-queue [3 1 4] :comparator >) ; max-heap by value"
+  [coll & {:keys [comparator] :or {comparator clojure.core/compare}}]
+  (let [base-cmp (if (instance? Comparator comparator)
+                   comparator
+                   (order/compare-by comparator))
+        pq-cmp (make-pq-comparator base-cmp)
+        empty-pq (PriorityQueue. (node/leaf) pq-cmp 0 {})]
+    (reduce (fn [q v] (push q v v)) empty-pq coll)))
+
+(defn priority-queue-by
+  "Create a priority queue with a custom priority comparator.
+  Elements are [priority value] pairs.
+
+  Examples:
+    (priority-queue-by < [[3 :c] [1 :a] [2 :b]])  ; min by priority"
+  [comparator pairs]
+  (let [base-cmp (if (instance? Comparator comparator)
+                   comparator
+                   (order/compare-by comparator))
+        pq-cmp (make-pq-comparator base-cmp)
+        empty-pq (PriorityQueue. (node/leaf) pq-cmp 0 {})]
+    (push-all empty-pq pairs)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Print Method
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defmethod print-method PriorityQueue [^PriorityQueue pq ^java.io.Writer w]
+  (.write w "#PriorityQueue[")
+  (when-let [s (seq pq)]
+    (print-method (first s) w)
+    (doseq [x (rest s)]
+      (.write w " ")
+      (print-method x w)))
+  (.write w "]"))

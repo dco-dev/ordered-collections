@@ -1,28 +1,32 @@
-(ns com.dean.interval-tree.tree.ordered-map
+(ns com.dean.ordered-collections.tree.interval-map
   (:require [clojure.core.reducers       :as r :refer [coll-fold]]
-            [com.dean.interval-tree.tree.node     :as node]
-            [com.dean.interval-tree.tree.protocol :as proto]
-            [com.dean.interval-tree.tree.root]
-            [com.dean.interval-tree.tree.tree     :as tree]
-            [com.dean.interval-tree.tree.order    :as order])
+            [com.dean.ordered-collections.tree.interval :as interval]
+            [com.dean.ordered-collections.tree.node     :as node]
+            [com.dean.ordered-collections.tree.root]
+            [com.dean.ordered-collections.tree.order    :as order]
+            [com.dean.ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang                RT]
-            [com.dean.interval_tree.tree.root     INodeCollection
+            [com.dean.ordered_collections.tree.root     INodeCollection
                                          IBalancedCollection
-                                         IOrderedCollection]))
+                                         IOrderedCollection
+                                         IIntervalCollection]))
+
+(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Dynamic Environment
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defmacro with-ordered-map [x & body]
-  `(binding [order/*compare* (.getCmp ~(with-meta x {:tag 'com.dean.interval_tree.tree.root.IOrderedCollection}))]
+(defmacro with-interval-map [x & body]
+  `(binding [order/*compare* (.getCmp ~(with-meta x {:tag 'com.dean.ordered_collections.tree.root.IOrderedCollection}))
+             tree/*t-join*   (.getAllocator ~(with-meta x {:tag 'com.dean.ordered_collections.tree.root.INodeCollection}))]
      ~@body))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Ordered Map
+;; Interval Map
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(deftype OrderedMap [root cmp alloc stitch _meta]
+(deftype IntervalMap [root cmp alloc stitch _meta]
 
   INodeCollection
   (getAllocator [_]
@@ -34,7 +38,7 @@
   (getCmp [_]
     cmp)
   (isCompatible [_ o]
-    (and (instance? OrderedMap o) (= cmp (.getCmp o)) (= stitch (.getStitch o))))
+    (and (instance? IntervalMap o) (= cmp (.getCmp ^IOrderedCollection o)) (= stitch (.getStitch ^IBalancedCollection o))))
   (isSimilar [_ o]
     (map? o))
 
@@ -42,37 +46,39 @@
   (getStitch [_]
     stitch)
 
+  IIntervalCollection
+
   clojure.lang.IMeta
   (meta [_]
     _meta)
 
   clojure.lang.IObj
   (withMeta [_ m]
-    (OrderedMap. root cmp alloc stitch m))
+    (IntervalMap. root cmp alloc stitch m))
 
   clojure.lang.Indexed
   (nth [this i]
-    (with-ordered-map this
+    (with-interval-map this
       (node/-kv (tree/node-nth root i))))
 
   clojure.lang.MapEquivalence
 
   clojure.lang.Seqable
   (seq [this]
-    (with-ordered-map this
+    (with-interval-map this
       (map node/-kv (tree/node-seq root))))
 
   clojure.lang.Reversible
   (rseq [this]
-    (with-ordered-map this
+    (with-interval-map this
       (map node/-kv (tree/node-seq-reverse root))))
 
   clojure.lang.ILookup
   (valAt [this k not-found]
-    (with-ordered-map this
-      (if-let [found (tree/node-find root k)]
-        (node/-v found)
-        not-found)))
+    (with-interval-map this
+      (if-let [found (tree/node-find-intervals root k)]
+        (map node/-v found)
+      not-found)))
   (valAt [this k]
     (.valAt this k nil))
 
@@ -91,11 +97,10 @@
 
   java.lang.Comparable
   (compareTo [this o]
-    (with-ordered-map this
+    (with-interval-map this
       (cond
         (identical? this o) 0
-        (.isCompatible this o) (tree/node-map-compare root (.getRoot o))
-        (.isSimilar    this o) (.compareTo (into (empty o) this) o)
+        (.isCompatible this o) (tree/node-map-compare root (.getRoot ^INodeCollection o))
         true (throw (ex-info "unsupported comparison: " {:this this :o o})))))
 
   clojure.lang.Counted
@@ -104,16 +109,15 @@
 
   clojure.lang.Associative
   (containsKey [this k]
-    (with-ordered-map this
-      (some? (tree/node-find root k))))
+    (with-interval-map this
+      (not (empty? (tree/node-find-intervals root k)))))
   (entryAt [this k]
-    (with-ordered-map this
-      (some-> root (tree/node-find k) node/-kv)))
+    (with-interval-map this
+      (some->> k (tree/node-find-intervals root) (map node/-kv))))
   (assoc [this k v]
-    (with-ordered-map this
-      (OrderedMap. (tree/node-add root k v) cmp alloc stitch _meta)))
+    (IntervalMap. (tree/node-add root (interval/ordered-pair k) v cmp alloc) cmp alloc stitch _meta))
   (empty [this]
-    (OrderedMap. (node/leaf) cmp alloc stitch {}))
+    (IntervalMap. (node/leaf) cmp alloc stitch {}))
 
   java.util.Map
   (get [this k]
@@ -123,7 +127,7 @@
   (size [_]
     (tree/node-size root))
   (keySet [this]
-    (with-ordered-map this
+    (with-interval-map this
       (set (tree/node-vec root :accessor :k))))
   (put [_ _ _]
     (throw (UnsupportedOperationException.)))
@@ -132,39 +136,58 @@
   (clear [_]
     (throw (UnsupportedOperationException.)))
   (values [this]
-    (with-ordered-map this
+    (with-interval-map this
       (tree/node-vec root :accessor :v)))
   (entrySet [this]
-    (with-ordered-map this
+    (with-interval-map this
       (set (tree/node-vec root :accessor :kv))))
   (iterator [this]
     (clojure.lang.SeqIterator. (seq this)))
 
   clojure.lang.IPersistentCollection
   (equiv [this o]
-    (with-ordered-map this
+    (with-interval-map this
       (cond
         (identical? this o) 0
-        (.isCompatible this o) (and (= (.count this) (.count o))
-                                    (zero? (tree/node-map-compare root (.getRoot o))))
-        (map? o) (.equiv (into (empty o) (tree/node-vec root :accessor :kv)) o)
+        (.isCompatible this o) (and (= (.count this) (.count ^clojure.lang.Counted o))
+                                    (zero? (tree/node-map-compare root (.getRoot ^INodeCollection o))))
         true     (throw (ex-info "unsupported comparison: " {:this this :o o})))))
 
   (cons [this o]
     (.assoc this (nth o 0) (nth o 1)))
 
+  clojure.lang.IReduceInit
+  (reduce [this f init]
+    (tree/node-reduce (fn [acc n] (f acc (node/-kv n))) init root))
+
+  clojure.lang.IReduce
+  (reduce [this f]
+    (let [sentinel (Object.)
+          result (tree/node-reduce
+                   (fn [acc n]
+                     (if (identical? acc sentinel)
+                       (node/-kv n)
+                       (f acc (node/-kv n))))
+                   sentinel root)]
+      (if (identical? result sentinel) (f) result)))
+
+  clojure.core.reducers.CollFold
+  (coll-fold [this n combinef reducef]
+    (with-interval-map this
+      (tree/node-chunked-fold n root combinef
+        (fn [acc node] (reducef acc (node/-kv node))))))
+
   clojure.lang.IPersistentMap
-  (assocEx [this k v]               ;; TODO: use `tree/node-add-if`
+  (assocEx [this k v]
     (if (contains? this k)
-      (throw (Exception. "Key or value already present"))
+      (throw (RuntimeException. "Key or value already present"))
       (assoc this k v)))
   (without [this k]
-    (with-ordered-map this
-      (OrderedMap. (tree/node-remove root k) cmp alloc stitch _meta))))
+    (IntervalMap. (tree/node-remove root k cmp alloc) cmp alloc stitch _meta)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Literal Representation
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defmethod print-method OrderedMap [m w]
+(defmethod print-method IntervalMap [m w]
   ((get (methods print-method) clojure.lang.IPersistentMap) m w))

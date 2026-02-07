@@ -1,5 +1,7 @@
-(ns com.dean.interval-tree.tree.protocol
+(ns com.dean.ordered-collections.tree.protocol
   (:require [clojure.set :as set]))
+
+(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Set Protocol

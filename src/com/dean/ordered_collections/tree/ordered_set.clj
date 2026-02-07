@@ -1,22 +1,19 @@
-(ns com.dean.interval-tree.tree.ordered-set
+(ns com.dean.ordered-collections.tree.ordered-set
   (:require [clojure.core.reducers       :as r :refer [coll-fold]]
             [clojure.set]
-            [com.dean.interval-tree.tree.node     :as node]
-            [com.dean.interval-tree.tree.order    :as order]
-            [com.dean.interval-tree.tree.protocol :as proto]
-            [com.dean.interval-tree.tree.root]
-            [com.dean.interval-tree.tree.tree     :as tree])
-  (:import  [clojure.lang                RT]
-            [com.dean.interval_tree.tree.protocol PExtensibleSet]
-            [com.dean.interval_tree.tree.root     INodeCollection
+            [com.dean.ordered-collections.tree.node     :as node]
+            [com.dean.ordered-collections.tree.order    :as order]
+            [com.dean.ordered-collections.tree.protocol :as proto]
+            [com.dean.ordered-collections.tree.root]
+            [com.dean.ordered-collections.tree.tree     :as tree])
+  (:import  [clojure.lang                RT Murmur3]
+            [com.dean.ordered_collections.tree.protocol PExtensibleSet]
+            [com.dean.ordered_collections.tree.root     INodeCollection
                                          IBalancedCollection
                                          IOrderedCollection]))
 
-;; TODO:
-;;  - clojure.lang.Sorted
-;;  - ISeq .seqFrom
+(set! *warn-on-reflection* true)
 
-;; - IReduce, IReduceKV,
 ;; - IMapIterable:  https://github.com/clojure/clojure/blob/master/src/jvm/clojure/lang/PersistentHashMap.java
 ;; - Collection Check: https://github.com/ztellman/collection-check/blob/master/src/collection_check/core.cljc
 
@@ -25,7 +22,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmacro with-ordered-set [x & body]
-  `(binding [order/*compare* (.getCmp ~(with-meta x {:tag 'com.dean.interval_tree.tree.root.IOrderedCollection}))]
+  `(binding [order/*compare* (.getCmp ~(with-meta x {:tag 'com.dean.ordered_collections.tree.root.IOrderedCollection}))]
      ~@body))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -33,6 +30,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftype OrderedSet [root cmp alloc stitch _meta]
+
+  java.io.Serializable  ;; marker interface for serialization
 
   INodeCollection
   (getAllocator [_]
@@ -117,10 +116,9 @@
 
   clojure.lang.ILookup
   (valAt [this k not-found]
-    (with-ordered-set this
-      (if-let [found (tree/node-find root k)]
-        (node/-k found)
-        not-found)))
+    (if-let [found (tree/node-find root k cmp)]
+      (node/-k found)
+      not-found))
   (valAt [this k]
     (.valAt this k nil))
 
@@ -191,16 +189,29 @@
     (with-ordered-set this
       (node/-k (tree/node-greatest root))))
   (headSet [this x]
+    ;; elements < x (exclusive)
     (with-ordered-set this
       (new OrderedSet (tree/node-split-lesser root x) cmp alloc stitch {})))
   (tailSet [this x]
+    ;; elements >= x (inclusive)
     (with-ordered-set this
-      (new OrderedSet (tree/node-split-greater root x) cmp alloc stitch {})))
+      (let [[_ present gt] (tree/node-split root x)]
+        (if present
+          ;; x exists: add it to the greater-than tree
+          (new OrderedSet (tree/node-add gt (first present) (first present)) cmp alloc stitch {})
+          ;; x doesn't exist: just return greater-than tree
+          (new OrderedSet gt cmp alloc stitch {})))))
   (subSet [this from to]
+    ;; elements >= from and < to
     (with-ordered-set this
-      (let [left   (tree/node-split-greater root from)
-            right  (tree/node-split-lesser  root to)
-            result (tree/node-set-intersection left right)]
+      (let [[_ from-present from-gt] (tree/node-split root from)
+            ;; Start with elements > from
+            from-tree (if from-present
+                        (tree/node-add from-gt (first from-present) (first from-present))
+                        from-gt)
+            ;; Intersect with elements < to
+            to-tree (tree/node-split-lesser root to)
+            result  (tree/node-set-intersection from-tree to-tree)]
         (new OrderedSet result cmp alloc stitch {}))))
 
   java.util.NavigableSet
@@ -217,6 +228,28 @@
           (first x')
           (some-> (tree/node-greatest l) node/-k)))))
 
+  clojure.lang.Sorted
+  ;; comparator method is inherited from java.util.SortedSet above
+  (entryKey [_ entry]
+    entry)  ;; for sets, the entry IS the key
+  (seq [this ascending]
+    (with-ordered-set this
+      (if ascending
+        (map node/-k (tree/node-seq root))
+        (map node/-k (tree/node-seq-reverse root)))))
+  (seqFrom [this k ascending]
+    (with-ordered-set this
+      (let [[lt present gt] (tree/node-split root k)]
+        (if ascending
+          ;; ascending: elements >= k (present + gt)
+          (if present
+            (cons (first present) (map node/-k (tree/node-seq gt)))
+            (seq (map node/-k (tree/node-seq gt))))
+          ;; descending: elements <= k (present + lt in reverse)
+          (if present
+            (cons (first present) (map node/-k (tree/node-seq-reverse lt)))
+            (seq (map node/-k (tree/node-seq-reverse lt))))))))
+
   clojure.lang.IPersistentSet
   (equiv [this o]
     (with-ordered-set this
@@ -231,14 +264,35 @@
   (empty [_]
     (new OrderedSet (node/leaf) cmp alloc stitch {}))
   (contains [this k]
-    (with-ordered-set this
-      (if (tree/node-find root k) true false)))
+    (if (tree/node-find root k cmp) true false))
   (disjoin [this k]
-    (with-ordered-set this
-      (new OrderedSet (tree/node-remove root k) cmp alloc stitch _meta)))
+    (new OrderedSet (tree/node-remove root k cmp tree/node-create-weight-balanced) cmp alloc stitch _meta))
   (cons [this k]
-    (with-ordered-set this
-      (new OrderedSet (tree/node-add root k) cmp alloc stitch _meta)))
+    (new OrderedSet (tree/node-add root k k cmp tree/node-create-weight-balanced) cmp alloc stitch _meta))
+
+  clojure.lang.IHashEq
+  (hasheq [this]
+    ;; Set hash is sum of hasheq of all elements (order-independent)
+    (tree/node-reduce
+      (fn [^long acc n]
+        (unchecked-add acc (Murmur3/hashInt (clojure.lang.Util/hasheq (node/-k n)))))
+      (long 0)
+      root))
+
+  clojure.lang.IReduceInit
+  (reduce [this f init]
+    (tree/node-reduce (fn [acc n] (f acc (node/-k n))) init root))
+
+  clojure.lang.IReduce
+  (reduce [this f]
+    (let [sentinel (Object.)
+          result (tree/node-reduce
+                   (fn [acc n]
+                     (if (identical? acc sentinel)
+                       (node/-k n)
+                       (f acc (node/-k n))))
+                   sentinel root)]
+      (if (identical? result sentinel) (f) result)))
 
   clojure.core.reducers.CollFold
   (coll-fold [this n combinef reducef]

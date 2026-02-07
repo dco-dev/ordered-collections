@@ -1,4 +1,6 @@
-(ns com.dean.interval-tree.tree.root)
+(ns com.dean.ordered-collections.tree.root)
+
+(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Root Container

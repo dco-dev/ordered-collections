@@ -1,9 +1,11 @@
-(ns com.dean.interval-tree.ordered-set-test
+(ns com.dean.ordered-collections.ordered-set-test
   (:require [clojure.core.reducers        :as r]
             [clojure.math.combinatorics   :as combo]
             [clojure.set                  :as set]
             [clojure.test                 :refer :all]
-            [com.dean.interval-tree.core  :refer :all]))
+            [com.dean.ordered-collections.core  :refer :all]))
+
+(set! *warn-on-reflection* true)
 
 ;; TODO: more coverage
 
@@ -27,11 +29,12 @@
       (is (= i (y i)))
       (is (= i (get y i)))
       (is (= ::nope (get y (+ 100 i) ::nope)))
-      (is (= i (.ceiling y i)))
-      (is (= i (.floor y i)))
-      (is (= (if (even? i) i (dec i)) (.floor z i)))
+      (is (= i (.ceiling ^java.util.NavigableSet y i)))
+      (is (= i (.floor ^java.util.NavigableSet y i)))
+      (is (= (if (even? i) i (dec i)) (.floor ^java.util.NavigableSet z i)))
       (is (= i (->> y (drop i) first))))
-    (is (= #{4 5 6}  (.subSet x 3 7)))))
+    ;; subSet(from, to) returns elements >= from and < to (standard SortedSet semantics)
+    (is (= #{3 4 5 6}  (.subSet ^java.util.SortedSet x 3 7)))))
 
 (deftest set-algebra-checks
   (doseq [size [10 100 1000 10000 100000]]
@@ -81,7 +84,7 @@
 (deftest sets-of-various-size-and-element-types
   (doseq [size [1 10 100 1000 10000 100000 250000 500000]
           f    [identity str gensym
-                #(java.util.Date. %)
+                #(java.util.Date. (long %))
                 (fn [_] (java.util.UUID/randomUUID))]]
     (let [data (mapv f (shuffle (range size)))
           this (ordered-set data)
