@@ -1,39 +1,51 @@
-# com.dean.interval-tree
+# com.dean/ordered-collections
 
 This library provides a collection of data structures implemented using a
 modular, extensible, foldable, weight balanced persistent binary tree:
 ordered-sets, ordered-maps, interval-sets, and interval-maps.
 
-![tests](https://github.com/dco-dev/interval-tree/actions/workflows/clojure.yml/badge.svg)
-[![Clojars Project](https://img.shields.io/clojars/v/com.dean/interval-tree.svg)](https://clojars.org/com.dean/interval-tree)
+![tests](https://github.com/dco-dev/ordered-collections/actions/workflows/clojure.yml/badge.svg)
+[![Clojars Project](https://img.shields.io/clojars/v/com.dean/ordered-collections.svg)](https://clojars.org/com.dean/ordered-collections)
 
 ### Usage
 
 To install, add the following dependency to your project or build file:
 
 ```
-[com.dean/interval-tree "0.1.2"]
+[com.dean/ordered-collections "0.2.0"]
 ```
 
 #### Public API
 
-The public api resides in the top-level `com.dean.interval-tree.core` namespace:
+The public api resides in the top-level `com.dean.ordered-collections.core` namespace:
 
 ```clj
-(require '[com.dean.interval-tree.core :as dean])
+(require '[com.dean.ordered-collections.core :as dean])
 ```
 
 The basic operation of this library is as a drop-in replacement for
 `clojure.core/sorted-set` and `clojure.core/sorted-map`.
 
+#### Key Features
+
+- **Full `clojure.lang.Sorted` support**: Use `subseq` and `rsubseq` natively
+- **Parallel fold**: All types implement `CollFold` for efficient `r/fold`
+- **Proper hashing**: `IHashEq` support for use in hash-based collections
+- **Serializable**: `java.io.Serializable` marker interface
+- **Fast iteration**: Optimized `IReduceInit`/`IReduce` (faster than `sorted-map`)
+
 #### Constructors
 
-* `(dean/ordered-set   coll)`
-* `(dean/ordered-set-by   pred coll)`
-* `(dean/ordered-map   coll)`
-* `(dean/ordered-map-by   pred coll)`
-* `(dean/interval-set  coll)`
-* `(dean/interval-map  coll)`
+* `(dean/ordered-set   coll)` - sorted set
+* `(dean/ordered-set-by   pred coll)` - sorted set with custom comparator
+* `(dean/ordered-map   coll)` - sorted map
+* `(dean/ordered-map-by   pred coll)` - sorted map with custom comparator
+* `(dean/interval-set  coll)` - set supporting interval overlap queries
+* `(dean/interval-map  coll)` - map supporting interval overlap queries
+* `(dean/priority-queue coll)` - persistent priority queue (min-heap)
+* `(dean/ordered-multiset coll)` - sorted multiset (allows duplicates)
+* `(dean/fuzzy-set coll)` - set returning closest element to query
+* `(dean/fuzzy-map coll)` - map returning value for closest key to query
 
 ### Topics
 
@@ -106,6 +118,9 @@ on foldably parallel ordered sets:
 
   (time (r/fold + + y))                    ;;   1M: "Elapsed time: 54.363545 msecs"
 
+  ;; subseq/rsubseq support (clojure.lang.Sorted)
+  (subseq x >= 100 < 200)                  ;; efficient range queries
+  (rsubseq x > 500)                        ;; reverse range queries
 
 ;;
 ;;; clojure.core/sorted-set
@@ -127,19 +142,19 @@ Testing is accomplished with the standard `lein test`
 ```
 $ time lein test
 
-lein test com.dean.interval-tree.interval-map-test
+lein test com.dean.ordered-collections.interval-map-test
 
-lein test com.dean.interval-tree.interval-set-test
+lein test com.dean.ordered-collections.interval-set-test
 
-lein test com.dean.interval-tree.interval-test
+lein test com.dean.ordered-collections.interval-test
 
-lein test com.dean.interval-tree.ordered-map-test
+lein test com.dean.ordered-collections.ordered-map-test
 
-lein test com.dean.interval-tree.ordered-set-test
+lein test com.dean.ordered-collections.ordered-set-test
 
-lein test com.dean.interval-tree.tree-test
+lein test com.dean.ordered-collections.tree-test
 
-Ran 30 tests containing 98214 assertions.
+Ran 98 tests containing 118198 assertions.
 0 failures, 0 errors.
 
 real     5m34.487s
@@ -169,7 +184,7 @@ capabilities of our underlying tree index.
 An exception to the above is due to the fact that `clojure.set` does not
 provide interfaces for extensible sets. So, we provide our own
 intersection, union, difference, subset, and superset.  These operators
-work most efficiently on com.dean.interval-tree collections and provide
+work most efficiently on com.dean.ordered-collections collections and provide
 support for backward interoperability with clojure (or possibly other)
 set datatypes.
 
@@ -206,7 +221,7 @@ Collections are a special type of OrderedCollection.
 
 #### Tree
 
-The heart of the library is our [persistent tree](https://github.com/dco-dev/interval-tree/blob/master/src/com/dean/interval_tree/tree/tree.clj).
+The heart of the library is our [persistent tree](https://github.com/dco-dev/ordered-collections/blob/master/src/com/dean/ordered_collections/tree/tree.clj).
 
 The code is well documented and explains in more detail the efficiencies
 of the internal collection operators.
