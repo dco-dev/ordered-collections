@@ -12,6 +12,9 @@
             [com.dean.ordered-collections.tree.protocol             :as proto]
             [com.dean.ordered-collections.tree.ordered-map          :refer [->OrderedMap]]
             [com.dean.ordered-collections.tree.ordered-set          :refer [->OrderedSet]]
+            [com.dean.ordered-collections.tree.ranked-set           :as ranked]
+            [com.dean.ordered-collections.tree.range-map            :as rmap]
+            [com.dean.ordered-collections.tree.segment-tree         :as segtree]
             [com.dean.ordered-collections.tree.tree                 :as tree]))
 
 (set! *warn-on-reflection* true)
@@ -332,3 +335,119 @@
   "Get the value for exactly the given key (no fuzzy matching).
    Only for fuzzy-map."
   fuzzy-map/exact-get)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Ranked Set
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def ranked-set
+  "Create a sorted set with O(log n) positional access.
+
+   In addition to normal set operations:
+   - (nth-element rs i)  -> element at index i, O(log n)
+   - (rank rs x)         -> index of element x, O(log n)
+   - (slice rs i j)      -> elements from i to j-1
+   - (median rs)         -> median element
+   - (percentile rs pct) -> element at percentile
+
+   Example:
+     (def rs (ranked-set [3 1 4 1 5 9 2 6]))
+     (nth-element rs 0)  ; => 1 (smallest)
+     (rank rs 5)         ; => 4"
+  ranked/ranked-set)
+
+(def ranked-set-by
+  "Create a ranked set with a custom comparator."
+  ranked/ranked-set-by)
+
+(def nth-element
+  "Return element at index i in a ranked set. O(log n)."
+  ranked/nth-element)
+
+(def rank
+  "Return the 0-based index of element x in a ranked set. O(log n)."
+  ranked/rank)
+
+(def slice
+  "Return elements from index start to end-1. O(log n + k)."
+  ranked/slice)
+
+(def median
+  "Return the median element of a ranked set. O(log n)."
+  ranked/median)
+
+(def percentile
+  "Return element at given percentile (0-100). O(log n)."
+  ranked/percentile)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Range Map
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def range-map
+  "Create a map from non-overlapping ranges to values.
+
+   Unlike interval-map, ranges never overlap. Inserting a range removes
+   any overlapping portions of existing ranges.
+
+   Ranges are half-open: [lo, hi) includes lo but excludes hi.
+
+   Example:
+     (def rm (range-map {[0 10] :a [20 30] :b}))
+     (rm 5)            ; => :a
+     (rm 15)           ; => nil (gap)
+     (assoc rm [5 25] :c)  ; splits existing ranges"
+  rmap/range-map)
+
+(def ranges
+  "Return seq of [range value] pairs from a range-map."
+  rmap/ranges)
+
+(def spanning-range
+  "Return [lo hi] spanning all ranges in a range-map, or nil if empty."
+  rmap/spanning-range)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Segment Tree
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def segment-tree
+  "Create a segment tree for O(log n) range aggregate queries.
+
+   Arguments:
+     op       - associative operation (+, min, max, etc.)
+     identity - identity element (0 for +, Long/MAX_VALUE for min)
+     coll     - map or seq of [index value] pairs
+
+   Example:
+     (def st (segment-tree + 0 {0 10, 1 20, 2 30, 3 40}))
+     (query st 1 3)  ; => 90 (sum of indices 1,2,3)"
+  segtree/segment-tree)
+
+(def sum-tree
+  "Create a segment tree for range sums."
+  segtree/sum-tree)
+
+(def min-tree
+  "Create a segment tree for range minimum queries."
+  segtree/min-tree)
+
+(def max-tree
+  "Create a segment tree for range maximum queries."
+  segtree/max-tree)
+
+(def query
+  "Query aggregate over [lo, hi] inclusive. O(log n)."
+  segtree/query)
+
+(def aggregate
+  "Return aggregate over entire segment tree. O(1)."
+  segtree/aggregate)
+
+(def update-val
+  "Update value at index k. O(log n)."
+  segtree/update-val)
+
+(def update-fn
+  "Update value at index k by applying f. O(log n)."
+  segtree/update-fn)

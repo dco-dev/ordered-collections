@@ -7,6 +7,12 @@ ordered-sets, ordered-maps, interval-sets, and interval-maps.
 ![tests](https://github.com/dco-dev/ordered-collections/actions/workflows/clojure.yml/badge.svg)
 [![Clojars Project](https://img.shields.io/clojars/v/com.dean/ordered-collections.svg)](https://clojars.org/com.dean/ordered-collections)
 
+---
+
+**New to the library?** See how Zorp uses ordered-maps, interval-maps, segment-trees, and more to run his sneaker empire on the dark side of Pluto: **[Zorp's Sneaker Emporium](doc/zorp-example.md)** — a practical tutorial disguised as interplanetary commerce.
+
+---
+
 ### Usage
 
 To install, add the following dependency to your project or build file:
@@ -93,73 +99,76 @@ This corresponds to the following example code:
 
 ```
 
+#### Performance
+
+Benchmarks at N=500,000 elements (JVM 25, Clojure 1.12.4):
+
+**Sets** — ordered-set vs sorted-set:
+
+| Operation | sorted-set | ordered-set | Notes |
+|-----------|------------|-------------|-------|
+| Construction | 1.6s | 1.3s | **20% faster** (parallel fold) |
+| Lookup | 15.3ms | 16.0ms | ~equal |
+| Iteration | 77ms | 46ms | **40% faster** (IReduceInit) |
+| r/fold | 92ms | 40ms | **2.3x faster** (CollFold) |
+| Split ops | — | 2.7ms | **4x faster** than data.avl |
+
+**Maps** — ordered-map vs sorted-map:
+
+| Operation | sorted-map | ordered-map | Notes |
+|-----------|------------|-------------|-------|
+| Construction | 1.3s | 2.7s | 2.1x (weight-balanced overhead) |
+| Lookup | 15.5ms | 17.3ms | ~equal |
+| Iteration | 129ms | 116ms | **10% faster** (IReduceInit) |
+
 #### Efficient Set Operations
 
-This library implements a diverse collection of efficent set operations
+This library implements a diverse collection of efficient set operations
 on foldably parallel ordered sets:
 
-```
-  (def foo (shuffle (range 500000)))
-  (def bar (shuffle (range 1000000)))
+```clj
+(def foo (shuffle (range 500000)))
 
-  (def s0 (shuffle (range 0 1000000 2)))
-  (def s1 (shuffle (range 0 1000000 3)))
+;; Construction: ordered-set is faster than sorted-set
+(time (def x (dean/ordered-set foo)))      ;; 500K: ~1.3s
+(time (def v (into (sorted-set) foo)))     ;; 500K: ~1.6s
 
-;;
-;;; dean/ordered-set
-;;
+;; Parallel fold: ordered-set is 2.3x faster
+(time (r/fold + + x))                      ;; 500K: ~40ms
+(time (r/fold + + v))                      ;; 500K: ~92ms
 
-  (time (def x (ordered-set foo)))         ;; 500K: "Elapsed time: 564.248517 msecs"
-  (time (def y (ordered-set bar)))         ;;   1M: "Elapsed time: 1187.734211 msecs"
+;; subseq/rsubseq support (clojure.lang.Sorted)
+(subseq x >= 100 < 200)                    ;; efficient range queries
+(rsubseq x > 500)                          ;; reverse range queries
 
-  (time (def s (dean/intersection
-                 (ordered-set s0)
-                 (ordered-set s1))))       ;; 833K: "Elapsed time: 1242.961445 msecs"
-
-  (time (r/fold + + y))                    ;;   1M: "Elapsed time: 54.363545 msecs"
-
-  ;; subseq/rsubseq support (clojure.lang.Sorted)
-  (subseq x >= 100 < 200)                  ;; efficient range queries
-  (rsubseq x > 500)                        ;; reverse range queries
-
-;;
-;;; clojure.core/sorted-set
-;;
-
-  (time (def v (into (sorted-set) foo)))   ;; 500K: "Elapsed time: 839.188189 msecs"
-  (time (def w (into (sorted-set) bar)))   ;;   1M: "Elapsed time: 1974.798286 msecs"
-
-  (time (def s (clojure.set/intersection
-                 (into (sorted-set) s0)
-                 (into (sorted-set) s1)))) ;; 833K: "Elapsed time: 1589.786106 msecs"
-
-  (time (r/fold + + w))                    ;;   1M: "Elapsed time: 167.916539 msecs"
+;; Set operations via divide-and-conquer (O(m+n) time)
+(def s0 (dean/ordered-set (range 0 1000000 2)))
+(def s1 (dean/ordered-set (range 0 1000000 3)))
+(time (dean/intersection s0 s1))           ;; 833K elements, ~1.2s
 ```
 
 ### Testing
 
 Testing is accomplished with the standard `lein test`
 ```
-$ time lein test
+$ lein test
 
+lein test com.dean.ordered-collections.fuzzy-test
 lein test com.dean.ordered-collections.interval-map-test
-
 lein test com.dean.ordered-collections.interval-set-test
-
 lein test com.dean.ordered-collections.interval-test
-
 lein test com.dean.ordered-collections.ordered-map-test
-
+lein test com.dean.ordered-collections.ordered-multiset-test
 lein test com.dean.ordered-collections.ordered-set-test
-
+lein test com.dean.ordered-collections.priority-queue-test
+lein test com.dean.ordered-collections.range-map-test
+lein test com.dean.ordered-collections.ranked-set-test
+lein test com.dean.ordered-collections.segment-tree-test
 lein test com.dean.ordered-collections.tree-test
+lein test com.dean.ordered-collections.zorp-test
 
-Ran 98 tests containing 118198 assertions.
+Ran 211 tests containing 426446 assertions.
 0 failures, 0 errors.
-
-real     5m34.487s
-user    10m21.397s
-sys      0m5.047s
 ```
 
 ### Modularity

@@ -77,7 +77,7 @@
 
 (deftest rotation-check:single-left
   (let [node node/->SimpleNode]
-    (matches (tree/rotate-single-left :AK :AV
+    (matches (tree/rotate-single-left tree/node-create-weight-balanced :AK :AV
                   (node :XK :XV (node/leaf) (node/leaf) 1)
                   (node :BK :BV (node :YK :YV (node/leaf) (node/leaf) 1)
                                 (node :ZK :XZ (node/leaf) (node/leaf) 1) 3))
@@ -88,7 +88,7 @@
 
 (deftest rotation-check:double-left
   (let [node node/->SimpleNode]
-    (matches (tree/rotate-double-left :AK :AV
+    (matches (tree/rotate-double-left tree/node-create-weight-balanced :AK :AV
                  (node :XK :XV (node/leaf) (node/leaf) 1)
                  (node :CK :CV
                        (node :BK :BV (node :Y1K :Y1V (node/leaf) (node/leaf) 1)
@@ -103,7 +103,7 @@
 
 (deftest rotation-check:single-right
   (let [node node/->SimpleNode]
-    (matches (tree/rotate-single-right :BK :BV
+    (matches (tree/rotate-single-right tree/node-create-weight-balanced :BK :BV
                  (node :AK :AV (node :XK :XV (node/leaf) (node/leaf) 1)
                                (node :YK :YV (node/leaf) (node/leaf) 1) 3)
                  (node :ZK :XZ (node/leaf) (node/leaf) 1))
@@ -114,7 +114,7 @@
 
 (deftest rotation-check:double-right
   (let [node node/->SimpleNode]
-    (matches (tree/rotate-double-right :CK :CV
+    (matches (tree/rotate-double-right tree/node-create-weight-balanced :CK :CV
                  (node :AK :AV (node :XK :XV (node/leaf) (node/leaf) 1)
                                (node :BK :BV (node :Y1K :Y1V (node/leaf) (node/leaf) 1)
                                              (node :Y2K :Y2V (node/leaf) (node/leaf) 1) 3) 5)

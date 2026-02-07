@@ -74,7 +74,7 @@
 
 (deftest ordered-multiset-lookup
   (testing "contains?"
-    (let [ms (oc/ordered-multiset [1 2 3])]
+    (let [^java.util.Collection ms (oc/ordered-multiset [1 2 3])]
       (is (.contains ms 1))
       (is (.contains ms 2))
       (is (not (.contains ms 99)))))
@@ -131,7 +131,7 @@
 
 (deftest ordered-multiset-collection-interface
   (testing "Collection methods"
-    (let [ms (oc/ordered-multiset [1 2 3])]
+    (let [^java.util.Collection ms (oc/ordered-multiset [1 2 3])]
       (is (not (.isEmpty ms)))
       (is (= 3 (.size ms)))
       (is (.contains ms 2))

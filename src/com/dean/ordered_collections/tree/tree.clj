@@ -67,11 +67,6 @@
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; TODO: potential improvements
-;;
-;; - transient/editable collections (would very significantly improve creation)
-;; - hash/hashEq
-
 ;; TODO: additional operations
 ;;
 ;; - node-traverse (maybe?)
@@ -126,11 +121,12 @@
   ^long [n]
   (if (leaf? n) 0 (-x n)))
 
-(defn node-weight
+(definline node-weight
   "returns node weight as appropriate for rotation calculations using
-   the 'revised non-variant algorithm' for weight balanced binary tree."
-  ^long [n]
-  (unchecked-inc (node-size n)))
+   the 'revised non-variant algorithm' for weight balanced binary tree.
+   Inlined for performance in hot rotation paths."
+  [n]
+  `(unchecked-inc (long (if (leaf? ~n) 0 (-x ~n)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Node Builders (t-join)
@@ -166,104 +162,145 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Node Enumerators: the fundamental traversal algorithm
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; Enumerators provide efficient partial (lazy) in-order traversal of tree
+;; structure without materializing the entire sequence upfront. They work by
+;; decomposing the tree into a "left spine" — a linked list of frames, each
+;; holding a node and its unvisited subtree.
+;;
+;; CONCEPT: Left Spine Decomposition
+;;
+;; Given this tree:
+;;
+;;                    ,---,
+;;                    | 4 |
+;;                    :---:
+;;                   :     :
+;;              ,---:       :---,
+;;              | 2 |       | 6 |
+;;              :---:       :---:
+;;             :     :     :     :
+;;         ,--:   :--,  ,--:   :--,
+;;         |1 |   |3 |  |5 |   |7 |
+;;         '--'   '--'  '--'   '--'
+;;
+;; The forward enumerator walks down the LEFT spine, building a chain of
+;; EnumFrames. Each frame saves (node, right-subtree, next-frame):
+;;
+;;     node-enumerator(4)
+;;         │
+;;         ▼
+;;     ┌─────────────────────────────────────────────────────────┐
+;;     │ EnumFrame                                               │
+;;     │   node: 1                                               │
+;;     │   subtree: nil  ─────────────────────────────────────┐  │
+;;     │   next: ───┐                                         │  │
+;;     └────────────│────────────────────────────────────────│──┘
+;;                  ▼                                         │
+;;     ┌─────────────────────────────────────────────────┐    │
+;;     │ EnumFrame                                       │    │
+;;     │   node: 2                                       │    │
+;;     │   subtree: ─────► subtree rooted at 3           │    │
+;;     │   next: ───┐                                    │    │
+;;     └────────────│────────────────────────────────────┘    │
+;;                  ▼                                         │
+;;     ┌─────────────────────────────────────────────────┐    │
+;;     │ EnumFrame                                       │    │
+;;     │   node: 4                                       │    │
+;;     │   subtree: ─────► subtree rooted at 6           │    │
+;;     │   next: nil                                     │    │
+;;     └─────────────────────────────────────────────────┘    │
+;;                                                            │
+;;     The leftmost node (1) is at the head ◄─────────────────┘
+;;
+;; TRAVERSAL:
+;;
+;;   1. node-enum-first returns the current node (head of spine)
+;;
+;;   2. node-enum-rest advances by:
+;;      - Taking the saved right-subtree
+;;      - Recursively building a new left spine from it
+;;      - Continuing with the next frame
+;;
+;;      After visiting node 1:
+;;        subtree=nil, next=Frame(2,...)
+;;        → returns Frame(2,...) directly (no subtree to enumerate)
+;;
+;;      After visiting node 2:
+;;        subtree=3, next=Frame(4,...)
+;;        → enumerates subtree 3, producing Frame(3, nil, Frame(4,...))
+;;
+;; This produces the in-order sequence: 1, 2, 3, 4, 5, 6, 7
+;;
+;; The reverse enumerator (node-enumerator-reverse) works symmetrically,
+;; walking down the RIGHT spine and saving left subtrees.
+;;
+;; EFFICIENCY:
+;;
+;; - O(1) to get current node
+;; - O(log n) amortized per advance (each node visited once across full traversal)
+;; - O(log n) space (depth of spine = tree height)
+;; - Lazy: only materializes nodes as needed
+;;
+;; EnumFrame is a simple deftype triple that avoids the allocation overhead
+;; of persistent lists (1 object vs 3 cons cells per frame).
 
-;; TODO: describe in more detail "enumerator" concept
-;; TODO: diagram of left partial tree decomposition
-;; TODO: use a simple triple type rather than persistentlist
+(deftype EnumFrame [node subtree next])
 
 (defn node-enumerator
   "Efficient mechanism to accomplish partial enumeration of
    tree-structure into a seq representation without incurring the
-   overhead of operating over the entire tree.  Used internally for
-   implementation of higher-level collection api routines"
-  ([n] (node-enumerator n nil))
-  ([n enum]
-     (if (leaf? n)
-       enum
-       (kvlr [k v l r] n
-         (recur l (list n r enum))))))
+   overhead of operating over the entire tree. Used internally for
+   implementation of higher-level collection api routines.
 
-;; TODO: diagram of right partial tree decomposition
+   Returns an EnumFrame representing the leftmost spine of the tree,
+   where each frame holds (current-node, right-subtree, next-frame)."
+  ([n] (node-enumerator n nil))
+  ([n ^EnumFrame enum]
+   (if (leaf? n)
+     enum
+     (recur (-l n) (EnumFrame. n (-r n) enum)))))
 
 (defn node-enumerator-reverse
+  "Reverse enumerator: builds rightmost spine where each frame holds
+   (current-node, left-subtree, next-frame)."
   ([n] (node-enumerator-reverse n nil))
-  ([n enum]
-     (if (leaf? n)
-       enum
-       (kvlr [k v l r] n
-         (recur r (list n l enum))))))
+  ([n ^EnumFrame enum]
+   (if (leaf? n)
+     enum
+     (recur (-r n) (EnumFrame. n (-l n) enum)))))
 
-(def node-enum-first first)
+(defn node-enum-first
+  "Return the current node from an enumerator frame."
+  [^EnumFrame enum]
+  (.-node enum))
 
-(defn node-enum-rest  [enum]
+(defn node-enum-rest
+  "Advance forward enumerator to the next node."
+  [^EnumFrame enum]
   (when (some? enum)
-    (let [[x1 x2 x3] enum]
-      (when-not (and (nil? x2) (nil? x3))
-        (node-enumerator x2 x3)))))
+    (let [subtree (.-subtree enum)
+          next    (.-next enum)]
+      (when-not (and (nil? subtree) (nil? next))
+        (node-enumerator subtree next)))))
 
-(defn node-enum-prior [enum]
+(defn node-enum-prior
+  "Advance reverse enumerator to the next (prior) node."
+  [^EnumFrame enum]
   (when (some? enum)
-    (let [[x1 x2 x3] enum]
-      (when-not (and (nil? x2) (nil? x3))
-        (node-enumerator-reverse x2 x3)))))
+    (let [subtree (.-subtree enum)
+          next    (.-next enum)]
+      (when-not (and (nil? subtree) (nil? next))
+        (node-enumerator-reverse subtree next)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Tree Rotations (Weight Balanced)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn- rotate-sl
-  "Parameterized single left rotation (private, takes explicit create fn)."
-  [create ak av x b]
-  (kvlr [bk bv y z] b
-    (create bk bv (create ak av x y) z)))
-
-(defn- rotate-dl
-  "Parameterized double left rotation (private, takes explicit create fn)."
-  [create ak av x c]
-  (kvlr [ck cv b z] c
-    (kvlr [bk bv y1 y2] b
-      (create bk bv (create ak av x y1) (create ck cv y2 z)))))
-
-(defn- rotate-sr
-  "Parameterized single right rotation (private, takes explicit create fn)."
-  [create bk bv a z]
-  (kvlr [ak av x y] a
-    (create ak av x (create bk bv y z))))
-
-(defn- rotate-dr
-  "Parameterized double right rotation (private, takes explicit create fn)."
-  [create ck cv a z]
-  (kvlr [ak av x b] a
-    (kvlr [bk bv y1 y2] b
-      (create bk bv (create ak av x y1) (create ck cv y2 z)))))
-
-(defn- stitch-wb
-  "Parameterized weight-balanced stitch (private, takes explicit create fn).
-  Same algorithm as node-stitch-weight-balanced but avoids dynamic var deref."
-  [create k v l r]
-  (let [lw (node-weight l)
-        rw (node-weight r)]
-    (cond
-      (> rw (* +delta+ lw)) (let [rlw (node-weight (-l r))
-                                  rrw (node-weight (-r r))]
-                              (if (< rlw (* +gamma+ rrw))
-                                (rotate-sl create k v l r)
-                                (rotate-dl create k v l r)))
-      (> lw (* +delta+ rw)) (let [llw (node-weight (-l l))
-                                  lrw (node-weight (-r l))]
-                              (if (< lrw (* +gamma+ llw))
-                                (rotate-sr create k v l r)
-                                (rotate-dr create k v l r)))
-      :else                 (create k v l r))))
-
-(defn rotate-single-left
-  "Perform a single left rotation, moving Y, the left subtree of the
-  right subtree of A, into the left subtree (shown below).  This must
-  occur in order to restore proper balance when the weight of the left
-  subtree of node A is less then the weight of the right subtree of
-  node A multiplied by rotation coefficient +delta+ and the weight of
-  the left subtree of node B is less than the weight of the right subtree
-  of node B multiplied by rotation coefficient +gamma+
+(defmacro rotate-single-left
+  "Single left rotation. Move Y (the left subtree of the right subtree of A)
+  into the left subtree. Required when: weight(X) < δ × weight(B) and
+  weight(Y) < γ × weight(Z).
 
                 ,---,                                  ,---,
                 | A |                                  | B |
@@ -274,21 +311,18 @@
           '---'       :---:                      :---:       '---'
                  ,---:     :---,            ,---:     :---,
                  | Y |     | Z |            | X |     | Y |
-                 '---'     '---'            '---'     '---'"
-  [ak av x b]
-  (kvlr [bk bv y z] b
-    (node-create bk bv
-      (node-create ak av x y) z)))
+                 '---'     '---'            '---'     '---'
 
-(defn rotate-double-left
-  "Perform a double left rotation, moving Y1, the left subtree of the
-  left subtree of the right subtree of A, into the left subtree (shown
-  below).  This must occur in order to restore proper balance when the
-  weight of the left subtree of node A is less then the weight of the
-  right subtree of node A multiplied by rotation coefficient +delta+
-  and the weight of the left subtree of node B is greater than or equal
-  to the weight of the right subtree of node B multiplied by rotation
-  coefficient +gamma+.
+  Macro for inlining in hot rotation paths."
+  [create ak av x b]
+  `(let [b# ~b
+         bk# (-k b#) bv# (-v b#) y# (-l b#) z# (-r b#)]
+     (~create bk# bv# (~create ~ak ~av ~x y#) z#)))
+
+(defmacro rotate-double-left
+  "Double left rotation. Move Y1 (the left subtree of B, which is the left
+  subtree of C, which is the right subtree of A) into the left subtree.
+  Required when: weight(X) < δ × weight(C) and weight(Y) >= γ × weight(Z).
 
                 ,---,                                    ,---,
                 | A |                                    | B |
@@ -301,22 +335,19 @@
                    :---:     '---'         '---'     '---'   '---'     '---'
               ,---:     :---,
               | y1|     | y2|
-              '---'     '---'"
-  [ak av x c]
-  (kvlr [ck cv b z] c
-    (kvlr [bk bv y1 y2] b
-      (node-create bk bv
-        (node-create ak av x y1)
-        (node-create ck cv y2 z)))))
+              '---'     '---'
 
-(defn rotate-single-right
-  "Perform a single right rotation, moving Y, the right subtree of the
-  left subtree of B, into the right subtree (shown below).  This must
-  occur in order to restore proper balance when the weight of the right
-  subtree of node B is less then the weight of the left subtree of
-  node B multiplied by rotation coefficient +delta+ and the weight of the
-  right subtree of node A is less than the weight of the left subtree
-  of node A multiplied by rotation coefficient +gamma+.
+  Macro for inlining in hot rotation paths."
+  [create ak av x c]
+  `(let [c# ~c
+         ck# (-k c#) cv# (-v c#) b# (-l c#) z# (-r c#)
+         bk# (-k b#) bv# (-v b#) y1# (-l b#) y2# (-r b#)]
+     (~create bk# bv# (~create ~ak ~av ~x y1#) (~create ck# cv# y2# z#))))
+
+(defmacro rotate-single-right
+  "Single right rotation. Move Y (the right subtree of the left subtree of B)
+  into the right subtree. Required when: weight(Z) < δ × weight(A) and
+  weight(Y) < γ × weight(X).
 
                 ,---,                                  ,---,
                 | B |                                  | A |
@@ -327,20 +358,18 @@
           :---:       '---'                      '---'       :---:
      ,---:     :---,                                    ,---:     :---,
      | X |     | Y |                                    | Y |     | Z |
-     '---'     '---'                                    '---'     '---'"
-  [bk bv a z]
-  (kvlr [ak av x y] a
-    (node-create ak av x (node-create bk bv y z))))
+     '---'     '---'                                    '---'     '---'
 
-(defn rotate-double-right
-  "Perform a double right rotation, moving Y2, the right subtree of
-  the right subtree of the left subtree of C, into the right
-  subtree (shown below).  This must occur in order to restore proper
-  balance when the weight of the right subtree of node C is less then
-  the weight of the left subtree of node C multiplied by rotation
-  coefficient +delta+ and the weight of the right subtree of node B
-  is greater than or equal to the weight of the left subtree of node B
-  multiplied by rotation coefficient +gamma+.
+  Macro for inlining in hot rotation paths."
+  [create bk bv a z]
+  `(let [a# ~a
+         ak# (-k a#) av# (-v a#) x# (-l a#) y# (-r a#)]
+     (~create ak# av# x# (~create ~bk ~bv y# ~z))))
+
+(defmacro rotate-double-right
+  "Double right rotation. Move Y2 (the right subtree of B, which is the right
+  subtree of A, which is the left subtree of C) into the right subtree.
+  Required when: weight(Z) < δ × weight(A) and weight(Y) >= γ × weight(X).
 
                 ,---,                                    ,---,
                 | C |                                    | B |
@@ -353,17 +382,39 @@
    '---'     :---:                         '---'     '---'   '---'     '---'
         ,---:     :---,
         | y1|     | y2|
-        '---'     '---'"
-  [ck cv a z]
-  (kvlr [ak av x b] a
-    (kvlr [bk bv y1 y2] b
-      (node-create bk bv
-        (node-create ak av x y1)
-        (node-create ck cv y2 z)))))
+        '---'     '---'
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Balanced Tree Constructors (n-Join]
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  Macro for inlining in hot rotation paths."
+  [create ck cv a z]
+  `(let [a# ~a
+         ak# (-k a#) av# (-v a#) x# (-l a#) b# (-r a#)
+         bk# (-k b#) bv# (-v b#) y1# (-l b#) y2# (-r b#)]
+     (~create bk# bv# (~create ak# av# x# y1#) (~create ~ck ~cv y2# ~z))))
+
+(defn- stitch-wb
+  "Weight-balanced stitch: join left and right subtrees at root k/v, performing
+  a single or double rotation to restore balance if needed. Assumes all keys in
+  l < k < all keys in r, and imbalance is at most one rotation away from balanced.
+
+  Balance criteria (Hirai-Yamamoto):
+    - Rotate left  when: weight(r) > δ × weight(l)
+    - Rotate right when: weight(l) > δ × weight(r)
+    - Single vs double determined by γ threshold on inner subtree weights."
+  [create k v l r]
+  (let [lw (node-weight l)
+        rw (node-weight r)]
+    (cond
+      (> rw (* +delta+ lw)) (let [rlw (node-weight (-l r))
+                                  rrw (node-weight (-r r))]
+                              (if (< rlw (* +gamma+ rrw))
+                                (rotate-single-left create k v l r)
+                                (rotate-double-left create k v l r)))
+      (> lw (* +delta+ rw)) (let [llw (node-weight (-l l))
+                                  lrw (node-weight (-r l))]
+                              (if (< lrw (* +gamma+ llw))
+                                (rotate-single-right create k v l r)
+                                (rotate-double-right create k v l r)))
+      :else                 (create k v l r))))
 
 (defn node-stitch-weight-balanced
   "Weight-Balancing Algorithm:
@@ -373,31 +424,15 @@
   all keys in l < k < all keys in r, and the relative weight balance
   of the left and right subtrees is such that no more than one
   single/double rotation will result in each subtree being less than
-  +delta+ times the weight of the other.  This is the heart of tree
-  construction."
+  +delta+ times the weight of the other."
   [k v l r]
-  (let [lw (node-weight l)
-        rw (node-weight r)]
-    (cond
-      (> rw (* +delta+ lw)) (let [rlw (node-weight (-l r))
-                                  rrw (node-weight (-r r))]
-                              (if (< rlw (* +gamma+ rrw))
-                                (rotate-single-left k v l r)
-                                (rotate-double-left k v l r)))
-      (> lw (* +delta+ rw)) (let [llw (node-weight (-l l))
-                                  lrw (node-weight (-r l))]
-                              (if (< lrw (* +gamma+ llw))
-                                (rotate-single-right k v l r)
-                                (rotate-double-right k v l r)))
-      true                  (node-create k v l r))))
+  (stitch-wb *t-join* k v l r))
 
 (def ^:dynamic *n-join* node-stitch-weight-balanced)
 
 (defn node-stitch
   "The `stitch` operation is the sole balancing constructor and
   interface to the specific balancing rotation algorithm of the tree.
-  other balancing algorithms (AVL Tree, Red-Black Tree) can be
-  implemented here without effect to other aspects of the tree.
   Sometimes referred to as `n-join` operation"
   [k v l r]
   (*n-join* k v l r))
@@ -583,6 +618,83 @@
         (cmp k (-k this)) (recur (fwd this) best)
         true              (recur (rev this) this)))))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Interval Tree Augmentation and Search
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; AUGMENTED INTERVAL TREE
+;;
+;; An interval tree stores intervals [a,b] and supports efficient queries for
+;; all intervals that overlap a given point or interval. The key insight is
+;; the -z augmentation: each node stores the MAXIMUM ENDPOINT of all intervals
+;; in its subtree.
+;;
+;; NODE STRUCTURE (IntervalNode):
+;;
+;;   -k : interval [a,b] — the key, sorted by start point 'a'
+;;   -v : associated value
+;;   -l : left subtree  (intervals with smaller start points)
+;;   -r : right subtree (intervals with larger start points)
+;;   -x : subtree size (for weight balancing)
+;;   -z : MAX endpoint 'b' across this node and all descendants
+;;
+;; EXAMPLE: Intervals [1,5], [3,8], [6,7], [4,9], [2,3]
+;;
+;; Sorted by start point and built into a balanced tree:
+;;
+;;                          ┌─────────────────┐
+;;                          │ key: [3,8]      │
+;;                          │ z: 9  ←─────────────── max(8, 5, 9) from subtree
+;;                          └────────┬────────┘
+;;                      ┌────────────┴────────────┐
+;;              ┌───────┴───────┐         ┌───────┴───────┐
+;;              │ key: [1,5]    │         │ key: [6,7]    │
+;;              │ z: 5          │         │ z: 9          │
+;;              └───────┬───────┘         └───────┬───────┘
+;;                      │                 ┌───────┴───────┐
+;;              ┌───────┴───────┐         │ key: [4,9]    │
+;;              │ key: [2,3]    │         │ z: 9          │
+;;              │ z: 3          │         └───────────────┘
+;;              └───────────────┘
+;;
+;; SEARCH ALGORITHM (finding intervals that overlap query interval Q=[qa,qb]):
+;;
+;; Two intervals [a,b] and [qa,qb] overlap iff: a <= qb AND qa <= b
+;;
+;; The -z augmentation enables PRUNING:
+;;
+;;   1. PRUNE LEFT SUBTREE: If qa > left.-z, no interval in the left subtree
+;;      can overlap Q (all endpoints are too small).
+;;
+;;   2. PRUNE RIGHT SUBTREE: If qb < node.key.a, no interval in the right
+;;      subtree can overlap Q (all start points are too large).
+;;
+;; SEARCH WALKTHROUGH: Query Q=[5,6] on the tree above
+;;
+;;   At [3,8]: z=9
+;;     • Right subtree: qb=6 >= key.a=3? Yes → search right
+;;     • Check [3,8]: overlaps [5,6]? 3<=6 ∧ 5<=8 → YES, collect it
+;;     • Left subtree: qa=5 <= left.z=5? Yes → search left
+;;
+;;   At [6,7]: z=9
+;;     • Right subtree: qb=6 >= key.a=6? Yes → search right
+;;     • Check [6,7]: overlaps [5,6]? 6<=6 ∧ 5<=7 → YES, collect it
+;;     • Left subtree: (has child [4,9])
+;;
+;;   At [4,9]: z=9
+;;     • Check [4,9]: overlaps [5,6]? 4<=6 ∧ 5<=9 → YES, collect it
+;;
+;;   At [1,5]: z=5
+;;     • Right subtree: none
+;;     • Check [1,5]: overlaps [5,6]? 1<=6 ∧ 5<=5 → YES, collect it
+;;     • Left subtree: qa=5 <= left.z=3? No → PRUNE (skip [2,3])
+;;
+;; Result: [[3,8], [6,7], [4,9], [1,5]] — found 4 overlapping intervals,
+;;         pruned [2,3] without examining it.
+;;
+;; COMPLEXITY: O(k + log n) where k = number of overlapping intervals.
+;; The -z augmentation ensures we only visit nodes that could contain matches.
+
 (defn- node-find-interval-fn [i pred]
   (let [i      (interval/ordered-pair i)
         result (volatile! nil)
@@ -592,10 +704,13 @@
     (fn [n]
       (letfn [(srch [this]
                 (when-not (leaf? this)
+                  ;; Search right if query endpoint >= node's start point
                   (when (order/compare>= (interval/b i) (-> this -k interval/a))
                     (-> this -r srch))
+                  ;; Check current node for intersection
                   (when (interval/intersects? i (-k this))
                     (accum this))
+                  ;; Search left only if query start <= max endpoint in left subtree
                   (when (and (not (leaf? (-l this)))
                              (order/compare<= (interval/a i) (-> this -l -z)))
                     (-> this -l srch))))]
@@ -769,6 +884,63 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Tree Splitting (Logarithmic Time)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; SPLIT OPERATION
+;;
+;; `node-split` decomposes a tree at a pivot key k into three parts:
+;;   (L, present, R)
+;;
+;; Where:
+;;   L       = tree of all elements < k
+;;   present = nil if k not found, or (k v) if found
+;;   R       = tree of all elements > k
+;;
+;; EXAMPLE: split tree at key 5
+;;
+;;            ,---,
+;;            | 4 |                          L (keys < 5)      R (keys > 5)
+;;            :---:
+;;           :     :                              ,---,           ,---,
+;;      ,---:       :---,                         | 4 |           | 7 |
+;;      | 2 |       | 7 |        split(5)         :---:           :---:
+;;      :---:       :---:       ─────────►       :     :         :     :
+;;     :     :     :     :                   ,--:   :--,     ,--:       :--,
+;;  ,-:   :-,  ,-:   :-,                     |2 |   |3 |     |6 |       |8 |
+;;  |1 |  |3 | |6 |  |8 |                    '--'   '--'     '--'       '--'
+;;  '--'  '--' '--'  '--'
+;;     └────┬───┘                            plus: present = nil (5 not in tree)
+;;       ,-:   :-,
+;;       |5:val|                             If 5 were present, present = (5, val)
+;;       '-----'
+;;
+;; ALGORITHM (recursive):
+;;
+;;   split(node, k):
+;;     if node is leaf: return (nil, nil, nil)
+;;
+;;     compare k with node.key:
+;;       k = node.key  →  (node.left, (k,v), node.right)
+;;       k < node.key  →  (ll, p, lr) = split(node.left, k)
+;;                        return (ll, p, concat3(node.key, node.val, lr, node.right))
+;;       k > node.key  →  (rl, p, rr) = split(node.right, k)
+;;                        return (concat3(node.key, node.val, node.left, rl), p, rr)
+;;
+;; VISUAL: split(tree, 3) where 3 < 4
+;;
+;;            ,---,
+;;            | 4 |
+;;            :---:                         split left subtree at 3:
+;;           :     :                           (L', present, R') = split([2], 3)
+;;      ,---:       :---,
+;;      | 2 |       | 7 |                   Then rebuild:
+;;      '---'       '---'                     L = L'
+;;                                            R = concat3(4, v, R', [7])
+;;
+;; COMPLEXITY: O(log n) — each recursive call descends one level
+;;
+;; WHY IT MATTERS: Split is the foundation for efficient set operations.
+;; Instead of element-by-element insertion (O(n log n)), we can implement
+;; union, intersection, and difference in O(n) time using divide-and-conquer.
 
 (defn node-split-lesser
   "return a tree of all nodes whose key is less than k (Logarithmic time)."
@@ -837,15 +1009,19 @@
   (let [acc-fn (cond-> accessor
                  (not (fn? accessor)) node-accessor)
         ^Comparator cmp order/*compare*]
-    (loop [e1 (node-enumerator n1 nil)
-           e2 (node-enumerator n2 nil)]
+    (loop [^EnumFrame e1 (node-enumerator n1 nil)
+           ^EnumFrame e2 (node-enumerator n2 nil)]
       (cond
         (and (nil? e1) (nil? e2))  0
         (nil? e1)                 -1
         (nil? e2)                  1
-        true                       (let [[x1 r1 ee1] e1
-                                         [x2 r2 ee2] e2
-                                         c (.compare cmp (acc-fn x1) (acc-fn x2))]
+        true                       (let [x1  (.-node e1)
+                                         r1  (.-subtree e1)
+                                         ee1 (.-next e1)
+                                         x2  (.-node e2)
+                                         r2  (.-subtree e2)
+                                         ee2 (.-next e2)
+                                         c   (.compare cmp (acc-fn x1) (acc-fn x2))]
                                      (if-not (zero? c)
                                        c
                                        (recur
@@ -855,6 +1031,74 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Fundamental Set Operations (Worst-Case Linear Time)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; SET OPERATIONS VIA DIVIDE-AND-CONQUER
+;;
+;; Union, intersection, and difference are implemented using a powerful
+;; divide-and-conquer strategy based on `node-split`. This achieves O(m+n)
+;; time complexity instead of the naive O(m log n) element-by-element approach.
+;;
+;; THE PATTERN (using union as example):
+;;
+;;   union(T1, T2):
+;;     if T1 is empty: return T2
+;;     if T2 is empty: return T1
+;;
+;;     Pick the root of T2: key=k, left=L2, right=R2
+;;     Split T1 at k:       (L1, _, R1) = split(T1, k)
+;;
+;;     Recursively:
+;;       left-result  = union(L1, L2)    ← elements < k from both trees
+;;       right-result = union(R1, R2)    ← elements > k from both trees
+;;
+;;     Combine: concat3(k, v, left-result, right-result)
+;;
+;; VISUAL: union of {1,3,5} and {2,3,4}
+;;
+;;         T1              T2
+;;        ,---,           ,---,
+;;        | 3 |           | 3 |
+;;        :---:           :---:
+;;       :     :         :     :
+;;    ,-:       :-,   ,-:       :-,
+;;    |1 |     |5 |   |2 |     |4 |
+;;    '--'     '--'   '--'     '--'
+;;
+;;   Step 1: Split T1 at T2's root (3)
+;;           L1={1}, present=(3,v), R1={5}
+;;
+;;   Step 2: Recurse
+;;           union({1}, {2}) → {1,2}
+;;           union({5}, {4}) → {4,5}
+;;
+;;   Step 3: Combine
+;;           concat3(3, v, {1,2}, {4,5}) → {1,2,3,4,5}
+;;
+;;
+;; INTERSECTION works similarly but only keeps k if present in BOTH trees:
+;;
+;;   intersection(T1, T2):
+;;     Split T1 at T2's root k: (L1, present, R1)
+;;     If present:  concat3(k, v, intersect(L1,L2), intersect(R1,R2))
+;;     If absent:   concat2(intersect(L1,L2), intersect(R1,R2))
+;;                           └─ no middle element to join with
+;;
+;; DIFFERENCE removes elements of T2 from T1:
+;;
+;;   difference(T1, T2):
+;;     Split T1 at T2's root k: (L1, _, R1)
+;;     concat2(difference(L1,L2), difference(R1,R2))
+;;             └─ always concat2, never include k (it's in T2)
+;;
+;; WHY O(m+n)?
+;;
+;; Each node from both trees is visited exactly once. The split and concat3
+;; operations are O(log n), but the total work across all recursive calls
+;; telescopes to O(m+n) because:
+;;   - Each split divides T1 into disjoint parts
+;;   - Each element participates in only O(1) concat3 operations
+;;
+;; This is the "Adams' algorithm" from the 1992 paper, refined by many others.
 
 (defn node-set-union
   "set union"
