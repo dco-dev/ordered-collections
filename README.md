@@ -35,10 +35,12 @@ The basic operation of this library is as a drop-in replacement for
 #### Key Features
 
 - **Full `clojure.lang.Sorted` support**: Use `subseq` and `rsubseq` natively
-- **Parallel fold**: All types implement `CollFold` for efficient `r/fold`
+- **O(log n) first/last**: Via `java.util.SortedSet` interface (~7000x faster than `sorted-set` at scale)
+- **Parallel fold**: All types implement `CollFold` for efficient `r/fold` (2.3x faster)
+- **Fast set operations**: Union, intersection, difference 5-9x faster than `clojure.set`
 - **Proper hashing**: `IHashEq` support for use in hash-based collections
 - **Serializable**: `java.io.Serializable` marker interface
-- **Fast iteration**: Optimized `IReduceInit`/`IReduce` (faster than `sorted-map`)
+- **Fast iteration**: Optimized `IReduceInit`/`IReduce` (faster than `sorted-set`)
 
 #### Constructors
 
@@ -101,55 +103,71 @@ This corresponds to the following example code:
 
 #### Performance
 
-Benchmarks at N=500,000 elements (JVM 25, Clojure 1.12.4):
+Benchmarks at N=500,000 elements (JVM 25, Clojure 1.12.4). See [full benchmarks](doc/benchmarks.md) for details.
 
-**Sets** — ordered-set vs sorted-set:
+**Where ordered-set wins:**
 
-| Operation | sorted-set | ordered-set | Notes |
+| Operation | sorted-set | ordered-set | Speedup |
+|-----------|------------|-------------|---------|
+| Construction | 1.5s | **1.2s** | **1.25x** (parallel fold) |
+| First/last access | 17s | **2.4ms** | **~7000x** (O(log n) vs O(n)) |
+| Iteration (reduce) | 96ms | **81ms** | **1.2x** (IReduceInit) |
+| Parallel fold | 98ms | **42ms** | **2.3x** (CollFold) |
+| Union | 1.1s | **129ms** | **7.8x** (parallel divide-and-conquer) |
+| Intersection | 870ms | **91ms** | **9.0x** |
+| Difference | 977ms | **102ms** | **7.7x** |
+| Split operations | — | 2.5ms | **4.5x** vs data.avl |
+
+**Where ordered-set is competitive:**
+
+| Operation | sorted-set | ordered-set | Ratio |
 |-----------|------------|-------------|-------|
-| Construction | 1.5s | **1.2s** | **20% faster** (parallel fold) |
-| Lookup | 12ms | 15ms | ~equal |
-| Iteration | 96ms | **81ms** | **16% faster** (IReduceInit) |
-| r/fold | 98ms | **42ms** | **2.3x faster** (CollFold) |
-| Split ops | — | 2.5ms | **4.5x faster** than data.avl |
-| Union | 1.1s | **190ms** | **5.8x faster** vs clojure.set |
-| Intersection | 870ms | **164ms** | **5.3x faster** vs clojure.set |
-| Difference | 977ms | **114ms** | **8.6x faster** vs clojure.set |
+| Lookup (10K queries) | 12ms | 15ms | 0.8x |
+| Sequential insert | 1.6s | 2.5s | 0.64x |
+| Delete | 840ms | 1.2s | 0.7x |
 
 **Maps** — ordered-map vs sorted-map:
 
 | Operation | sorted-map | ordered-map | Notes |
 |-----------|------------|-------------|-------|
-| Construction | 1.2s | 2.5s | 2.1x (weight-balanced overhead) |
-| Lookup | 14ms | 16ms | ~equal |
-| Delete | 649ms | **1.2s** | Matches data.avl |
+| Construction | 1.2s | **1.2s** | **equal** (parallel fold) |
+| Lookup | 14ms | 15ms | 0.93x (~equal) |
+| Iteration | 121ms | 120ms | ~equal |
 
-#### Efficient Set Operations
+**Summary**: Both ordered-set and ordered-map excel at bulk operations via parallel fold, with construction matching or beating Clojure builtins. ordered-set also wins at set operations (7-9x with parallelism) and endpoint access (7000x). The trade-off is slightly slower sequential mutation.
 
-This library implements a diverse collection of efficient set operations
-on foldably parallel ordered sets:
+#### Efficient Set and Map Operations
+
+This library implements parallel divide-and-conquer operations that exploit tree structure for 7-9x speedups over `clojure.set`:
 
 ```clj
+(require '[clojure.core.reducers :as r])
+
 (def foo (shuffle (range 500000)))
+(def x (dean/ordered-set foo))
 
-;; Construction: ordered-set is faster than sorted-set
-(time (def x (dean/ordered-set foo)))      ;; 500K: ~1.2s
-(time (def v (into (sorted-set) foo)))     ;; 500K: ~1.5s
+;; Parallel fold: 2.3x faster than sorted-set
+(r/fold + x)                               ;; 500K: ~42ms (sorted-set: 98ms)
 
-;; Parallel fold: ordered-set is 2.3x faster
-(time (r/fold + + x))                      ;; 500K: ~42ms
-(time (r/fold + + v))                      ;; 500K: ~98ms
+;; First/last access: O(log n) via SortedSet interface
+(.first ^java.util.SortedSet x)            ;; 2.4ms for 1000 calls
+(.last ^java.util.SortedSet x)             ;; (sorted-set: 17s - must traverse seq)
 
-;; subseq/rsubseq support (clojure.lang.Sorted)
+;; Range queries via clojure.lang.Sorted
 (subseq x >= 100 < 200)                    ;; efficient range queries
 (rsubseq x > 500)                          ;; reverse range queries
 
-;; Set operations via divide-and-conquer (5-9x faster than clojure.set)
+;; Set operations: 7-9x faster than clojure.set (parallel for large sets)
 (def s0 (dean/ordered-set (range 0 500000)))
 (def s1 (dean/ordered-set (range 250000 750000)))
-(time (dean/union s0 s1))                  ;; 500K: ~190ms (clojure.set: 1.1s)
-(time (dean/intersection s0 s1))           ;; 500K: ~164ms (clojure.set: 870ms)
-(time (dean/difference s0 s1))             ;; 500K: ~114ms (clojure.set: 977ms)
+(dean/union s0 s1)                         ;; 129ms (clojure.set: 1.1s)
+(dean/intersection s0 s1)                  ;; 91ms (clojure.set: 870ms)
+(dean/difference s0 s1)                    ;; 102ms (clojure.set: 977ms)
+
+;; Map merge: parallel divide-and-conquer for large maps
+(def m1 (dean/ordered-map (map #(vector % %) (range 15000))))
+(def m2 (dean/ordered-map (map #(vector % (* 2 %)) (range 10000 25000))))
+(dean/ordered-merge-with (fn [k a b] (+ a b)) m1 m2)  ;; ~10ms
 ```
 
 ### Testing

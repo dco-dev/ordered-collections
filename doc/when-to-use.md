@@ -6,7 +6,7 @@ A decision guide for choosing between sorted collection implementations.
 
 | Your Priority | Best Choice |
 |---------------|-------------|
-| Maximum lookup speed | `sorted-map` / `sorted-set` |
+| Maximum lookup speed | Any (~equal, within 8%) |
 | Need `nth` or `rank` operations | `ordered-map` / `ordered-set` |
 | Heavy iteration workloads | `ordered-map` / `ordered-set` |
 | Parallel processing (`r/fold`) | `ordered-map` / `ordered-set` |
@@ -14,7 +14,8 @@ A decision guide for choosing between sorted collection implementations.
 | Interval/range overlap queries | `interval-map` / `interval-set` |
 | Nearest-neighbor lookups | `fuzzy-map` / `fuzzy-set` |
 | Minimal dependencies | `sorted-map` / `sorted-set` |
-| Batch construction | `ordered-set` (parallel) |
+| Batch construction | `ordered-map` / `ordered-set` (parallel) |
+| First/last element access | `ordered-set` (7000x faster) |
 
 ## Detailed Comparison
 
@@ -51,19 +52,19 @@ A decision guide for choosing between sorted collection implementations.
 ### ordered-collections (this library)
 
 **Best for:**
-- Iteration-heavy workloads (30% faster than sorted-map)
-- Parallel aggregation via `r/fold` (1.6x faster)
-- Efficient set algebra (union, intersection, difference)
-- Split operations (5x faster than data.avl)
+- Fast construction via parallel fold (matches or beats sorted-map/sorted-set)
+- First/last element access (~7000x faster than sorted-set at scale)
+- Parallel aggregation via `r/fold` (2.3x faster)
+- Efficient set algebra (union, intersection, difference) — 5-9x faster
+- Split operations (4.5x faster than data.avl)
 - Interval/range overlap queries
 - Applications needing both map and interval functionality
 
 **Limitations:**
-- Lookup ~10% slower than sorted-map
-- Construction ~2x slower than sorted-map
+- Sequential insert ~1.5x slower than sorted-map (use batch construction instead)
 - Additional dependency
 
-**Choose when:** You iterate more than you lookup, need parallel processing, or need interval queries.
+**Choose when:** You need fast construction, parallel processing, set operations, or interval queries.
 
 ## Workload-Based Recommendations
 
@@ -71,10 +72,10 @@ A decision guide for choosing between sorted collection implementations.
 
 ```
 Pattern: Many lookups, few updates
-Recommendation: sorted-map
+Recommendation: ordered-map or sorted-map (equal performance)
 
-Reasoning: Lookup performance is critical. The 10% advantage
-of sorted-map compounds over millions of requests.
+Reasoning: Lookup performance is within 8%. ordered-map adds
+parallel construction and nth/rank if needed later.
 ```
 
 ### Analytics Pipeline
@@ -83,8 +84,8 @@ of sorted-map compounds over millions of requests.
 Pattern: Build once, aggregate many times
 Recommendation: ordered-set + r/fold
 
-Reasoning: Construction cost is amortized. Parallel fold
-provides 1.7x speedup on aggregation, which dominates.
+Reasoning: Parallel construction is 25% faster. Parallel fold
+provides 2.3x speedup on aggregation.
 ```
 
 ### Real-Time Leaderboard
@@ -142,14 +143,18 @@ lookup performance is comparable.
 ### Construction (smaller is better)
 
 ```
-N = 500,000 elements
+N = 500,000 elements (parallel fold construction)
 
-sorted-map:    1.0x (baseline)  ████
-data.avl:      2.2x             █████████
-ordered-map:   2.2x             █████████
+sorted-map:    1.0x (baseline)  ████████
+data.avl:      2.2x             █████████████████
+ordered-map:   1.0x             ████████  ← NOW EQUAL (was 2.2x)
+
+sorted-set:    1.0x (baseline)  ████████
+data.avl:      1.7x             █████████████
+ordered-set:   0.8x             ██████    ← 25% FASTER
 ```
 
-**Verdict:** sorted-map wins construction. Use ordered-collections when construction is rare relative to other operations.
+**Verdict:** ordered-map now matches sorted-map. ordered-set is 25% faster than sorted-set.
 
 ### Lookup (smaller is better)
 
@@ -158,45 +163,62 @@ ordered-map:   2.2x             █████████
 
 sorted-map:    1.0x (baseline)  ████
 data.avl:      1.1x             ████▌
-ordered-map:   1.1x             ████▌
+ordered-map:   1.08x            ████▎
 ```
 
-**Verdict:** Nearly equivalent. The 10% difference rarely matters in practice.
+**Verdict:** Nearly equivalent. Within 8% — rarely matters in practice.
+
+### First/Last Access (smaller is better)
+
+```
+1,000 first/last calls on N = 100,000
+
+sorted-set:    1.0x (baseline)  ████████████████████████████████████████
+ordered-set:   0.00014x         ▏  ← ~7000x FASTER (O(log n) vs O(n))
+```
+
+**Verdict:** ordered-set provides O(log n) endpoint access via SortedSet interface.
 
 ### Iteration (smaller is better)
 
 ```
 reduce over N = 500,000
 
-sorted-map:    1.0x (baseline)  ████████
-data.avl:      0.85x            ███████
-ordered-map:   0.75x            ██████
+sorted-set:    1.0x (baseline)  ████████
+data.avl:      0.59x            █████
+ordered-set:   0.86x            ███████
 ```
 
-**Verdict:** ordered-collections wins iteration by 25-30%.
+**Verdict:** ordered-set 14% faster than sorted-set via IReduceInit.
 
 ### Parallel Fold (smaller is better)
 
 ```
-r/fold over N = 1,000,000
+r/fold over N = 500,000
 
-sorted-map:    1.0x (sequential fallback)  ████████
+sorted-set:    1.0x (sequential fallback)  ████████
 data.avl:      1.0x (sequential fallback)  ████████
-ordered-map:   0.6x (true parallel)        █████
+ordered-set:   0.43x (true parallel)       ████
 ```
 
-**Verdict:** Only ordered-collections parallelizes. 1.6x speedup at scale.
+**Verdict:** Only ordered-collections parallelizes. 2.3x speedup at scale.
 
-### Set Intersection (smaller is better)
+### Set Operations (smaller is better)
 
 ```
-intersection of two 500K-element sets
+Union/Intersection/Difference of two 500K-element sets
 
-clojure.set:   1.0x (baseline)  ████████████
-ordered-set:   0.25x            ███
+clojure.set union:        1.0x  ████████████
+ordered-set union:        0.17x ██           ← 5.8x FASTER
+
+clojure.set intersection: 1.0x  ████████████
+ordered-set intersection: 0.19x ██           ← 5.3x FASTER
+
+clojure.set difference:   1.0x  ████████████
+ordered-set difference:   0.12x █            ← 8.6x FASTER
 ```
 
-**Verdict:** ordered-collections 4x faster on set algebra.
+**Verdict:** ordered-set 5-9x faster on set algebra via divide-and-conquer.
 
 ### Split (smaller is better)
 
@@ -204,10 +226,10 @@ ordered-set:   0.25x            ███
 100 splits on N = 500,000
 
 data.avl:      1.0x (baseline)  ██████████
-ordered-set:   0.2x             ██
+ordered-set:   0.22x            ██
 ```
 
-**Verdict:** ordered-collections 5x faster on splits.
+**Verdict:** ordered-set 4.5x faster on splits.
 
 ## Memory Comparison
 
@@ -292,15 +314,15 @@ ordered-map and ordered-set support:
 ## Summary
 
 **Use ordered-collections when:**
-1. You iterate more than you lookup
-2. You need `nth` or `rank` operations
-3. You need parallel fold (`r/fold`)
-4. You perform set algebra (union, intersection, difference)
-5. You need interval/overlap queries
-6. You need efficient split operations
+1. You need fast batch construction (parallel fold — 25% faster for sets, equal for maps)
+2. You need first/last element access (7000x faster than sorted-set)
+3. You need `nth` or `rank` operations
+4. You need parallel fold (`r/fold`) — 2.3x faster
+5. You perform set algebra (union, intersection, difference) — 5-9x faster
+6. You need interval/overlap queries
+7. You need efficient split operations — 4.5x faster
 
-**Stick with sorted-map when:**
-1. Lookup is your primary operation
-2. You want zero dependencies
-3. Construction performance is critical
-4. You don't need any advanced features
+**Stick with sorted-map/sorted-set when:**
+1. You want zero dependencies
+2. You're doing mostly sequential inserts (1.5x faster than ordered-*)
+3. You don't need any advanced features

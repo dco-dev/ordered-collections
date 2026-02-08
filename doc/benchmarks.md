@@ -26,57 +26,59 @@
 
 | N | sorted-map | data.avl | ordered-map |
 |---|------------|----------|-------------|
-| 10,000 | 19 ms | 52 ms | 41 ms |
-| 100,000 | 263 ms | 507 ms | 452 ms |
-| 500,000 | 1.2 s | 2.7 s | 2.5 s |
+| 10,000 | 14 ms | 27 ms | **19 ms** |
+| 100,000 | 192 ms | 411 ms | **219 ms** |
+| 500,000 | 1.2 s | 2.7 s | **1.2 s** |
 
-**Ratio vs sorted-map at 500K**: ordered-map 2.1x slower
+**ordered-map construction now matches sorted-map** due to parallel fold during bulk loading.
 
 ### Insert: assoc one element at a time from empty
 
 | N | sorted-map | data.avl | ordered-map |
 |---|------------|----------|-------------|
-| 10,000 | 13 ms | 31 ms | 29 ms |
-| 100,000 | 178 ms | 408 ms | 402 ms |
-| 500,000 | 1.1 s | 2.5 s | 2.4 s |
+| 10,000 | 14 ms | 31 ms | 31 ms |
+| 100,000 | 180 ms | 421 ms | 403 ms |
+| 500,000 | 1.1 s | 2.5 s | 2.5 s |
 
-**Ratio vs sorted-map at 500K**: ordered-map 2.2x slower
+**Ratio vs sorted-map at 500K**: ordered-map 2.3x slower (use batch construction instead)
 
 ### Delete: dissoc half the elements one at a time
 
 | N | sorted-map | data.avl | ordered-map |
 |---|------------|----------|-------------|
-| 10,000 | 6 ms | 16 ms | 15 ms |
-| 100,000 | 114 ms | 203 ms | 204 ms |
-| 500,000 | 649 ms | 1.3 s | 1.2 s |
+| 10,000 | 6 ms | 15 ms | 13 ms |
+| 100,000 | 113 ms | 208 ms | 199 ms |
+| 500,000 | 642 ms | 1.3 s | 1.2 s |
 
-**Ratio vs sorted-map at 500K**: ordered-map 1.8x slower
+**Ratio vs sorted-map at 500K**: ordered-map 1.9x slower
 
 ### Lookup: 10,000 random lookups on map of size N
 
 | N | sorted-map | data.avl | ordered-map |
 |---|------------|----------|-------------|
-| 10,000 | 6.2 ms | 9.1 ms | 8.3 ms |
-| 100,000 | 8.5 ms | 11.8 ms | 11.1 ms |
-| 500,000 | 13.6 ms | 17.1 ms | 16.2 ms |
+| 10,000 | 5.8 ms | 7.9 ms | 7.8 ms |
+| 100,000 | 8.5 ms | 11.8 ms | 10.7 ms |
+| 500,000 | 13.8 ms | 15.2 ms | 15.0 ms |
 
-**Ratio vs sorted-map at 500K**: ordered-map 1.19x slower
+**Ratio vs sorted-map at 500K**: ordered-map 1.08x slower (~equal)
 
 ### Iteration: reduce over all N entries
 
 | N | sorted-map | data.avl | ordered-map |
 |---|------------|----------|-------------|
-| 10,000 | 2.3 ms | 1.5 ms | 2.3 ms |
-| 100,000 | 22 ms | 17 ms | 21 ms |
-| 500,000 | 119 ms | 91 ms | 124 ms |
+| 10,000 | 2.0 ms | 1.5 ms | 2.1 ms |
+| 100,000 | 23 ms | 16 ms | 21 ms |
+| 500,000 | 121 ms | 95 ms | 120 ms |
+
+**Ratio vs sorted-map at 500K**: ordered-map ~equal
 
 ### Seq Iteration: traverse via (seq m)
 
 | N | sorted-map | data.avl | ordered-map |
 |---|------------|----------|-------------|
-| 10,000 | 2.0 ms | 3.0 ms | 5.0 ms |
-| 100,000 | 27 ms | 31 ms | 49 ms |
-| 500,000 | 134 ms | 165 ms | 269 ms |
+| 10,000 | 2.0 ms | 2.9 ms | 5.7 ms |
+| 100,000 | 27 ms | 32 ms | 51 ms |
+| 500,000 | 136 ms | 173 ms | 266 ms |
 
 Note: Seq iteration is slower because it uses the lazy enumerator path, not the optimized `IReduceInit` path.
 
@@ -86,49 +88,51 @@ Note: Seq iteration is slower because it uses the lazy enumerator path, not the 
 
 | N | sorted-set | data.avl | ordered-set |
 |---|------------|----------|-------------|
-| 10,000 | 16 ms | 27 ms | **18 ms** |
-| 100,000 | 242 ms | 358 ms | **222 ms** |
+| 10,000 | 17 ms | 28 ms | **18 ms** |
+| 100,000 | 248 ms | 390 ms | **212 ms** |
 | 500,000 | 1.5 s | 2.5 s | **1.2 s** |
 
-**ordered-set construction is 20% faster than sorted-set** due to parallel fold during bulk loading.
+**ordered-set construction is 25% faster than sorted-set** due to parallel fold during bulk loading.
 
 ### Insert: conj one element at a time from empty
 
 | N | sorted-set | data.avl | ordered-set |
 |---|------------|----------|-------------|
-| 10,000 | 19 ms | 31 ms | 31 ms |
-| 100,000 | 245 ms | 404 ms | 399 ms |
+| 10,000 | 22 ms | 39 ms | 35 ms |
+| 100,000 | 289 ms | 508 ms | 430 ms |
 | 500,000 | 1.6 s | 2.5 s | 2.5 s |
+
+**Sequential insert is 1.6x slower than sorted-set** (use batch construction instead)
 
 ### Delete: disj half the elements one at a time
 
 | N | sorted-set | data.avl | ordered-set |
 |---|------------|----------|-------------|
-| 10,000 | 10 ms | 16 ms | 16 ms |
-| 100,000 | 148 ms | 217 ms | **195 ms** |
-| 500,000 | 840 ms | 1.3 s | **1.2 s** |
+| 10,000 | 10 ms | 16 ms | 15 ms |
+| 100,000 | 146 ms | 223 ms | **200 ms** |
+| 500,000 | 870 ms | 1.4 s | **1.2 s** |
 
-**ordered-set delete is 10% faster than data.avl**
+**ordered-set delete is 14% faster than data.avl**
 
 ### Lookup: 10,000 random contains? checks
 
 | N | sorted-set | data.avl | ordered-set |
 |---|------------|----------|-------------|
-| 10,000 | 6.8 ms | 9.8 ms | 9.1 ms |
-| 100,000 | 8.6 ms | 11.8 ms | 11.6 ms |
-| 500,000 | 12.0 ms | 16.4 ms | **15.1 ms** |
+| 10,000 | 6.7 ms | 9.7 ms | 8.9 ms |
+| 100,000 | 9.0 ms | 12.0 ms | 11.0 ms |
+| 500,000 | 14.2 ms | 17.7 ms | **15.2 ms** |
 
-**ordered-set lookup is 8% faster than data.avl**
+**ordered-set lookup is 14% faster than data.avl, 7% slower than sorted-set**
 
 ### Iteration: reduce over all N elements
 
 | N | sorted-set | data.avl | ordered-set |
 |---|------------|----------|-------------|
-| 10,000 | 1.5 ms | 1.0 ms | 1.4 ms |
-| 100,000 | 17 ms | 9 ms | 14 ms |
-| 500,000 | 96 ms | 53 ms | 81 ms |
+| 10,000 | 1.5 ms | 0.9 ms | 1.3 ms |
+| 100,000 | 17 ms | 11 ms | 14 ms |
+| 500,000 | 95 ms | 56 ms | **82 ms** |
 
-**ordered-set iteration is 16% faster than sorted-set** via `IReduceInit`.
+**ordered-set iteration is 14% faster than sorted-set** via `IReduceInit`.
 
 ## Parallel Fold Benchmarks (r/fold)
 
@@ -230,6 +234,56 @@ data.avl has O(1) rank access via cached ranks; ordered-set uses O(log n) tree d
 
 **ordered-set split is 4.5x faster than data.avl** due to efficient tree splitting algorithm.
 
+### First/Last Element Access: 1,000 first/last calls
+
+| N | sorted-set | data.avl | ordered-set | speedup vs sorted-set |
+|---|------------|----------|-------------|----------------------|
+| 1,000 | 192 ms | 335 ms | **3.0 ms** | 64x |
+| 10,000 | 1.7 s | 3.2 s | **3.4 ms** | 500x |
+| 100,000 | 17.0 s | 32.2 s | **2.4 ms** | **~7000x** |
+
+**ordered-set first/last is O(log n)** via `java.util.SortedSet` interface, while `sorted-set` must traverse via seq (O(n) for `last`).
+
+**Note**: Clojure's `first` on sorted-set is O(1), but `last` requires full seq traversal. ordered-set provides O(log n) access to both endpoints via the `java.util.SortedSet` interface methods `.first` and `.last`.
+
+## Interval Tree Benchmarks
+
+### Interval Set Construction: Build from N random intervals
+
+| N | interval-set |
+|---|--------------|
+| 10,000 | 111 ms |
+| 100,000 | 1.5 s |
+| 500,000 | 8.7 s |
+
+Interval tree construction includes maintaining augmented max values at each node.
+
+### Interval Set Query: 1,000 overlap queries
+
+| N | interval-set |
+|---|--------------|
+| 10,000 | 46 ms |
+| 100,000 | 166 ms |
+| 500,000 | 697 ms |
+
+Queries return all intervals that overlap with the query interval. Query time scales with both tree size and number of matching intervals.
+
+### Interval Map Construction
+
+| N | interval-map |
+|---|--------------|
+| 10,000 | 106 ms |
+| 100,000 | 1.5 s |
+| 500,000 | 8.7 s |
+
+### Interval Map Query: 1,000 overlap queries
+
+| N | interval-map |
+|---|--------------|
+| 10,000 | 43 ms |
+| 100,000 | 176 ms |
+| 500,000 | 722 ms |
+
 ## String Keys (Custom Comparator)
 
 ### Construction
@@ -261,46 +315,61 @@ data.avl has O(1) rank access via cached ranks; ordered-set uses O(log n) tree d
 ### When to use ordered-set
 
 **Best for**:
+- Bulk construction (25% faster than sorted-set via parallel fold)
 - Set operations: union, intersection, difference (5-9x faster than clojure.set)
-- Bulk construction (20% faster than sorted-set)
+- First/last element access (~7000x faster than sorted-set at scale)
 - Parallel fold operations (2.3x faster via `r/fold`)
 - Split operations (4.5x faster than data.avl)
-- Delete operations (10% faster than data.avl)
+- Delete operations (14% faster than data.avl)
 - Applications needing interval tree functionality
 - Use with `subseq`/`rsubseq` (full `clojure.lang.Sorted` support)
 
 **Comparable to**:
-- Lookup performance (within 10% of data.avl)
-- Iteration via reduce (faster than sorted-set)
+- Lookup performance (7% slower than sorted-set, 14% faster than data.avl)
+- Iteration via reduce (14% faster than sorted-set)
 
 **Slower than sorted-set**:
-- Sequential insert (~1.6x)
+- Sequential insert (~1.6x) — use batch construction instead
 
 ### When to use ordered-map
 
 **Best for**:
+- Bulk construction (matches sorted-map via parallel fold)
 - Applications needing consistent API with ordered-set
 - Interval map functionality
 - `subseq`/`rsubseq` support
 
 **Trade-offs**:
-- Construction and mutation slower than sorted-map (~2x)
-- Lookup slightly slower (~1.2x)
+- Sequential insert 2.3x slower than sorted-map (use batch construction instead)
+- Lookup 8% slower than sorted-map (~equal)
 
 ### Performance Ratios at N=500K
 
-| Operation | ordered-set vs sorted-set | ordered-set vs data.avl |
-|-----------|---------------------------|-------------------------|
-| Construction | **0.80x faster** | **0.48x faster** |
+**ordered-set vs alternatives:**
+
+| Operation | vs sorted-set | vs data.avl |
+|-----------|---------------|-------------|
+| Construction | **1.25x faster** | **2.1x faster** |
 | Insert | 1.56x slower | same |
-| Delete | 1.43x slower | **0.92x faster** |
-| Lookup | 1.26x slower | **0.92x faster** |
-| Iteration | **0.84x faster** | 1.51x slower |
+| Delete | 1.38x slower | **1.17x faster** |
+| Lookup | 1.07x slower | **1.16x faster** |
+| Iteration | **1.16x faster** | 1.46x slower |
+| First/last | **~7000x faster** | same |
 | Parallel fold | **2.3x faster** | **4.0x faster** |
 | Split | N/A | **4.5x faster** |
 | Union | **5.8x faster** vs clojure.set | — |
 | Intersection | **5.3x faster** vs clojure.set | — |
 | Difference | **8.6x faster** vs clojure.set | — |
+
+**ordered-map vs alternatives:**
+
+| Operation | vs sorted-map | vs data.avl |
+|-----------|---------------|-------------|
+| Construction | **equal** | **2.3x faster** |
+| Insert | 2.27x slower | same |
+| Delete | 1.87x slower | **1.08x faster** |
+| Lookup | 1.08x slower | **1.01x faster** |
+| Iteration | ~equal | 1.26x slower |
 
 ## Running Benchmarks
 
@@ -321,7 +390,9 @@ The benchmark suite provides fast, repeatable measurements:
 (bench/run-map-benchmarks [10000 100000 500000])
 (bench/run-set-benchmarks [10000 100000 500000])
 (bench/run-set-operations-benchmarks [10000 100000 500000])
+(bench/run-interval-benchmarks [10000 100000 500000])
 (bench/run-specialty-benchmarks [10000 100000 500000])
+(bench/bench-first-last-access [10000 100000])
 (bench/run-string-benchmarks [10000 100000 500000])
 (bench/run-parallel-benchmarks [10000 100000 500000])
 ```
