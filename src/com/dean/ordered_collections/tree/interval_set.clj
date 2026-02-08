@@ -52,28 +52,48 @@
 
   IIntervalCollection
 
-  ;; TODO: how should these work for interval-set?
   PExtensibleSet
   (intersection [this that]
     (with-interval-set this
       (cond
         (identical? this that)    this
-        (.isCompatible this that) (IntervalSet. (tree/node-set-intersection root (.getRoot ^INodeCollection that))
-                                       cmp alloc stitch {})
+        (.isCompatible this that)
+        (let [that-root (.getRoot ^INodeCollection that)
+              use-parallel? (>= (+ (tree/node-size root) (tree/node-size that-root))
+                                tree/+parallel-threshold+)]
+          (IntervalSet.
+           (if use-parallel?
+             (tree/node-set-intersection-parallel root that-root)
+             (tree/node-set-intersection root that-root))
+           cmp alloc stitch {}))
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
   (union [this that]
     (with-interval-set this
       (cond
         (identical? this that)    this
-        (.isCompatible this that) (IntervalSet. (tree/node-set-union root (.getRoot ^INodeCollection that))
-                                       cmp alloc stitch {})
+        (.isCompatible this that)
+        (let [that-root (.getRoot ^INodeCollection that)
+              use-parallel? (>= (+ (tree/node-size root) (tree/node-size that-root))
+                                tree/+parallel-threshold+)]
+          (IntervalSet.
+           (if use-parallel?
+             (tree/node-set-union-parallel root that-root)
+             (tree/node-set-union root that-root))
+           cmp alloc stitch {}))
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
   (difference [this that]
     (with-interval-set this
       (cond
         (identical? this that)    (.empty this)
-        (.isCompatible this that) (IntervalSet. (tree/node-set-difference root (.getRoot ^INodeCollection that))
-                                       cmp alloc stitch {})
+        (.isCompatible this that)
+        (let [that-root (.getRoot ^INodeCollection that)
+              use-parallel? (>= (+ (tree/node-size root) (tree/node-size that-root))
+                                tree/+parallel-threshold+)]
+          (IntervalSet.
+           (if use-parallel?
+             (tree/node-set-difference-parallel root that-root)
+             (tree/node-set-difference root that-root))
+           cmp alloc stitch {}))
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
   (subset [this that]
     (with-interval-set this
@@ -173,10 +193,10 @@
     cmp)
   (first [this]
     (with-interval-set this
-      (node/-k (tree/node-least root))))
+      (first (tree/node-least-kv root))))
   (last [this]
     (with-interval-set this
-      (node/-k (tree/node-greatest root))))
+      (first (tree/node-greatest-kv root))))
 
   clojure.lang.IPersistentSet
   (equiv [this o]
