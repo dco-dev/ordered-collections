@@ -203,10 +203,10 @@
     cmp)
   (first [this]
     (with-fuzzy-set this
-      (node/-k (tree/node-least root))))
+      (first (tree/node-least-kv root))))
   (last [this]
     (with-fuzzy-set this
-      (node/-k (tree/node-greatest root))))
+      (first (tree/node-greatest-kv root))))
   (headSet [this x]
     (with-fuzzy-set this
       (new FuzzySet (tree/node-split-lesser root x) cmp distance-fn tiebreak {})))
@@ -259,7 +259,7 @@
   (empty [_]
     (new FuzzySet (node/leaf) cmp distance-fn tiebreak {}))
   (contains [this k]
-    (if (tree/node-find root k cmp) true false))
+    (tree/node-contains? root k cmp))
   (disjoin [this k]
     (new FuzzySet (tree/node-remove root k cmp tree/node-create-weight-balanced) cmp distance-fn tiebreak _meta))
   (cons [this k]

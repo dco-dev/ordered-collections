@@ -194,15 +194,15 @@
   "Split a full ArrayLeaf after inserting k/v, returning [mid-k mid-v left-al right-al].
    The middle element becomes the root key of a new internal node.
    Left ArrayLeaf contains elements < mid, right contains elements > mid.
-   Precondition: ArrayLeaf is at max capacity."
+   Precondition: ArrayLeaf is at max capacity.
+
+   Optimized to allocate left/right arrays directly without intermediate temp arrays."
   [^ArrayLeaf node k v ^java.util.Comparator cmp]
   (let [^objects ks (.ks node)
         ^objects vs (.vs node)
         size     (.size node)
-        ;; Create temporary arrays with the new element inserted
         new-size (inc size)
-        temp-ks  (object-array new-size)
-        temp-vs  (object-array new-size)
+        mid      (quot new-size 2)
         ;; Find insertion point
         idx      (array-leaf-binary-search node k cmp)
         ins      (if (>= idx 0) idx (- (- idx) 1))]
@@ -212,38 +212,68 @@
       (let [new-vs (aclone vs)]
         (aset new-vs idx v)
         [k v (ArrayLeaf. ks new-vs size) nil])
-      ;; Normal case: insert and split
-      (do
-        ;; Copy elements before insertion point
-        (when (pos? ins)
-          (System/arraycopy ks 0 temp-ks 0 ins)
-          (System/arraycopy vs 0 temp-vs 0 ins))
-        ;; Insert new element
-        (aset temp-ks ins k)
-        (aset temp-vs ins v)
-        ;; Copy elements after insertion point
-        (when (< ins size)
-          (System/arraycopy ks ins temp-ks (inc ins) (- size ins))
-          (System/arraycopy vs ins temp-vs (inc ins) (- size ins)))
-        ;; Now split: mid is at new-size/2
-        (let [mid      (quot new-size 2)
-              mid-k    (aget temp-ks mid)
-              mid-v    (aget temp-vs mid)
-              ;; Left: elements [0, mid)
-              left-size mid
-              left-ks   (object-array left-size)
-              left-vs   (object-array left-size)
-              ;; Right: elements (mid, new-size)
-              right-size (- new-size mid 1)
-              right-ks   (object-array right-size)
-              right-vs   (object-array right-size)]
-          (System/arraycopy temp-ks 0 left-ks 0 left-size)
-          (System/arraycopy temp-vs 0 left-vs 0 left-size)
-          (System/arraycopy temp-ks (inc mid) right-ks 0 right-size)
-          (System/arraycopy temp-vs (inc mid) right-vs 0 right-size)
-          [mid-k mid-v
-           (ArrayLeaf. left-ks left-vs left-size)
-           (ArrayLeaf. right-ks right-vs right-size)])))))
+      ;; Normal case: compute mid element and build left/right directly
+      (let [;; Calculate which element will be at mid position after virtual insertion
+            mid-k (cond (< ins mid) (aget ks (dec mid))
+                        (= ins mid) k
+                        :else       (aget ks mid))
+            mid-v (cond (< ins mid) (aget vs (dec mid))
+                        (= ins mid) v
+                        :else       (aget vs mid))
+            ;; Left: elements [0, mid) in the virtual inserted array
+            left-size mid
+            left-ks   (object-array left-size)
+            left-vs   (object-array left-size)
+            ;; Right: elements (mid, new-size) in the virtual inserted array
+            right-size (- new-size mid 1)
+            right-ks   (object-array right-size)
+            right-vs   (object-array right-size)]
+        ;; Fill left array: positions [0, mid) of virtual array
+        (cond
+          ;; Insertion point is at or after mid - left array is pure copy from source
+          (>= ins mid)
+          (do
+            (System/arraycopy ks 0 left-ks 0 left-size)
+            (System/arraycopy vs 0 left-vs 0 left-size))
+          ;; Insertion point is within left array
+          :else
+          (do
+            ;; Copy [0, ins) from source
+            (when (pos? ins)
+              (System/arraycopy ks 0 left-ks 0 ins)
+              (System/arraycopy vs 0 left-vs 0 ins))
+            ;; Insert new element
+            (aset left-ks ins k)
+            (aset left-vs ins v)
+            ;; Copy [ins, mid-1) from source to [ins+1, mid)
+            (when (< (inc ins) left-size)
+              (System/arraycopy ks ins left-ks (inc ins) (- left-size ins 1))
+              (System/arraycopy vs ins left-vs (inc ins) (- left-size ins 1)))))
+        ;; Fill right array: positions (mid, new-size) of virtual array
+        (let [src-start (if (< ins mid) mid (inc mid))]  ;; adjusted for insertion
+          (cond
+            ;; Insertion point is before or at mid - right array is pure copy from source
+            (<= ins mid)
+            (do
+              (System/arraycopy ks src-start right-ks 0 right-size)
+              (System/arraycopy vs src-start right-vs 0 right-size))
+            ;; Insertion point is within right array
+            :else
+            (let [right-ins (- ins mid 1)]  ;; position within right array
+              ;; Copy [mid+1, ins) from source
+              (when (pos? right-ins)
+                (System/arraycopy ks (inc mid) right-ks 0 right-ins)
+                (System/arraycopy vs (inc mid) right-vs 0 right-ins))
+              ;; Insert new element
+              (aset right-ks right-ins k)
+              (aset right-vs right-ins v)
+              ;; Copy [ins, size) from source
+              (when (< (inc right-ins) right-size)
+                (System/arraycopy ks ins right-ks (inc right-ins) (- right-size right-ins 1))
+                (System/arraycopy vs ins right-vs (inc right-ins) (- right-size right-ins 1))))))
+        [mid-k mid-v
+         (ArrayLeaf. left-ks left-vs left-size)
+         (ArrayLeaf. right-ks right-vs right-size)]))))
 
 (defn array-leaf-from-sorted
   "Create an ArrayLeaf from pre-sorted arrays. Arrays are used directly (not copied)."

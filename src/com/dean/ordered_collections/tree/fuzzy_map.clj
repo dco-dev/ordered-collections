@@ -209,10 +209,10 @@
     cmp)
   (firstKey [this]
     (with-fuzzy-map this
-      (node/-k (tree/node-least root))))
+      (first (tree/node-least-kv root))))
   (lastKey [this]
     (with-fuzzy-map this
-      (node/-k (tree/node-greatest root))))
+      (first (tree/node-greatest-kv root))))
   (headMap [this k]
     (with-fuzzy-map this
       (new FuzzyMap (tree/node-split-lesser root k) cmp distance-fn tiebreak {})))
@@ -255,7 +255,7 @@
 
   clojure.lang.Associative
   (containsKey [this k]
-    (if (tree/node-find root k cmp) true false))
+    (tree/node-contains? root k cmp))
   (entryAt [this k]
     (some-> root (tree/node-find k cmp) node/-kv))
   (assoc [this k v]

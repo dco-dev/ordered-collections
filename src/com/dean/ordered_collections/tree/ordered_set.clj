@@ -56,24 +56,45 @@
     (with-ordered-set this
       (cond
         (identical? this that)    this
-        (.isCompatible this that) (new OrderedSet (tree/node-set-intersection root (.getRoot ^OrderedSet that))
-                                       cmp alloc stitch {})
+        (.isCompatible this that)
+        (let [that-root (.getRoot ^OrderedSet that)
+              use-parallel? (>= (+ (tree/node-size root) (tree/node-size that-root))
+                                tree/+parallel-threshold+)]
+          (new OrderedSet
+               (if use-parallel?
+                 (tree/node-set-intersection-parallel root that-root)
+                 (tree/node-set-intersection root that-root))
+               cmp alloc stitch {}))
         (.isSimilar this that)    (clojure.set/intersection (into #{} this) that)
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
   (union [this that]
     (with-ordered-set this
       (cond
         (identical? this that)    this
-        (.isCompatible this that) (new OrderedSet (tree/node-set-union root (.getRoot ^OrderedSet that))
-                                       cmp alloc stitch {})
+        (.isCompatible this that)
+        (let [that-root (.getRoot ^OrderedSet that)
+              use-parallel? (>= (+ (tree/node-size root) (tree/node-size that-root))
+                                tree/+parallel-threshold+)]
+          (new OrderedSet
+               (if use-parallel?
+                 (tree/node-set-union-parallel root that-root)
+                 (tree/node-set-union root that-root))
+               cmp alloc stitch {}))
         (.isSimilar this that)    (clojure.set/union (into #{} this) that)
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
   (difference [this that]
     (with-ordered-set this
       (cond
         (identical? this that)    (.empty this)
-        (.isCompatible this that) (new OrderedSet (tree/node-set-difference root (.getRoot ^OrderedSet that))
-                                       cmp alloc stitch{})
+        (.isCompatible this that)
+        (let [that-root (.getRoot ^OrderedSet that)
+              use-parallel? (>= (+ (tree/node-size root) (tree/node-size that-root))
+                                tree/+parallel-threshold+)]
+          (new OrderedSet
+               (if use-parallel?
+                 (tree/node-set-difference-parallel root that-root)
+                 (tree/node-set-difference root that-root))
+               cmp alloc stitch {}))
         (.isSimilar this that)    (clojure.set/difference (into #{} this) that)
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
   (subset [this that]
@@ -116,9 +137,7 @@
 
   clojure.lang.ILookup
   (valAt [this k not-found]
-    (if-let [found (tree/node-find root k cmp)]
-      (node/-k found)
-      not-found))
+    (if (tree/node-contains? root k cmp) k not-found))
   (valAt [this k]
     (.valAt this k nil))
 
@@ -184,10 +203,10 @@
     cmp)
   (first [this]
     (with-ordered-set this
-      (node/-k (tree/node-least root))))
+      (first (tree/node-least-kv root))))
   (last [this]
     (with-ordered-set this
-      (node/-k (tree/node-greatest root))))
+      (first (tree/node-greatest-kv root))))
   (headSet [this x]
     ;; elements < x (exclusive)
     (with-ordered-set this
@@ -220,13 +239,15 @@
       (let [[_ x' r] (tree/node-split root x)]
         (if (some? x')
           (first x')
-          (some-> (tree/node-least r) node/-k)))))
+          (when-not (node/leaf? r)
+            (first (tree/node-least-kv r)))))))
   (floor [this x]
     (with-ordered-set this
       (let [[l x' _] (tree/node-split root x)]
         (if (some? x')
           (first x')
-          (some-> (tree/node-greatest l) node/-k)))))
+          (when-not (node/leaf? l)
+            (first (tree/node-greatest-kv l)))))))
 
   clojure.lang.Sorted
   ;; comparator method is inherited from java.util.SortedSet above
@@ -264,7 +285,7 @@
   (empty [_]
     (new OrderedSet (node/leaf) cmp alloc stitch {}))
   (contains [this k]
-    (if (tree/node-find root k cmp) true false))
+    (tree/node-contains? root k cmp))
   (disjoin [this k]
     (new OrderedSet (tree/node-remove root k cmp tree/node-create-weight-balanced) cmp alloc stitch _meta))
   (cons [this k]

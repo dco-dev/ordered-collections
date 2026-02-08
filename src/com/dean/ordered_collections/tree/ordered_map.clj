@@ -75,9 +75,7 @@
 
   clojure.lang.ILookup
   (valAt [this k not-found]
-    (if-let [found (tree/node-find root k cmp)]
-      (node/-v found)
-      not-found))
+    (tree/node-find-val root k not-found cmp))
   (valAt [this k]
     (.valAt this k nil))
 
@@ -109,7 +107,7 @@
 
   clojure.lang.Associative
   (containsKey [this k]
-    (some? (tree/node-find root k cmp)))
+    (tree/node-contains? root k cmp))
   (entryAt [this k]
     (some-> root (tree/node-find k cmp) node/-kv))
   (assoc [this k v]

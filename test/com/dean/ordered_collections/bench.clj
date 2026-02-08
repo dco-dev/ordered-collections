@@ -6,7 +6,8 @@
             [com.dean.ordered-collections.core :as core]
             [com.dean.ordered-collections.tree.node :as node]
             [com.dean.ordered-collections.tree.tree :as tree]
-            [com.dean.ordered-collections.tree.order :as order]))
+            [com.dean.ordered-collections.tree.order :as order]
+            [com.dean.ordered-collections.tree.interval :as interval]))
 
 (set! *warn-on-reflection* true)
 
@@ -521,6 +522,104 @@
   (bench-set-intersection sizes)
   (bench-set-difference sizes))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Interval Set/Map Benchmarks
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn bench-interval-set-construction
+  "Benchmark building an interval set from N random intervals."
+  [sizes]
+  (print-header "INTERVAL SET CONSTRUCTION: Build from N random intervals"
+                ["interval-set"])
+  (doseq [n sizes]
+    (let [intervals (mapv (fn [_]
+                            (let [a (rand-int 1000000)
+                                  b (+ a (rand-int 1000))]
+                              [a b]))
+                          (range n))]
+      (print-row n
+        [(bench 3 7 (core/interval-set intervals))]))))
+
+(defn bench-interval-set-query
+  "Benchmark interval overlap queries via get (returns overlapping intervals)."
+  [sizes]
+  (print-header "INTERVAL SET QUERY: 1,000 overlap queries on set of N intervals"
+                ["interval-set"])
+  (doseq [n sizes]
+    (let [intervals (mapv (fn [_]
+                            (let [a (rand-int 1000000)
+                                  b (+ a (rand-int 1000))]
+                              [a b]))
+                          (range n))
+          iset      (core/interval-set intervals)
+          ;; Create valid intervals for queries (a <= b)
+          queries   (vec (repeatedly 1000
+                           (fn [] (let [a (rand-int 1000000)] [a (+ a (rand-int 100))]))))]
+      (print-row n
+        [(bench 3 10 (doseq [q queries] (get iset q)))]))))
+
+(defn bench-interval-map-construction
+  "Benchmark building an interval map from N random intervals."
+  [sizes]
+  (print-header "INTERVAL MAP CONSTRUCTION: Build from N random interval key-value pairs"
+                ["interval-map"])
+  (doseq [n sizes]
+    (let [pairs (mapv (fn [i]
+                        (let [a (rand-int 1000000)
+                              b (+ a (rand-int 1000))]
+                          [[a b] i]))
+                      (range n))]
+      (print-row n
+        [(bench 3 7 (core/interval-map pairs))]))))
+
+(defn bench-interval-map-query
+  "Benchmark interval map overlap queries."
+  [sizes]
+  (print-header "INTERVAL MAP QUERY: 1,000 overlap queries on map of N intervals"
+                ["interval-map"])
+  (doseq [n sizes]
+    (let [pairs (mapv (fn [i]
+                        (let [a (rand-int 1000000)
+                              b (+ a (rand-int 1000))]
+                          [[a b] i]))
+                      (range n))
+          imap    (core/interval-map pairs)
+          ;; Create valid intervals for queries (a <= b)
+          queries (vec (repeatedly 1000
+                         (fn [] (let [a (rand-int 1000000)] [a (+ a (rand-int 100))]))))]
+      (print-row n
+        [(bench 3 10 (doseq [q queries] (get imap q)))]))))
+
+(defn run-interval-benchmarks
+  "Run interval set and map benchmarks."
+  [sizes]
+  (bench-interval-set-construction sizes)
+  (bench-interval-set-query sizes)
+  (bench-interval-map-construction sizes)
+  (bench-interval-map-query sizes))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; First/Last Element Access Benchmarks
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn bench-first-last-access
+  "Benchmark accessing first and last elements via seq (clojure first/last)."
+  [sizes]
+  (print-header "FIRST/LAST ACCESS: 1,000 first/last calls"
+                ["sorted-set" "data.avl" "ordered-set"])
+  (doseq [n sizes]
+    (let [elems (shuffle (range n))
+          ss    (into (sorted-set) elems)
+          as    (into (avl/sorted-set) elems)
+          os    (core/ordered-set elems)]
+      (print-row n
+        [(bench 2 5 (dotimes [_ 1000] (first ss) (last ss)))
+         (bench 2 5 (dotimes [_ 1000] (first as) (last as)))
+         ;; Use SortedSet interface for ordered-set (optimized path)
+         (bench 2 5 (dotimes [_ 1000]
+                      (.first ^java.util.SortedSet os)
+                      (.last ^java.util.SortedSet os)))]))))
+
 (defn run-specialty-benchmarks
   "Run benchmarks for specialty operations (rank, split)."
   [sizes]
@@ -566,9 +665,16 @@
 
    (println)
    (println "------------------------------------------------------------------------")
-   (println "                    SPECIALTY OPERATIONS (rank, split)")
+   (println "                    INTERVAL TREE OPERATIONS")
+   (println "------------------------------------------------------------------------")
+   (run-interval-benchmarks sizes)
+
+   (println)
+   (println "------------------------------------------------------------------------")
+   (println "                    SPECIALTY OPERATIONS (rank, split, first/last)")
    (println "------------------------------------------------------------------------")
    (run-specialty-benchmarks sizes)
+   (bench-first-last-access sizes)
 
    (println)
    (println "------------------------------------------------------------------------")

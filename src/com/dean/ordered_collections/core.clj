@@ -64,18 +64,70 @@
 ;; Ordered Map
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defn- ordered-map* [compare-fn coll]
+  (binding [order/*compare* compare-fn]
+    (->OrderedMap
+      (r/fold +chunk-size+
+              (fn
+                ([]      (node/leaf))
+                ([n0 n1] (tree/node-set-union n0 n1)))
+              (fn
+                ([n [k v]] (tree/node-add n k v))  ;; for seqs of pairs
+                ([n k v]   (tree/node-add n k v))) ;; for maps (kvreduce)
+              coll)
+      compare-fn nil nil {})))
+
 (defn ordered-map
   ([]
-   (ordered-map order/normal-compare nil))
+   (ordered-map* order/normal-compare nil))
   ([coll]
-   (ordered-map order/normal-compare coll))
+   (ordered-map* order/normal-compare coll))
   ([compare-fn coll]
-   (binding [order/*compare* compare-fn]
-     (->OrderedMap (reduce (fn [n [k v]] (tree/node-add n k v)) (node/leaf) coll)
-                   compare-fn nil nil {}))))
+   (ordered-map* compare-fn coll)))
 
 (defn ordered-map-by [pred coll]
-  (-> pred order/compare-by (ordered-map coll)))
+  (-> pred order/compare-by (ordered-map* (seq coll))))
+
+(defn ordered-merge-with
+  "Merge ordered maps with a function to resolve conflicts.
+   When the same key appears in multiple maps, (f key val-in-result val-in-latter) is called.
+   Uses parallel divide-and-conquer for large maps (threshold: 10000 elements).
+
+   Examples:
+     (ordered-merge-with (fn [k a b] (+ a b)) m1 m2)
+     (ordered-merge-with (fn [k a b] b) m1 m2 m3)  ; last-wins"
+  [f & maps]
+  (when (some identity maps)
+    (let [merge-fn (fn [k v1 v2] (f k v2 v1))  ;; swap order to match clojure.core/merge-with semantics
+          maps (filter identity maps)]
+      (if (empty? maps)
+        nil
+        (reduce
+          (fn [m1 m2]
+            (if (and (instance? com.dean.ordered_collections.tree.ordered_map.OrderedMap m1)
+                     (instance? com.dean.ordered_collections.tree.ordered_map.OrderedMap m2)
+                     (.isCompatible ^com.dean.ordered_collections.tree.root.IOrderedCollection m1 m2))
+              ;; Both are compatible ordered-maps: use fast tree merge
+              (let [^com.dean.ordered_collections.tree.root.INodeCollection m1c m1
+                    ^com.dean.ordered_collections.tree.root.INodeCollection m2c m2
+                    root1 (.getRoot m1c)
+                    root2 (.getRoot m2c)
+                    cmp (.getCmp ^com.dean.ordered_collections.tree.root.IOrderedCollection m1)
+                    use-parallel? (>= (+ (tree/node-size root1) (tree/node-size root2))
+                                      tree/+parallel-threshold+)]
+                (binding [order/*compare* cmp]
+                  (->OrderedMap
+                    (if use-parallel?
+                      (tree/node-map-merge-parallel root1 root2 merge-fn)
+                      (tree/node-map-merge root1 root2 merge-fn))
+                    cmp nil nil {})))
+              ;; Fallback: use sequential assoc
+              (reduce-kv (fn [m k v]
+                           (if-let [existing (get m k)]
+                             (assoc m k (f k existing v))
+                             (assoc m k v)))
+                         m1 m2)))
+          maps)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interval Map
@@ -88,8 +140,16 @@
    (binding [tree/*t-join*        tree/node-create-weight-balanced-interval
              order/*compare*       order/normal-compare
              tree/*use-array-leaf* false]  ;; IntervalMap uses IntervalNode, not ArrayLeaf
-     (->IntervalMap (reduce (fn [n [k v]] (tree/node-add n k v)) (node/leaf) coll)
-                    order/*compare* tree/*t-join* nil {}))))
+     (->IntervalMap
+       (r/fold +chunk-size+
+               (fn
+                 ([]      (node/leaf))
+                 ([n0 n1] (tree/node-set-union n0 n1)))
+               (fn
+                 ([n [k v]] (tree/node-add n k v))  ;; for seqs of pairs
+                 ([n k v]   (tree/node-add n k v))) ;; for maps (kvreduce)
+               coll)
+       order/*compare* tree/*t-join* nil {}))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interval Set
@@ -102,8 +162,14 @@
    (binding [tree/*t-join*        tree/node-create-weight-balanced-interval
              order/*compare*       order/normal-compare
              tree/*use-array-leaf* false]  ;; IntervalSet uses IntervalNode, not ArrayLeaf
-     (->IntervalSet (reduce #(tree/node-add %1 (interval/ordered-pair %2)) (node/leaf) coll)
-                     order/*compare* tree/*t-join* nil {}))))
+     (->IntervalSet
+       (r/fold +chunk-size+
+               (fn
+                 ([]      (node/leaf))
+                 ([n0 n1] (tree/node-set-union n0 n1)))
+               (fn [n k] (tree/node-add n (interval/ordered-pair k)))
+               coll)
+       order/*compare* tree/*t-join* nil {}))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Priority Queue
@@ -240,7 +306,12 @@
   [coll & {:keys [tiebreak distance] :or {tiebreak :< distance fuzzy-set/numeric-distance}}]
   (binding [order/*compare* order/normal-compare]
     (fuzzy-set/->FuzzySet
-      (reduce (fn [n k] (tree/node-add n k k)) (node/leaf) coll)
+      (r/fold +chunk-size+
+              (fn
+                ([]      (node/leaf))
+                ([n0 n1] (tree/node-set-union n0 n1)))
+              (fn [n k] (tree/node-add n k k))
+              coll)
       order/normal-compare
       distance
       tiebreak
@@ -255,7 +326,12 @@
   (let [cmp (order/compare-by comparator)]
     (binding [order/*compare* cmp]
       (fuzzy-set/->FuzzySet
-        (reduce (fn [n k] (tree/node-add n k k)) (node/leaf) coll)
+        (r/fold +chunk-size+
+                (fn
+                  ([]      (node/leaf))
+                  ([n0 n1] (tree/node-set-union n0 n1)))
+                (fn [n k] (tree/node-add n k k))
+                coll)
         cmp
         distance
         tiebreak
@@ -288,7 +364,14 @@
   [coll & {:keys [tiebreak distance] :or {tiebreak :< distance fuzzy-set/numeric-distance}}]
   (binding [order/*compare* order/normal-compare]
     (fuzzy-map/->FuzzyMap
-      (reduce (fn [n [k v]] (tree/node-add n k v)) (node/leaf) coll)
+      (r/fold +chunk-size+
+              (fn
+                ([]      (node/leaf))
+                ([n0 n1] (tree/node-set-union n0 n1)))
+              (fn
+                ([n [k v]] (tree/node-add n k v))  ;; for seqs of pairs
+                ([n k v]   (tree/node-add n k v))) ;; for maps (kvreduce)
+              coll)
       order/normal-compare
       distance
       tiebreak
@@ -303,7 +386,14 @@
   (let [cmp (order/compare-by comparator)]
     (binding [order/*compare* cmp]
       (fuzzy-map/->FuzzyMap
-        (reduce (fn [n [k v]] (tree/node-add n k v)) (node/leaf) coll)
+        (r/fold +chunk-size+
+                (fn
+                  ([]      (node/leaf))
+                  ([n0 n1] (tree/node-set-union n0 n1)))
+                (fn
+                  ([n [k v]] (tree/node-add n k v))  ;; for seqs of pairs
+                  ([n k v]   (tree/node-add n k v))) ;; for maps (kvreduce)
+                coll)
         cmp
         distance
         tiebreak
