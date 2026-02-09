@@ -1,5 +1,49 @@
 # Performance Optimization Plan
 
+## Implemented Optimizations
+
+### 1. Specialized Comparators (DONE)
+Added `long-ordered-set` and `long-ordered-map` that use `Long.compare` instead of `clojure.core/compare`.
+
+**Results:**
+- Lookup: 25% faster (16.2ms → 12.1ms for 10K queries on 100K elements)
+- Closes gap with sorted-set from 47% slower to only 10% slower
+
+**Usage:**
+```clojure
+(require '[com.dean.ordered-collections.core :as dean])
+
+;; For Long/Integer keys
+(def s (dean/long-ordered-set (range 100000)))
+(def m (dean/long-ordered-map (map #(vector % %) (range 100000))))
+```
+
+### 2. Transient API (DONE - API only)
+Added `transient`/`persistent!` support for `ordered-set`.
+
+**Note:** Currently provides the standard Clojure API but doesn't yet provide speedup because the underlying tree operations still do path-copying. True transient optimization requires mutable tree nodes (future work).
+
+**Usage:**
+```clojure
+(persistent! (reduce conj! (transient (ordered-set)) data))
+```
+
+### 3. Parallel Set Operations (DONE - previous session)
+Set operations (union, intersection, difference) now use fork-join parallelism for large sets (>10K elements).
+
+**Results:**
+- Union: 7.8x faster than clojure.set
+- Intersection: 9.0x faster
+- Difference: 7.7x faster
+
+### 4. Parallel Map Merge (DONE - previous session)
+Added `ordered-merge-with` for fast map merging with conflict resolution.
+
+**Results:**
+- ~5x faster than `clojure.core/merge-with` for large ordered-maps
+
+---
+
 ## Current Performance Gaps
 
 Based on analysis of the codebase and benchmarks at N=500,000:

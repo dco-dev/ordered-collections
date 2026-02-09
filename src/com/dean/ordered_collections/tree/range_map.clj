@@ -135,8 +135,7 @@
         cmp     (.-cmp rm)]
     (when (>= lo hi)
       (throw (ex-info "Invalid range: lo must be < hi" {:range rng})))
-    (binding [order/*compare*       cmp
-              tree/*use-array-leaf* false]  ;; RangeMap has custom node traversal
+    (binding [order/*compare* cmp]
       (let [overlapping (collect-overlapping (.-root rm) lo hi)
             ;; Remove all overlapping ranges
             root' (reduce (fn [n [r _]] (tree/node-remove n r))
@@ -167,8 +166,7 @@
   ([]
    (RangeMap. (node/leaf) range-compare {}))
   ([coll]
-   (binding [order/*compare*       range-compare
-             tree/*use-array-leaf* false]  ;; RangeMap has custom node traversal
+   (binding [order/*compare* range-compare]
      (reduce
        (fn [rm [rng v]] (assoc rm rng v))
        (RangeMap. (node/leaf) range-compare {})

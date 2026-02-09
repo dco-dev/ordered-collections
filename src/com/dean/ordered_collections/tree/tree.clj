@@ -3,13 +3,9 @@
             [com.dean.ordered-collections.tree.interval :as interval]
             [com.dean.ordered-collections.tree.order    :as order]
             [com.dean.ordered-collections.tree.node     :as node
-             :refer [leaf? leaf -k -v -l -r -x -z -kv
-                     array-leaf? array-leaf-singleton array-leaf-add
-                     array-leaf-remove array-leaf-binary-search
-                     ARRAY_LEAF_MAX]])
+             :refer [leaf? leaf -k -v -l -r -x -z -kv]])
   (:import  [clojure.lang MapEntry]
-            [java.util Comparator]
-            [com.dean.ordered_collections.tree.node ArrayLeaf]))
+            [java.util Comparator]))
 
 (set! *warn-on-reflection* true)
 
@@ -112,6 +108,7 @@
   `(let [n# ~n ~lsym (-l n#) ~rsym (-r n#)]
      ~@body))
 
+
 (defn maybe-z [n]
   (when-not (leaf? n) (-z n)))
 
@@ -122,20 +119,13 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn node-size
-  "returns the balance metric of the tree rooted at n.
-   Works for both tree nodes and ArrayLeaf nodes."
+  "returns the balance metric of the tree rooted at n."
   ^long [n]
-  (cond
-    (leaf? n)       0
-    (array-leaf? n) (.size ^ArrayLeaf n)
-    :else           (-x n)))
+  (if (leaf? n) 0 (-x n)))
 
 (definline node-weight
   "Returns node weight for rotation calculations using the 'revised non-variant
-   algorithm' for weight balanced binary trees. Weight = size + 1.
-
-   Works for both tree nodes and ArrayLeaf nodes via IBalancedNode interface.
-   ArrayLeaf.x() returns size, SimpleNode.x() returns subtree size."
+   algorithm' for weight balanced binary trees. Weight = size + 1."
   [n]
   `(let [n# ~n]
      (unchecked-inc (if (leaf? n#) 0 (long (-x n#))))))
@@ -259,9 +249,6 @@
 
 (deftype EnumFrame [node subtree next])
 
-;; ArrayLeafEnumFrame for iterating through ArrayLeaf elements
-(deftype ArrayLeafEnumFrame [^ArrayLeaf al ^long idx ^long direction next-frame])
-
 (defn node-enumerator
   "Efficient mechanism to accomplish partial enumeration of
    tree-structure into a seq representation without incurring the
@@ -269,81 +256,46 @@
    implementation of higher-level collection api routines.
 
    Returns an EnumFrame representing the leftmost spine of the tree,
-   where each frame holds (current-node, right-subtree, next-frame).
-   Works with both tree nodes and ArrayLeaf nodes."
+   where each frame holds (current-node, right-subtree, next-frame)."
   ([n] (node-enumerator n nil))
   ([n enum]
-   (cond
-     (leaf? n) enum
-     (array-leaf? n) (ArrayLeafEnumFrame. n 0 1 enum)  ;; forward: start at 0, step +1
-     :else (recur (-l n) (EnumFrame. n (-r n) enum)))))
+   (if (leaf? n)
+     enum
+     (recur (-l n) (EnumFrame. n (-r n) enum)))))
 
 (defn node-enumerator-reverse
   "Reverse enumerator: builds rightmost spine where each frame holds
-   (current-node, left-subtree, next-frame).
-   Works with both tree nodes and ArrayLeaf nodes."
+   (current-node, left-subtree, next-frame)."
   ([n] (node-enumerator-reverse n nil))
   ([n enum]
-   (cond
-     (leaf? n) enum
-     (array-leaf? n) (let [^ArrayLeaf al n]
-                       (ArrayLeafEnumFrame. al (dec (.size al)) -1 enum))  ;; reverse: start at end, step -1
-     :else (recur (-r n) (EnumFrame. n (-l n) enum)))))
+   (if (leaf? n)
+     enum
+     (recur (-r n) (EnumFrame. n (-l n) enum)))))
 
 (defn node-enum-first
   "Return the current node from an enumerator frame."
-  [enum]
-  (cond
-    (instance? EnumFrame enum)
-    (.-node ^EnumFrame enum)
-
-    (instance? ArrayLeafEnumFrame enum)
-    (let [^ArrayLeafEnumFrame af enum
-          ^ArrayLeaf al (.-al af)
-          idx (.-idx af)]
-      (node/->SimpleNode (aget ^objects (.ks al) idx) (aget ^objects (.vs al) idx) nil nil 1))))
+  [^EnumFrame enum]
+  (.-node enum))
 
 (defn node-enum-rest
   "Advance forward enumerator to the next node."
   [enum]
   (when (some? enum)
-    (cond
-      (instance? EnumFrame enum)
-      (let [^EnumFrame ef enum
-            subtree (.-subtree ef)
-            next    (.-next ef)]
-        (when-not (and (nil? subtree) (nil? next))
-          (node-enumerator subtree next)))
-
-      (instance? ArrayLeafEnumFrame enum)
-      (let [^ArrayLeafEnumFrame af enum
-            ^ArrayLeaf al (.-al af)
-            next-idx (+ (.-idx af) (.-direction af))
-            next-frame (.-next-frame af)]
-        (if (and (>= next-idx 0) (< next-idx (.size al)))
-          (ArrayLeafEnumFrame. al next-idx (.-direction af) next-frame)
-          next-frame)))))
+    (let [^EnumFrame ef enum
+          subtree (.-subtree ef)
+          next    (.-next ef)]
+      (when-not (and (nil? subtree) (nil? next))
+        (node-enumerator subtree next)))))
 
 (defn node-enum-prior
   "Advance reverse enumerator to the next (prior) node."
   [enum]
   (when (some? enum)
-    (cond
-      (instance? EnumFrame enum)
-      (let [^EnumFrame ef enum
-            subtree (.-subtree ef)
-            next    (.-next ef)]
-        (when-not (and (nil? subtree) (nil? next))
-          (node-enumerator-reverse subtree next)))
-
-      (instance? ArrayLeafEnumFrame enum)
-      (let [^ArrayLeafEnumFrame af enum
-            ^ArrayLeaf al (.-al af)
-            next-idx (+ (.-idx af) (.-direction af))
-            next-frame (.-next-frame af)]
-        (if (and (>= next-idx 0) (< next-idx (.size al)))
-          (ArrayLeafEnumFrame. al next-idx (.-direction af) next-frame)
-          next-frame)))))
+    (let [^EnumFrame ef enum
+          subtree (.-subtree ef)
+          next    (.-next ef)]
+      (when-not (and (nil? subtree) (nil? next))
+        (node-enumerator-reverse subtree next)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Tree Rotations (Weight Balanced)
@@ -443,76 +395,16 @@
          bk# (-k b#) bv# (-v b#) y1# (-l b#) y2# (-r b#)]
      (~create bk# bv# (~create ak# av# x# y1#) (~create ~ck ~cv y2# ~z))))
 
-(defn- array-leaf-to-node
-  "Convert an ArrayLeaf to a single node with ArrayLeaf children.
-   Splits the ArrayLeaf in half, creating a balanced structure that
-   preserves ArrayLeafs at the leaves (FSet-style).
 
-   Returns a node with:
-   - Middle element as k/v
-   - Left ArrayLeaf with elements < mid
-   - Right ArrayLeaf with elements > mid"
-  [^ArrayLeaf al create]
-  (let [^objects ks (.ks al)
-        ^objects vs (.vs al)
-        size (.size al)
-        mid  (quot size 2)
-        mid-k (aget ks mid)
-        mid-v (aget vs mid)
-        ;; Left: elements [0, mid)
-        left-size mid
-        left  (if (zero? left-size)
-                (leaf)
-                (let [left-ks (object-array left-size)
-                      left-vs (object-array left-size)]
-                  (System/arraycopy ks 0 left-ks 0 left-size)
-                  (System/arraycopy vs 0 left-vs 0 left-size)
-                  (ArrayLeaf. left-ks left-vs left-size)))
-        ;; Right: elements (mid, size)
-        right-size (- size mid 1)
-        right (if (zero? right-size)
-                (leaf)
-                (let [right-ks (object-array right-size)
-                      right-vs (object-array right-size)]
-                  (System/arraycopy ks (inc mid) right-ks 0 right-size)
-                  (System/arraycopy vs (inc mid) right-vs 0 right-size)
-                  (ArrayLeaf. right-ks right-vs right-size)))]
-    (create mid-k mid-v left right)))
+(defn- stitch-wb
+  "Weight-balanced stitch: join left and right subtrees at root k/v, performing
+  a single or double rotation to restore balance if needed. Assumes all keys in
+  l < k < all keys in r, and imbalance is at most one rotation away from balanced.
 
-(defn- array-leaf-to-tree
-  "Convert an ArrayLeaf to a balanced tree structure.
-   For small ArrayLeafs, uses array-leaf-to-node to preserve ArrayLeaf leaves.
-   For larger ones, recursively builds a tree."
-  [^ArrayLeaf al create]
-  (let [size (.size al)]
-    (if (<= size 4)
-      ;; Small: just create one node with smaller ArrayLeaf children
-      (array-leaf-to-node al create)
-      ;; Larger: recursively split
-      (let [^objects ks (.ks al)
-            ^objects vs (.vs al)]
-        (letfn [(build [^long lo ^long hi]
-                  (cond
-                    (> lo hi) (leaf)
-                    ;; Small range: create ArrayLeaf
-                    (<= (- hi lo) 3)
-                    (let [n (inc (- hi lo))
-                          arr-ks (object-array n)
-                          arr-vs (object-array n)]
-                      (System/arraycopy ks lo arr-ks 0 n)
-                      (System/arraycopy vs lo arr-vs 0 n)
-                      (ArrayLeaf. arr-ks arr-vs n))
-                    ;; Larger: split recursively
-                    :else
-                    (let [mid (+ lo (quot (- hi lo) 2))
-                          k   (aget ks mid)
-                          v   (aget vs mid)]
-                      (create k v (build lo (dec mid)) (build (inc mid) hi)))))]
-          (build 0 (dec size)))))))
-
-(defn- stitch-wb-tree
-  "Fast weight-balanced stitch for tree nodes only (no ArrayLeaf checks).
-   Used in hot paths when ArrayLeaf is disabled."
+  Balance criteria (Hirai-Yamamoto):
+    - Rotate left  when: weight(r) > δ × weight(l)
+    - Rotate right when: weight(l) > δ × weight(r)
+    - Single vs double determined by γ threshold on inner subtree weights."
   [create k v l r]
   (let [lw (node-weight l)
         rw (node-weight r)]
@@ -539,54 +431,6 @@
       :else
       (create k v l r))))
 
-(defn- stitch-wb
-  "Weight-balanced stitch: join left and right subtrees at root k/v, performing
-  a single or double rotation to restore balance if needed. Assumes all keys in
-  l < k < all keys in r, and imbalance is at most one rotation away from balanced.
-
-  Balance criteria (Hirai-Yamamoto):
-    - Rotate left  when: weight(r) > δ × weight(l)
-    - Rotate right when: weight(l) > δ × weight(r)
-    - Single vs double determined by γ threshold on inner subtree weights.
-
-  This version handles ArrayLeaf nodes for when *use-array-leaf* is true."
-  [create k v l r]
-  ;; Check weights first - node-weight handles ArrayLeaf
-  (let [lw (node-weight l)
-        rw (node-weight r)]
-    (cond
-      ;; Right-heavy: need to rotate left - convert r if ArrayLeaf (need to access its children)
-      (> rw (* +delta+ lw))
-      (let [r  (if (array-leaf? r) (array-leaf-to-tree r create) r)
-            rl (-l r)
-            rlw (node-weight rl)
-            rrw (node-weight (-r r))]
-        (if (< rlw (* +gamma+ rrw))
-          (rotate-single-left create k v l r)
-          ;; Double rotation accesses children of rl - convert if ArrayLeaf
-          (let [r (if (array-leaf? rl)
-                    (create (-k r) (-v r) (array-leaf-to-tree rl create) (-r r))
-                    r)]
-            (rotate-double-left create k v l r))))
-
-      ;; Left-heavy: need to rotate right - convert l if ArrayLeaf (need to access its children)
-      (> lw (* +delta+ rw))
-      (let [l  (if (array-leaf? l) (array-leaf-to-tree l create) l)
-            lr (-r l)
-            llw (node-weight (-l l))
-            lrw (node-weight lr)]
-        (if (< lrw (* +gamma+ llw))
-          (rotate-single-right create k v l r)
-          ;; Double rotation accesses children of lr - convert if ArrayLeaf
-          (let [l (if (array-leaf? lr)
-                    (create (-k l) (-v l) (-l l) (array-leaf-to-tree lr create))
-                    l)]
-            (rotate-double-right create k v l r))))
-
-      ;; Balanced: no rotation needed - ArrayLeaf children are fine as-is
-      :else
-      (create k v l r))))
-
 (defn node-stitch-weight-balanced
   "Weight-Balancing Algorithm:
 
@@ -609,82 +453,27 @@
   (*n-join* k v l r))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; ArrayLeaf Control
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(def ^:dynamic *use-array-leaf*
-  "When true, use ArrayLeaf for collections of any size.
-
-   ArrayLeaf (inspired by FSet's 'leaf vectors') stores up to 8 elements in
-   contiguous sorted arrays at the tree leaves. When an ArrayLeaf overflows,
-   it splits into two ArrayLeafs with a new internal node above them, keeping
-   the array-based leaves throughout the tree's lifetime.
-
-   Benefits:
-   - Improved cache locality for iteration (sequential array access)
-   - Faster lookups (binary search in final array vs more tree traversal)
-   - Reduced memory overhead (fewer node allocations)
-
-   Trade-offs:
-   - Slightly more complex hot paths due to type checks
-   - Specialized tree types (segment-tree, interval-map) that use custom nodes
-     must bind this to false.
-
-   Currently disabled by default for stability. Enable experimentally with:
-   (binding [tree/*use-array-leaf* true] ...)"
-  false)
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Fundamental Tree Operations
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn node-add
-  "Insert a new key/value into the tree rooted at n.
-   Uses ArrayLeaf for small collections when *use-array-leaf* is true,
-   converts to tree when threshold exceeded."
+  "Insert a new key/value into the tree rooted at n."
   ([n k]
    (node-add n k k))
   ([n k v]
    (node-add n k v order/*compare* *t-join*))
   ([n k v ^Comparator cmp create]
-   (if *use-array-leaf*
-     ;; ArrayLeaf-enabled path (FSet-style: ArrayLeafs persist at leaves)
-     (letfn [(add [n]
-               (cond
-                 ;; Empty: create singleton ArrayLeaf
-                 (leaf? n)
-                 (array-leaf-singleton k v)
-
-                 ;; ArrayLeaf: try to add, split if overflow
-                 (array-leaf? n)
-                 (if-let [result (array-leaf-add n k v cmp)]
-                   result
-                   ;; Overflow: split into two ArrayLeafs with internal node
-                   (let [[mid-k mid-v left-al right-al] (node/array-leaf-split n k v cmp)]
-                     (create mid-k mid-v left-al right-al)))
-
-                 ;; Tree node: standard tree insertion, stitch handles ArrayLeaf children
-                 :else
-                 (kvlr [key val l r] n
-                   (let [c (.compare cmp k key)]
-                     (if (zero? c)
-                       (create key v l r)
-                       (if (neg? c)
-                         (stitch-wb create key val (add l) r)
-                         (stitch-wb create key val l (add r))))))))]
-       (add n))
-     ;; Standard tree path (no ArrayLeaf) - use fast stitch-wb-tree
-     (letfn [(add [n]
-               (if (leaf? n)
-                 (create k v (leaf) (leaf))
-                 (kvlr [key val l r] n
-                   (let [c (.compare cmp k key)]
-                     (if (zero? c)
-                       (create key v l r)
-                       (if (neg? c)
-                         (stitch-wb-tree create key val (add l) r)
-                         (stitch-wb-tree create key val l (add r))))))))]
-       (add n)))))
+   (letfn [(add [n]
+             (if (leaf? n)
+               (create k v (leaf) (leaf))
+               (kvlr [key val l r] n
+                 (let [c (.compare cmp k key)]
+                   (if (zero? c)
+                     (create key v l r)
+                     (if (neg? c)
+                       (stitch-wb create key val (add l) r)
+                       (stitch-wb create key val l (add r))))))))]
+     (add n))))
 
 (defn node-concat3
   "Join two trees, the left rooted at l, and the right at r,
@@ -732,54 +521,36 @@
       (cat3 k v l r))))
 
 (defn node-least-kv
-  "Return [k v] for the minimum key of the tree rooted at n.
-   Avoids allocating synthetic nodes for ArrayLeaf."
+  "Return [k v] for the minimum key of the tree rooted at n."
   [n]
   (cond
-    (leaf? n)       (throw (ex-info "least: empty tree" {:node n}))
-    (array-leaf? n) (let [^ArrayLeaf al n]
-                      [(aget ^objects (.ks al) 0) (aget ^objects (.vs al) 0)])
-    (leaf? (-l n))  [(-k n) (-v n)]
-    :else           (recur (-l n))))
+    (leaf? n)      (throw (ex-info "least: empty tree" {:node n}))
+    (leaf? (-l n)) [(-k n) (-v n)]
+    :else          (recur (-l n))))
 
 (defn node-least
-  "Return the node containing the minimum key of the tree rooted at n.
-   Works with both tree nodes and ArrayLeaf nodes."
+  "Return the node containing the minimum key of the tree rooted at n."
   [n]
   (cond
-    (leaf? n)       (throw (ex-info "least: empty tree" {:node n}))
-    (array-leaf? n) (let [^ArrayLeaf al n]
-                      (node/->SimpleNode (aget ^objects (.ks al) 0)
-                                         (aget ^objects (.vs al) 0)
-                                         nil nil 1))
-    (leaf? (-l n))  n
-    :else           (recur (-l n))))
+    (leaf? n)      (throw (ex-info "least: empty tree" {:node n}))
+    (leaf? (-l n)) n
+    :else          (recur (-l n))))
 
 (defn node-greatest-kv
-  "Return [k v] for the maximum key of the tree rooted at n.
-   Avoids allocating synthetic nodes for ArrayLeaf."
+  "Return [k v] for the maximum key of the tree rooted at n."
   [n]
   (cond
-    (leaf? n)       (throw (ex-info "greatest: empty tree" {:node n}))
-    (array-leaf? n) (let [^ArrayLeaf al n
-                          idx (dec (.size al))]
-                      [(aget ^objects (.ks al) idx) (aget ^objects (.vs al) idx)])
-    (leaf? (-r n))  [(-k n) (-v n)]
-    :else           (recur (-r n))))
+    (leaf? n)      (throw (ex-info "greatest: empty tree" {:node n}))
+    (leaf? (-r n)) [(-k n) (-v n)]
+    :else          (recur (-r n))))
 
 (defn node-greatest
-  "Return the node containing the maximum key of the tree rooted at n.
-   Works with both tree nodes and ArrayLeaf nodes."
+  "Return the node containing the maximum key of the tree rooted at n."
   [n]
   (cond
-    (leaf? n)       (throw (ex-info "greatest: empty tree" {:node n}))
-    (array-leaf? n) (let [^ArrayLeaf al n
-                          idx (dec (.size al))]
-                      (node/->SimpleNode (aget ^objects (.ks al) idx)
-                                         (aget ^objects (.vs al) idx)
-                                         nil nil 1))
-    (leaf? (-r n))  n
-    :else           (recur (-r n))))
+    (leaf? n)      (throw (ex-info "greatest: empty tree" {:node n}))
+    (leaf? (-r n)) n
+    :else          (recur (-r n))))
 
 (defn node-remove-least
   "Return a tree the same as the one rooted at n, with the node
@@ -788,10 +559,10 @@
   (let [create *t-join*]
     (letfn [(rm-least [n]
               (cond
-                (leaf? n)       (throw (ex-info "remove-least: empty tree" {:node n}))
-                (leaf? (-l n))  (-r n)
-                true            (stitch-wb create (-k n) (-v n)
-                                  (rm-least (-l n)) (-r n))))]
+                (leaf? n)      (throw (ex-info "remove-least: empty tree" {:node n}))
+                (leaf? (-l n)) (-r n)
+                :else          (stitch-wb create (-k n) (-v n)
+                                 (rm-least (-l n)) (-r n))))]
       (rm-least n))))
 
 (defn node-remove-greatest
@@ -801,10 +572,10 @@
   (let [create *t-join*]
     (letfn [(rm-greatest [n]
               (cond
-                (leaf? n)       (throw (ex-info "remove-greatest: empty tree" {:node n}))
-                (leaf? (-r n))  (-l n)
-                true            (stitch-wb create (-k n) (-v n) (-l n)
-                                  (rm-greatest (-r n)))))]
+                (leaf? n)      (throw (ex-info "remove-greatest: empty tree" {:node n}))
+                (leaf? (-r n)) (-l n)
+                :else          (stitch-wb create (-k n) (-v n) (-l n)
+                                 (rm-greatest (-r n)))))]
       (rm-greatest n))))
 
 (defn node-concat2
@@ -822,69 +593,33 @@
                   (stitch-wb create k v l (node-remove-least r))))))
 
 (defn node-remove
-  "remove the node whose key is equal to k, if present.
-   Works with both tree nodes and ArrayLeaf nodes."
+  "remove the node whose key is equal to k, if present."
   ([n k]
    (node-remove n k order/*compare* *t-join*))
   ([n k ^Comparator cmp create]
-   (if *use-array-leaf*
-     ;; ArrayLeaf-enabled path
-     (letfn [(concat2 [l r]
-               (cond
-                 (leaf? l) r
-                 (leaf? r) l
-                 :else (let [[k v] (node-least-kv r)]
-                         (stitch-wb create k v l (rm-least r)))))
-             (rm-least [n]
-               (cond
-                 (leaf? n)      (throw (ex-info "rm-least: empty" {}))
-                 (leaf? (-l n)) (-r n)
-                 :else          (stitch-wb create (-k n) (-v n)
-                                  (rm-least (-l n)) (-r n))))
-             (rm [n]
-               (cond
-                 ;; Empty tree
-                 (leaf? n)
-                 (leaf)
-
-                 ;; ArrayLeaf: use array-leaf-remove
-                 (array-leaf? n)
-                 (or (array-leaf-remove n k cmp) (leaf))
-
-                 ;; Tree node: standard removal
-                 :else
-                 (kvlr [key val l r] n
-                   (let [c (.compare cmp k key)]
-                     (if (zero? c)
-                       (concat2 l r)
-                       (if (neg? c)
-                         (stitch-wb create key val (rm l) r)
-                         (stitch-wb create key val l (rm r))))))))]
-       (rm n))
-     ;; Fast path - no ArrayLeaf checks
-     (letfn [(concat2 [l r]
-               (cond
-                 (leaf? l) r
-                 (leaf? r) l
-                 :else (let [[k v] (node-least-kv r)]
-                         (stitch-wb-tree create k v l (rm-least r)))))
-             (rm-least [n]
-               (cond
-                 (leaf? n)      (throw (ex-info "rm-least: empty" {}))
-                 (leaf? (-l n)) (-r n)
-                 :else          (stitch-wb-tree create (-k n) (-v n)
-                                  (rm-least (-l n)) (-r n))))
-             (rm [n]
-               (if (leaf? n)
-                 (leaf)
-                 (kvlr [key val l r] n
-                   (let [c (.compare cmp k key)]
-                     (if (zero? c)
-                       (concat2 l r)
-                       (if (neg? c)
-                         (stitch-wb-tree create key val (rm l) r)
-                         (stitch-wb-tree create key val l (rm r))))))))]
-       (rm n)))))
+   (letfn [(concat2 [l r]
+             (cond
+               (leaf? l) r
+               (leaf? r) l
+               :else (let [[k v] (node-least-kv r)]
+                       (stitch-wb create k v l (rm-least r)))))
+           (rm-least [n]
+             (cond
+               (leaf? n)      (throw (ex-info "rm-least: empty" {}))
+               (leaf? (-l n)) (-r n)
+               :else          (stitch-wb create (-k n) (-v n)
+                                (rm-least (-l n)) (-r n))))
+           (rm [n]
+             (if (leaf? n)
+               (leaf)
+               (kvlr [key val l r] n
+                 (let [c (.compare cmp k key)]
+                   (if (zero? c)
+                     (concat2 l r)
+                     (if (neg? c)
+                       (stitch-wb create key val (rm l) r)
+                       (stitch-wb create key val l (rm r))))))))]
+     (rm n))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Tree Search
@@ -892,60 +627,35 @@
 
 (defn node-find
   "find a node in n whose key = k.
-   Returns a node implementing INode, or nil if not found.
-   Works with both tree nodes and ArrayLeaf nodes."
+   Returns a node implementing INode, or nil if not found."
   ([n k]
    (node-find n k order/*compare*))
   ([n k ^Comparator cmp]
    (loop [n n]
-     (cond
-       (leaf? n) nil
-
-       (array-leaf? n)
-       (let [^ArrayLeaf al n
-             idx (array-leaf-binary-search al k cmp)]
-         (when-not (neg? idx)
-           ;; Return a synthetic node for API compatibility
-           (node/->SimpleNode (aget ^objects (.ks al) idx) (aget ^objects (.vs al) idx) nil nil 1)))
-
-       :else
+     (if (leaf? n)
+       nil
        (let [c (.compare cmp k (-k n))]
          (if (zero? c) n (recur (if (neg? c) (-l n) (-r n)))))))))
 
 (defn node-find-val
-  "Find value for key k in tree. Returns the value or not-found.
-   Avoids allocating synthetic nodes for ArrayLeaf lookups."
+  "Find value for key k in tree. Returns the value or not-found."
   ([n k not-found]
    (node-find-val n k not-found order/*compare*))
   ([n k not-found ^Comparator cmp]
    (loop [n n]
-     (cond
-       (leaf? n) not-found
-
-       (array-leaf? n)
-       (let [^ArrayLeaf al n
-             idx (array-leaf-binary-search al k cmp)]
-         (if (neg? idx)
-           not-found
-           (aget ^objects (.vs al) idx)))
-
-       :else
+     (if (leaf? n)
+       not-found
        (let [c (.compare cmp k (-k n))]
          (if (zero? c) (-v n) (recur (if (neg? c) (-l n) (-r n)))))))))
 
 (defn node-contains?
-  "Check if key k exists in tree. Avoids allocating synthetic nodes."
+  "Check if key k exists in tree."
   ([n k]
    (node-contains? n k order/*compare*))
   ([n k ^Comparator cmp]
    (loop [n n]
-     (cond
-       (leaf? n) false
-
-       (array-leaf? n)
-       (>= (array-leaf-binary-search n k cmp) 0)
-
-       :else
+     (if (leaf? n)
+       false
        (let [c (.compare cmp k (-k n))]
          (if (zero? c) true (recur (if (neg? c) (-l n) (-r n)))))))))
 
@@ -1076,79 +786,36 @@
 ;;       options: forward/reverse, in-order/post-order/pre-order
 
 (defn node-iter
-  "For the side-effect, apply f to each node of the tree rooted at n.
-   Works with both tree nodes and ArrayLeaf nodes."
+  "For the side-effect, apply f to each node of the tree rooted at n."
   [n f]
-  (cond
-    (leaf? n) nil
-    (array-leaf? n)
-    (let [^ArrayLeaf al n
-          ^objects ks (.ks al)
-          ^objects vs (.vs al)
-          size (.size al)]
-      (dotimes [i size]
-        (f (node/->SimpleNode (aget ks i) (aget vs i) nil nil 1))))
-    :else
+  (when-not (leaf? n)
     (lr [l r] n
       (node-iter l f)
       (f n)
       (node-iter r f))))
 
 (defn node-iter-kv
-  "For the side-effect, apply f to (k, v) for each element in tree rooted at n.
-   Avoids allocating synthetic node wrappers for ArrayLeaf elements."
+  "For the side-effect, apply f to (k, v) for each element in tree rooted at n."
   [n f]
-  (cond
-    (leaf? n) nil
-    (array-leaf? n)
-    (let [^ArrayLeaf al n
-          ^objects ks (.ks al)
-          ^objects vs (.vs al)
-          size (.size al)]
-      (dotimes [i size]
-        (f (aget ks i) (aget vs i))))
-    :else
+  (when-not (leaf? n)
     (lr [l r] n
       (node-iter-kv l f)
       (f (-k n) (-v n))
       (node-iter-kv r f))))
 
 (defn node-iter-reverse
-  "For the side-effect, apply f to each node of the tree rooted at n.
-   Works with both tree nodes and ArrayLeaf nodes."
+  "For the side-effect, apply f to each node of the tree rooted at n in reverse."
   [n f]
-  (cond
-    (leaf? n) nil
-    (array-leaf? n)
-    (let [^ArrayLeaf al n
-          ^objects ks (.ks al)
-          ^objects vs (.vs al)
-          size (.size al)]
-      (loop [i (dec size)]
-        (when (>= i 0)
-          (f (node/->SimpleNode (aget ks i) (aget vs i) nil nil 1))
-          (recur (dec i)))))
-    :else
+  (when-not (leaf? n)
     (lr [l r] n
       (node-iter-reverse r f)
       (f n)
       (node-iter-reverse l f))))
 
 (defn node-iter-kv-reverse
-  "For the side-effect, apply f to (k, v) for each element in tree in reverse order.
-   Avoids allocating synthetic node wrappers for ArrayLeaf elements."
+  "For the side-effect, apply f to (k, v) for each element in tree in reverse order."
   [n f]
-  (cond
-    (leaf? n) nil
-    (array-leaf? n)
-    (let [^ArrayLeaf al n
-          ^objects ks (.ks al)
-          ^objects vs (.vs al)]
-      (loop [i (dec (.size al))]
-        (when (>= i 0)
-          (f (aget ks i) (aget vs i))
-          (recur (unchecked-dec-int i)))))
-    :else
+  (when-not (leaf? n)
     (lr [l r] n
       (node-iter-kv-reverse r f)
       (f (-k n) (-v n))
@@ -1177,8 +844,7 @@
   ([f base n] ((node-fold-fn :>) f base n)))
 
 (defn node-reduce
-  "Reduction over nodes. Delegates to node-fold-left which handles
-   both tree nodes and ArrayLeaf nodes via the enumerator.
+  "Reduction over nodes. Delegates to node-fold-left.
    Supports early termination via clojure.core/reduced."
   ([f init root]
    (node-fold-left f init root))
@@ -1199,11 +865,71 @@
 
 (defn node-reduce-kv
   "Optimized reduction that calls (f acc k v) directly without wrapping in nodes.
-   Avoids synthetic node allocation for ArrayLeaf elements. Does not support reduced."
+   Does not support reduced."
   [f init root]
   (let [acc (volatile! init)]
     (node-iter-kv root (fn [k v] (vswap! acc f k v)))
     @acc))
+
+(defn node-reduce-keys
+  "Optimized reduction over keys only (for sets). Calls (f acc k) directly.
+   Supports early termination via clojure.core/reduced."
+  [f init root]
+  (letfn [(reduce-node [acc n]
+            (cond
+              (leaf? n) acc
+              (reduced? acc) acc
+              :else
+              (lr [l r] n
+                (let [acc (reduce-node acc l)]
+                  (if (reduced? acc)
+                    acc
+                    (let [acc (f acc (-k n))]
+                      (if (reduced? acc)
+                        acc
+                        (reduce-node acc r))))))))]
+    (let [result (reduce-node init root)]
+      (if (reduced? result) @result result))))
+
+(defn node-reduce-kvs
+  "Optimized reduction over key-value pairs. Calls (f acc k v) directly.
+   Supports early termination via clojure.core/reduced."
+  [f init root]
+  (letfn [(reduce-node [acc n]
+            (cond
+              (leaf? n) acc
+              (reduced? acc) acc
+              :else
+              (lr [l r] n
+                (let [acc (reduce-node acc l)]
+                  (if (reduced? acc)
+                    acc
+                    (let [acc (f acc (-k n) (-v n))]
+                      (if (reduced? acc)
+                        acc
+                        (reduce-node acc r))))))))]
+    (let [result (reduce-node init root)]
+      (if (reduced? result) @result result))))
+
+(defn node-reduce-entries
+  "Optimized reduction over MapEntry pairs (for maps). Calls (f acc entry).
+   Supports early termination via clojure.core/reduced."
+  [f init root]
+  (letfn [(reduce-node [acc n]
+            (cond
+              (leaf? n) acc
+              (reduced? acc) acc
+              :else
+              (lr [l r] n
+                (let [acc (reduce-node acc l)]
+                  (if (reduced? acc)
+                    acc
+                    (let [acc (f acc (clojure.lang.MapEntry. (-k n) (-v n)))]
+                      (if (reduced? acc)
+                        acc
+                        (reduce-node acc r))))))))]
+    (let [result (reduce-node init root)]
+      (if (reduced? result) @result result))))
 
 ;; MAYBE: i'm not convinced these are necessary
 
@@ -1247,12 +973,8 @@
   "verify node `n` and all descendants satisfy the node-invariants
   of a weight-balanced binary tree."
   [n]
-  (cond
-    (leaf? n) true
-    ;; ArrayLeaf is always healthy (it's a flat sorted array)
-    (array-leaf? n) true
-    ;; Tree node: check balance invariants
-    :else
+  (if (leaf? n)
+    true
     (lr [l r] n
       (let [lw (node-weight l)
             rw (node-weight r)]
@@ -1323,45 +1045,33 @@
 ;; Instead of element-by-element insertion (O(n log n)), we can implement
 ;; union, intersection, and difference in O(n) time using divide-and-conquer.
 
-(defn- ensure-tree-node
-  "Convert ArrayLeaf to tree structure if needed. Returns the node unchanged
-   if it's already a tree node or leaf."
-  [n]
-  (if (array-leaf? n)
-    (array-leaf-to-tree n *t-join*)
-    n))
-
 (defn node-split-lesser
   "return a tree of all nodes whose key is less than k (Logarithmic time)."
   [n k]
-  (let [n (ensure-tree-node n)
-        ^Comparator cmp order/*compare*]
+  (let [^Comparator cmp order/*compare*]
     (loop [n n]
       (if (leaf? n)
         n
         (kvlr [kn vn ln rn] n
           (let [c (.compare cmp k kn)]
-            (if (zero? c) ln
-              (if (neg? c)
-                (recur ln)
-                (node-concat3 kn vn ln
-                  (node-split-lesser rn k))))))))))
+            (cond
+              (zero? c) ln
+              (neg? c)  (recur ln)
+              :else     (node-concat3 kn vn ln (node-split-lesser rn k)))))))))
 
 (defn node-split-greater
   "return a tree of all nodes whose key is greater than k (Logarithmic time)."
   [n k]
-  (let [n (ensure-tree-node n)
-        ^Comparator cmp order/*compare*]
+  (let [^Comparator cmp order/*compare*]
     (loop [n n]
       (if (leaf? n)
         n
         (kvlr [kn vn ln rn] n
           (let [c (.compare cmp k kn)]
-            (if (zero? c) rn
-              (if (neg? c)
-                (node-concat3 kn vn
-                  (node-split-greater ln k) rn)
-                (recur rn)))))))))
+            (cond
+              (zero? c) rn
+              (neg? c)  (node-concat3 kn vn (node-split-greater ln k) rn)
+              :else     (recur rn))))))))
 
 (defn node-split
   "returns a triple (l present r) where: l is the set of elements of
@@ -1369,20 +1079,18 @@
   is false if n contains no element equal to k, or (k v) if n contains
   an element with key equal to k."
   [n k]
-  (let [n (ensure-tree-node n)
-        ^Comparator cmp order/*compare*]
+  (let [^Comparator cmp order/*compare*]
     (letfn [(split [n]
               (if (leaf? n)
                 [nil nil nil]
                 (kvlr [ak v l r] n
                   (let [c (.compare cmp k ak)]
-                    (if (zero? c)
-                      [l (list k v) r]
-                      (if (neg? c)
-                        (let [[ll pres rl] (split l)]
-                          [ll pres (node-concat3 ak v rl r)])
-                        (let [[lr pres rr] (split r)]
-                          [(node-concat3 ak v l lr) pres rr])))))))]
+                    (cond
+                      (zero? c) [l (list k v) r]
+                      (neg? c)  (let [[ll pres rl] (split l)]
+                                  [ll pres (node-concat3 ak v rl r)])
+                      :else     (let [[lr pres rr] (split r)]
+                                  [(node-concat3 ak v l lr) pres rr]))))))]
       (split n))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1390,33 +1098,14 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn- enum-frame-extract
-  "Extract current element info from an enum frame (EnumFrame or ArrayLeafEnumFrame).
-   Returns [current-k current-v next-subtree next-frame] or nil if at end."
-  [frame]
-  (cond
-    (nil? frame) nil
-
-    (instance? ArrayLeafEnumFrame frame)
-    (let [^ArrayLeafEnumFrame af frame
-          ^ArrayLeaf al (.-al af)
-          idx (.-idx af)
-          size (.size al)]
-      (if (or (neg? idx) (>= idx size))
-        nil  ;; exhausted
-        [(aget ^objects (.ks al) idx)
-         (aget ^objects (.vs al) idx)
-         (leaf)  ;; no subtree - ArrayLeaf is flat
-         (let [next-idx (+ idx (.-direction af))]
-           (if (or (neg? next-idx) (>= next-idx size))
-             (.-next-frame af)
-             (ArrayLeafEnumFrame. al next-idx (.-direction af) (.-next-frame af))))]))
-
-    :else  ;; EnumFrame
-    (let [^EnumFrame ef frame]
-      [(.-node ef)
-       nil  ;; caller uses accessor
-       (.-subtree ef)
-       (.-next ef)])))
+  "Extract current element info from an EnumFrame.
+   Returns [current-node nil next-subtree next-frame] or nil if at end."
+  [^EnumFrame frame]
+  (when frame
+    [(.-node frame)
+     nil  ;; caller uses accessor
+     (.-subtree frame)
+     (.-next frame)]))
 
 (defn node-compare
   "return 3-way comparison of the trees n1 and n2 using an accessor
@@ -1439,23 +1128,10 @@
           (nil? info1)                     -1
           (nil? info2)                      1
           :else
-          (let [[x1-or-k v1 r1 ee1] info1
-                [x2-or-k v2 r2 ee2] info2
-                ;; For EnumFrame, x is the node; for ArrayLeafEnumFrame, x is the key
-                val1 (if (instance? ArrayLeafEnumFrame e1)
-                       (case accessor
-                         :k  x1-or-k
-                         :v  v1
-                         :kv (clojure.lang.MapEntry. x1-or-k v1)
-                         (clojure.lang.MapEntry. x1-or-k v1))
-                       (acc-fn x1-or-k))
-                val2 (if (instance? ArrayLeafEnumFrame e2)
-                       (case accessor
-                         :k  x2-or-k
-                         :v  v2
-                         :kv (clojure.lang.MapEntry. x2-or-k v2)
-                         (clojure.lang.MapEntry. x2-or-k v2))
-                       (acc-fn x2-or-k))
+          (let [[x1 _ r1 ee1] info1
+                [x2 _ r2 ee2] info2
+                val1 (acc-fn x1)
+                val2 (acc-fn x2)
                 c    (.compare cmp val1 val2)]
             (if-not (zero? c)
               c
@@ -1537,70 +1213,61 @@
 (defn node-set-union
   "set union"
   [n1 n2]
-  ;; Convert ArrayLeaf to tree for set operations (they need tree structure)
-  (let [n1 (if (array-leaf? n1) (array-leaf-to-tree n1 *t-join*) n1)
-        n2 (if (array-leaf? n2) (array-leaf-to-tree n2 *t-join*) n2)]
-    (cond
-      (leaf? n1) n2
-      (leaf? n2) n1
-      true       (kvlr [ak av l r] n2
-                   (let [[l1 _ r1] (node-split n1 ak)]
-                     (node-concat3 ak av
-                       (node-set-union l1 l)
-                       (node-set-union r1 r)))))))
+  (cond
+    (leaf? n1) n2
+    (leaf? n2) n1
+    :else      (kvlr [ak av l r] n2
+                 (let [[l1 _ r1] (node-split n1 ak)]
+                   (node-concat3 ak av
+                     (node-set-union l1 l)
+                     (node-set-union r1 r))))))
 
 (defn node-set-intersection
   "set intersection"
   [n1 n2]
-  ;; Convert ArrayLeaf to tree for set operations
-  (let [n1 (if (array-leaf? n1) (array-leaf-to-tree n1 *t-join*) n1)
-        n2 (if (array-leaf? n2) (array-leaf-to-tree n2 *t-join*) n2)]
-    (cond
-      (leaf? n1) (leaf)
-      (leaf? n2) (leaf)
-      true       (kvlr [ak av l r] n2
-                   (let [[l1 x r1] (node-split n1 ak)]
-                     (if x
-                       (node-concat3 ak av
-                         (node-set-intersection l1 l)
-                         (node-set-intersection r1 r))
-                       (node-concat2
-                         (node-set-intersection l1 l)
-                         (node-set-intersection r1 r))))))))
-
-(defn node-set-difference [n1 n2]
-  "set difference"
-  ;; Convert ArrayLeaf to tree for set operations
-  (let [n1 (if (array-leaf? n1) (array-leaf-to-tree n1 *t-join*) n1)
-        n2 (if (array-leaf? n2) (array-leaf-to-tree n2 *t-join*) n2)]
-    (cond
-      (leaf? n1) (leaf)
-      (leaf? n2) n1
-      true       (kvlr [ak _ l r] n2
-                   (let  [[l1 _ r1] (node-split n1 ak)]
+  (cond
+    (leaf? n1) (leaf)
+    (leaf? n2) (leaf)
+    :else      (kvlr [ak av l r] n2
+                 (let [[l1 x r1] (node-split n1 ak)]
+                   (if x
+                     (node-concat3 ak av
+                       (node-set-intersection l1 l)
+                       (node-set-intersection r1 r))
                      (node-concat2
-                       (node-set-difference l1 l)
-                       (node-set-difference r1 r)))))))
+                       (node-set-intersection l1 l)
+                       (node-set-intersection r1 r)))))))
+
+(defn node-set-difference
+  "set difference"
+  [n1 n2]
+  (cond
+    (leaf? n1) (leaf)
+    (leaf? n2) n1
+    :else      (kvlr [ak _ l r] n2
+                 (let [[l1 _ r1] (node-split n1 ak)]
+                   (node-concat2
+                     (node-set-difference l1 l)
+                     (node-set-difference r1 r))))))
 
 (defn node-subset?
   "return true if `sub` is a subset of `super`"
   [super sub]
-  ;; Convert ArrayLeaf to tree for set operations
-  (let [super (if (array-leaf? super) (array-leaf-to-tree super *t-join*) super)
-        sub   (if (array-leaf? sub) (array-leaf-to-tree sub *t-join*) sub)
-        ^Comparator cmp order/*compare*]
+  (let [^Comparator cmp order/*compare*]
     (letfn [(subset? [n1 n2]
-              (or (leaf? n1)
+              (cond
+                (leaf? n1) true
+                (leaf? n2) false
+                :else
                 (and
                   (<= (node-size n1) (node-size n2))
                   (kvlr [k1 _ l1 r1] n1
                     (kvlr [k2 _ l2 r2] n2
                       (let [c (.compare cmp k1 k2)]
-                        (if (zero? c)
-                          (and (subset? l1 l2) (subset? r1 r2))
-                          (if (neg? c)
-                            (and (subset? l1 l2) (node-find n2 k1 cmp) (subset? r1 n2))
-                            (and (subset? r1 r2) (node-find n2 k1 cmp) (subset? l1 n2))))))))))]
+                        (cond
+                          (zero? c) (and (subset? l1 l2) (subset? r1 r2))
+                          (neg? c)  (and (subset? l1 l2) (node-find n2 k1 cmp) (subset? r1 n2))
+                          :else     (and (subset? r1 r2) (node-find n2 k1 cmp) (subset? l1 n2)))))))))]
       (or (leaf? sub) (boolean (subset? sub super))))))
 
 (def node-set-compare (partial node-compare :k))
@@ -1615,25 +1282,23 @@
 (defn node-set-union-parallel
   "Parallel set union. Uses fork-join parallelism for large trees."
   [n1 n2]
-  (let [n1 (if (array-leaf? n1) (array-leaf-to-tree n1 *t-join*) n1)
-        n2 (if (array-leaf? n2) (array-leaf-to-tree n2 *t-join*) n2)
-        cmp order/*compare*
+  (let [cmp order/*compare*
         join *t-join*]
     (letfn [(union-seq [n1 n2]
               (cond
                 (leaf? n1) n2
                 (leaf? n2) n1
-                true (binding [order/*compare* cmp *t-join* join]
-                       (kvlr [ak av l r] n2
-                         (let [[l1 _ r1] (node-split n1 ak)]
-                           (node-concat3 ak av
-                             (union-seq l1 l)
-                             (union-seq r1 r)))))))
+                :else (binding [order/*compare* cmp *t-join* join]
+                        (kvlr [ak av l r] n2
+                          (let [[l1 _ r1] (node-split n1 ak)]
+                            (node-concat3 ak av
+                              (union-seq l1 l)
+                              (union-seq r1 r)))))))
             (union-par [n1 n2]
               (cond
                 (leaf? n1) n2
                 (leaf? n2) n1
-                true
+                :else
                 (let [size1 (node-size n1)
                       size2 (node-size n2)]
                   (if (< (+ size1 size2) +parallel-threshold+)
@@ -1657,29 +1322,27 @@
 (defn node-set-intersection-parallel
   "Parallel set intersection. Uses fork-join parallelism for large trees."
   [n1 n2]
-  (let [n1 (if (array-leaf? n1) (array-leaf-to-tree n1 *t-join*) n1)
-        n2 (if (array-leaf? n2) (array-leaf-to-tree n2 *t-join*) n2)
-        cmp order/*compare*
+  (let [cmp order/*compare*
         join *t-join*]
     (letfn [(intersect-seq [n1 n2]
               (cond
                 (leaf? n1) (leaf)
                 (leaf? n2) (leaf)
-                true (binding [order/*compare* cmp *t-join* join]
-                       (kvlr [ak av l r] n2
-                         (let [[l1 x r1] (node-split n1 ak)]
-                           (if x
-                             (node-concat3 ak av
-                               (intersect-seq l1 l)
-                               (intersect-seq r1 r))
-                             (node-concat2
-                               (intersect-seq l1 l)
-                               (intersect-seq r1 r))))))))
+                :else (binding [order/*compare* cmp *t-join* join]
+                        (kvlr [ak av l r] n2
+                          (let [[l1 x r1] (node-split n1 ak)]
+                            (if x
+                              (node-concat3 ak av
+                                (intersect-seq l1 l)
+                                (intersect-seq r1 r))
+                              (node-concat2
+                                (intersect-seq l1 l)
+                                (intersect-seq r1 r))))))))
             (intersect-par [n1 n2]
               (cond
                 (leaf? n1) (leaf)
                 (leaf? n2) (leaf)
-                true
+                :else
                 (let [size1 (node-size n1)
                       size2 (node-size n2)]
                   (if (< (+ size1 size2) +parallel-threshold+)
@@ -1707,25 +1370,23 @@
 (defn node-set-difference-parallel
   "Parallel set difference. Uses fork-join parallelism for large trees."
   [n1 n2]
-  (let [n1 (if (array-leaf? n1) (array-leaf-to-tree n1 *t-join*) n1)
-        n2 (if (array-leaf? n2) (array-leaf-to-tree n2 *t-join*) n2)
-        cmp order/*compare*
+  (let [cmp order/*compare*
         join *t-join*]
     (letfn [(diff-seq [n1 n2]
               (cond
                 (leaf? n1) (leaf)
                 (leaf? n2) n1
-                true (binding [order/*compare* cmp *t-join* join]
-                       (kvlr [ak _ l r] n2
-                         (let [[l1 _ r1] (node-split n1 ak)]
-                           (node-concat2
-                             (diff-seq l1 l)
-                             (diff-seq r1 r)))))))
+                :else (binding [order/*compare* cmp *t-join* join]
+                        (kvlr [ak _ l r] n2
+                          (let [[l1 _ r1] (node-split n1 ak)]
+                            (node-concat2
+                              (diff-seq l1 l)
+                              (diff-seq r1 r)))))))
             (diff-par [n1 n2]
               (cond
                 (leaf? n1) (leaf)
                 (leaf? n2) n1
-                true
+                :else
                 (let [size1 (node-size n1)
                       size2 (node-size n2)]
                   (if (< (+ size1 size2) +parallel-threshold+)
@@ -1753,46 +1414,41 @@
 (defn node-map-merge
   "Merge two maps in worst case linear time."
   [n1 n2 merge-fn]
-  ;; Convert ArrayLeaf to tree for merge operations
-  (let [n1 (if (array-leaf? n1) (array-leaf-to-tree n1 *t-join*) n1)
-        n2 (if (array-leaf? n2) (array-leaf-to-tree n2 *t-join*) n2)]
-    (cond
-      (leaf? n1) n2
-      (leaf? n2) n1
-      true       (kvlr [ak av l r] n2
-                   (let [[l1 x r1] (node-split n1 ak)
-                         ;; x is (list k v) when key exists, nil otherwise
-                         val       (if x
-                                     (merge-fn ak av (second x))
-                                     av)]
-                     (node-concat3 ak val
-                       (node-map-merge l1 l merge-fn)
-                       (node-map-merge r1 r merge-fn)))))))
+  (cond
+    (leaf? n1) n2
+    (leaf? n2) n1
+    :else      (kvlr [ak av l r] n2
+                 (let [[l1 x r1] (node-split n1 ak)
+                       ;; x is (list k v) when key exists, nil otherwise
+                       val       (if x
+                                   (merge-fn ak av (second x))
+                                   av)]
+                   (node-concat3 ak val
+                     (node-map-merge l1 l merge-fn)
+                     (node-map-merge r1 r merge-fn))))))
 
 (defn node-map-merge-parallel
   "Parallel map merge. Uses fork-join parallelism for large trees."
   [n1 n2 merge-fn]
-  (let [n1 (if (array-leaf? n1) (array-leaf-to-tree n1 *t-join*) n1)
-        n2 (if (array-leaf? n2) (array-leaf-to-tree n2 *t-join*) n2)
-        cmp order/*compare*
+  (let [cmp order/*compare*
         join *t-join*]
     (letfn [(merge-seq [n1 n2]
               (cond
                 (leaf? n1) n2
                 (leaf? n2) n1
-                true (binding [order/*compare* cmp *t-join* join]
-                       (kvlr [ak av l r] n2
-                         (let [[l1 x r1] (node-split n1 ak)
-                               ;; x is (list k v) when key exists, nil otherwise
-                               val (if x (merge-fn ak av (second x)) av)]
-                           (node-concat3 ak val
-                             (merge-seq l1 l)
-                             (merge-seq r1 r)))))))
+                :else (binding [order/*compare* cmp *t-join* join]
+                        (kvlr [ak av l r] n2
+                          (let [[l1 x r1] (node-split n1 ak)
+                                ;; x is (list k v) when key exists, nil otherwise
+                                val (if x (merge-fn ak av (second x)) av)]
+                            (node-concat3 ak val
+                              (merge-seq l1 l)
+                              (merge-seq r1 r)))))))
             (merge-par [n1 n2]
               (cond
                 (leaf? n1) n2
                 (leaf? n2) n1
-                true
+                :else
                 (let [size1 (node-size n1)
                       size2 (node-size n2)]
                   (if (< (+ size1 size2) +parallel-threshold+)
@@ -1824,21 +1480,12 @@
    (Logarithmic Time)"
   [n ^long index]
   (letfn [(srch [n ^long index]
-            (cond
-              ;; ArrayLeaf: direct array access
-              (array-leaf? n)
-              (let [^ArrayLeaf al n]
-                (node/->SimpleNode (aget ^objects (.ks al) index)
-                                   (aget ^objects (.vs al) index)
-                                   nil nil 1))
-              ;; Tree node: binary search by size
-              :else
-              (lr [l r] n
-                (let [lsize (node-size l)]
-                  (cond
-                    (< index lsize) (recur l index)
-                    (> index lsize) (recur r (- index (inc lsize)))
-                    true            n)))))]
+            (lr [l r] n
+              (let [lsize (node-size l)]
+                (cond
+                  (< index lsize) (recur l index)
+                  (> index lsize) (recur r (- index (inc lsize)))
+                  :else           n))))]
     (if-not (and (<= 0 index) (< index (node-size n)))
       (throw (ex-info "index out of range" {:i index :max (node-size n)}))
       (srch n (long index)))))
@@ -1849,21 +1496,13 @@
   [n k]
   (let [^Comparator cmp order/*compare*]
     (loop [n n k k rank (long 0)]
-      (cond
-        (leaf? n) nil
-        ;; ArrayLeaf: binary search
-        (array-leaf? n)
-        (let [idx (array-leaf-binary-search n k cmp)]
-          (when-not (neg? idx)
-            (+ rank idx)))
-        ;; Tree node: standard search
-        :else
+      (if (leaf? n)
+        nil
         (let [c (.compare cmp k (-k n))]
-          (if (zero? c)
-            (+ rank (node-size (-l n)))
-            (if (neg? c)
-              (recur (-l n) k rank)
-              (recur (-r n) k (+ 1 rank (node-size (-l n)))))))))))
+          (cond
+            (zero? c) (+ rank (node-size (-l n)))
+            (neg? c)  (recur (-l n) k rank)
+            :else     (recur (-r n) k (+ 1 rank (node-size (-l n))))))))))
 
 ;; MAYBE: other splits? <= < > ?
 

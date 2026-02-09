@@ -155,18 +155,23 @@
 
   clojure.lang.IReduceInit
   (reduce [this f init]
-    (tree/node-reduce (fn [acc n] (f acc (node/-kv n))) init root))
+    (tree/node-reduce-entries f init root))
 
   clojure.lang.IReduce
   (reduce [this f]
-    (let [sentinel (Object.)
-          result (tree/node-reduce
-                   (fn [acc n]
-                     (if (identical? acc sentinel)
-                       (node/-kv n)
-                       (f acc (node/-kv n))))
-                   sentinel root)]
-      (if (identical? result sentinel) (f) result)))
+    ;; No-init reduce: first entry becomes initial accumulator
+    (if (node/leaf? root)
+      (f)
+      (let [least (tree/node-least root)
+            first-entry (clojure.lang.MapEntry. (node/-k least) (node/-v least))
+            seen-first (volatile! false)]
+        (tree/node-reduce-entries
+          (fn [acc entry]
+            (if @seen-first
+              (f acc entry)
+              (do (vreset! seen-first true) entry)))
+          first-entry
+          root))))
 
   clojure.core.reducers.CollFold
   (coll-fold [this n combinef reducef]

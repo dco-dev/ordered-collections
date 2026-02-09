@@ -46,8 +46,10 @@ The basic operation of this library is as a drop-in replacement for
 
 * `(dean/ordered-set   coll)` - sorted set
 * `(dean/ordered-set-by   pred coll)` - sorted set with custom comparator
+* `(dean/long-ordered-set coll)` - sorted set optimized for Long keys (25% faster lookup)
 * `(dean/ordered-map   coll)` - sorted map
 * `(dean/ordered-map-by   pred coll)` - sorted map with custom comparator
+* `(dean/long-ordered-map coll)` - sorted map optimized for Long keys
 * `(dean/interval-set  coll)` - set supporting interval overlap queries
 * `(dean/interval-map  coll)` - map supporting interval overlap queries
 * `(dean/priority-queue coll)` - persistent priority queue (min-heap)

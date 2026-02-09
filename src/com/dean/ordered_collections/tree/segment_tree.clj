@@ -240,9 +240,8 @@
   ([op identity coll]
    (let [cmp     order/normal-compare
          creator (make-agg-creator op identity)]
-     (binding [order/*compare*      cmp
-               tree/*t-join*        creator
-               tree/*use-array-leaf* false]  ;; SegmentTree uses custom AggregateNode
+     (binding [order/*compare* cmp
+               tree/*t-join*   creator]
        (SegmentTree.
          (reduce (fn [n [k v]] (tree/node-add n k v)) (node/leaf) coll)
          op identity creator cmp {})))))
