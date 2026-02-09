@@ -76,11 +76,13 @@
 
 | N | sorted-map | data.avl | ordered-map |
 |---|------------|----------|-------------|
-| 10,000 | 2.0 ms | 2.9 ms | 5.7 ms |
-| 100,000 | 27 ms | 32 ms | 51 ms |
-| 500,000 | 136 ms | 173 ms | 266 ms |
+| 10,000 | 2.0 ms | 2.9 ms | 2.5 ms |
+| 100,000 | 27 ms | 32 ms | 34 ms |
+| 500,000 | 136 ms | 173 ms | 168 ms |
 
-Note: Seq iteration is slower because it uses the lazy enumerator path, not the optimized `IReduceInit` path.
+**Ratio vs sorted-map at 500K**: ordered-map 23% slower (significantly improved from previous 2x overhead)
+
+Note: Seq iteration now uses efficient direct ISeq implementations (`KeySeq`/`EntrySeq`) that avoid lazy-seq and `map` wrapper overhead.
 
 ## Set Benchmarks
 

@@ -134,14 +134,12 @@
       (node/-k (tree/node-nth root i))))
 
   clojure.lang.Seqable
-  (seq [this]
-    (with-fuzzy-set this
-      (map node/-k (tree/node-seq root))))
+  (seq [_]
+    (tree/key-seq root (tree/node-size root)))
 
   clojure.lang.Reversible
-  (rseq [this]
-    (with-fuzzy-set this
-      (map node/-k (tree/node-seq-reverse root))))
+  (rseq [_]
+    (tree/key-seq-reverse root (tree/node-size root)))
 
   clojure.lang.ILookup
   ;; Fuzzy lookup - returns the nearest element
@@ -229,21 +227,20 @@
   clojure.lang.Sorted
   (entryKey [_ entry]
     entry)
-  (seq [this ascending]
-    (with-fuzzy-set this
-      (if ascending
-        (map node/-k (tree/node-seq root))
-        (map node/-k (tree/node-seq-reverse root)))))
+  (seq [_ ascending]
+    (if ascending
+      (tree/key-seq root)
+      (tree/key-seq-reverse root)))
   (seqFrom [this k ascending]
     (with-fuzzy-set this
       (let [[lt present gt] (tree/node-split root k)]
         (if ascending
           (if present
-            (cons (first present) (map node/-k (tree/node-seq gt)))
-            (seq (map node/-k (tree/node-seq gt))))
+            (cons (first present) (tree/key-seq gt))
+            (tree/key-seq gt))
           (if present
-            (cons (first present) (map node/-k (tree/node-seq-reverse lt)))
-            (seq (map node/-k (tree/node-seq-reverse lt))))))))
+            (cons (first present) (tree/key-seq-reverse lt))
+            (tree/key-seq-reverse lt))))))
 
   clojure.lang.IPersistentSet
   (equiv [this o]

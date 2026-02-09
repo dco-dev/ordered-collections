@@ -126,14 +126,12 @@
       (node/-k (tree/node-nth root i))))
 
   clojure.lang.Seqable
-  (seq [this]
-    (with-ordered-set this
-      (map node/-k (tree/node-seq root))))
+  (seq [_]
+    (tree/key-seq root (tree/node-size root)))
 
   clojure.lang.Reversible
-  (rseq [this]
-    (with-ordered-set this
-      (map node/-k (tree/node-seq-reverse root))))
+  (rseq [_]
+    (tree/key-seq-reverse root (tree/node-size root)))
 
   clojure.lang.ILookup
   (valAt [this k not-found]
@@ -253,23 +251,22 @@
   ;; comparator method is inherited from java.util.SortedSet above
   (entryKey [_ entry]
     entry)  ;; for sets, the entry IS the key
-  (seq [this ascending]
-    (with-ordered-set this
-      (if ascending
-        (map node/-k (tree/node-seq root))
-        (map node/-k (tree/node-seq-reverse root)))))
+  (seq [_ ascending]
+    (if ascending
+      (tree/key-seq root)
+      (tree/key-seq-reverse root)))
   (seqFrom [this k ascending]
     (with-ordered-set this
       (let [[lt present gt] (tree/node-split root k)]
         (if ascending
           ;; ascending: elements >= k (present + gt)
           (if present
-            (cons (first present) (map node/-k (tree/node-seq gt)))
-            (seq (map node/-k (tree/node-seq gt))))
+            (cons (first present) (tree/key-seq gt))
+            (tree/key-seq gt))
           ;; descending: elements <= k (present + lt in reverse)
           (if present
-            (cons (first present) (map node/-k (tree/node-seq-reverse lt)))
-            (seq (map node/-k (tree/node-seq-reverse lt))))))))
+            (cons (first present) (tree/key-seq-reverse lt))
+            (tree/key-seq-reverse lt))))))
 
   clojure.lang.IPersistentSet
   (equiv [this o]

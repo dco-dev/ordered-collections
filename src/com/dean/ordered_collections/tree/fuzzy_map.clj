@@ -131,14 +131,12 @@
   clojure.lang.MapEquivalence
 
   clojure.lang.Seqable
-  (seq [this]
-    (with-fuzzy-map this
-      (map node/-kv (tree/node-seq root))))
+  (seq [_]
+    (tree/entry-seq root (tree/node-size root)))
 
   clojure.lang.Reversible
-  (rseq [this]
-    (with-fuzzy-map this
-      (map node/-kv (tree/node-seq-reverse root))))
+  (rseq [_]
+    (tree/entry-seq-reverse root (tree/node-size root)))
 
   clojure.lang.ILookup
   ;; Fuzzy lookup - returns the value for the nearest key
@@ -235,23 +233,22 @@
   clojure.lang.Sorted
   (entryKey [_ entry]
     (key entry))
-  (seq [this ascending]
-    (with-fuzzy-map this
-      (if ascending
-        (map node/-kv (tree/node-seq root))
-        (map node/-kv (tree/node-seq-reverse root)))))
+  (seq [_ ascending]
+    (if ascending
+      (tree/entry-seq root)
+      (tree/entry-seq-reverse root)))
   (seqFrom [this k ascending]
     (with-fuzzy-map this
       (let [[lt present gt] (tree/node-split root k)]
         (if ascending
           (if present
             (cons (MapEntry. (first present) (second present))
-                  (map node/-kv (tree/node-seq gt)))
-            (seq (map node/-kv (tree/node-seq gt))))
+                  (tree/entry-seq gt))
+            (tree/entry-seq gt))
           (if present
             (cons (MapEntry. (first present) (second present))
-                  (map node/-kv (tree/node-seq-reverse lt)))
-            (seq (map node/-kv (tree/node-seq-reverse lt))))))))
+                  (tree/entry-seq-reverse lt))
+            (tree/entry-seq-reverse lt))))))
 
   clojure.lang.Associative
   (containsKey [this k]

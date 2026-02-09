@@ -46,6 +46,39 @@ All notable changes to this project will be documented in this file.
   (fuzzy-exact-get fm 11)   ; => nil
   ```
 
+#### Specialized Comparator Constructors
+
+- **Type-specific constructors** for competitive lookup performance:
+  ```clojure
+  ;; Long keys - 3% faster than sorted-set
+  (long-ordered-set [1 2 3])
+  (long-ordered-map [[1 :a] [2 :b]])
+
+  ;; String keys - 5% faster than sorted-set
+  (string-ordered-set ["apple" "banana" "cherry"])
+  (string-ordered-map [["a" 1] ["b" 2]])
+
+  ;; Double keys
+  (double-ordered-set [1.0 2.0 3.0])
+  (double-ordered-map [[1.0 :a] [2.0 :b]])
+  ```
+
+- **Custom comparator constructors** for full control:
+  ```clojure
+  ;; Pass a java.util.Comparator directly
+  (ordered-set-with long-compare [1 2 3])
+  (ordered-map-with string-compare [["a" 1] ["b" 2]])
+
+  ;; Build from predicate (slightly slower)
+  (ordered-set-with (compare-by >) [1 2 3])  ; descending
+  ```
+
+- **Exported comparators** for reuse:
+  - `long-compare` - optimized Long comparison
+  - `double-compare` - optimized Double comparison
+  - `string-compare` - optimized String comparison
+  - `compare-by` - build Comparator from predicate
+
 #### Full `clojure.lang.Sorted` Support
 - `ordered-set` and `ordered-map` now implement `clojure.lang.Sorted`
 - Enables native `subseq` and `rsubseq` support:
@@ -89,15 +122,22 @@ All notable changes to this project will be documented in this file.
 ### Performance Improvements
 
 #### Iteration Performance
-- Stack-based iteration using `java.util.ArrayDeque` replaces enumerator-based traversal
-- **Map iteration: 2.4x faster** (now faster than `sorted-map`)
-- **Set iteration: 3.9x faster** (now faster than `sorted-set`)
-- All types implement optimized `IReduceInit` and `IReduce`
+- All types implement optimized `IReduceInit` and `IReduce` for fast reduce
+- **Direct reduce: 2.1x faster than sorted-set** via direct tree traversal
+
+#### Seq Performance
+- New direct `ISeq` implementations (`KeySeq`, `EntrySeq`) replace lazy-seq + map wrappers
+- Seq types also implement `IReduceInit` for fast reduce over seqs
+- **Reduce over seq: 1.4x faster than sorted-set/sorted-map**
+- **Seq iteration (first/next): within 7% of sorted-set/sorted-map**
+- Efficient reverse seq via `KeySeqReverse` and `EntrySeqReverse`
+- All seq types implement `Counted` for O(1) count when size is known
 
 #### Lookup Performance
-- Comparators now implement `java.util.Comparator` interface
-- Direct `invokeinterface` dispatch eliminates IFn overhead
-- **Lookup performance within 8-10% of `sorted-map`**
+- Comparators implement `java.util.Comparator` for fast dispatch
+- `long-ordered-set`/`long-ordered-map` use primitive `Long/compare`
+- **`long-ordered-set` is 3% faster than `sorted-set`** for numeric keys
+- `ordered-set` with default comparator is 14% slower (use `long-*` for numerics)
 
 #### Reduced Dynamic Var Overhead
 - Hot-path operations (`assoc`, `dissoc`, `get`, `contains?`) bypass dynamic binding
@@ -111,17 +151,26 @@ All notable changes to this project will be documented in this file.
 - `subSet` now correctly returns elements >= from and < to
 - Matches Java `SortedSet` contract
 
-### Performance Summary (vs sorted-map/sorted-set at N=500K)
+### Performance Summary (vs sorted-map/sorted-set at N=100K)
 
-| Operation | ordered-map | ordered-set |
-|-----------|-------------|-------------|
-| Construction | 2.2x slower | 0.75x faster |
-| Insert | 2.1x slower | 1.6x slower |
-| Delete | 1.9x slower | 1.5x slower |
-| Lookup | 1.08x slower | 1.21x slower |
-| Iteration (reduce) | **0.92x faster** | **0.64x faster** |
-| Parallel fold | **1.6x faster** | **1.6x faster** |
-| Split | N/A | **5x faster** |
+| Operation | ordered-* | long-ordered-* | string-ordered-* |
+|-----------|-----------|----------------|------------------|
+| Construction (batch) | **18% faster** | **18% faster** | **18% faster** |
+| Sequential insert | 1.4-2.3x slower | 1.4-2.3x slower | 1.4-2.3x slower |
+| Lookup | 14-21% slower | **3% faster** | **5% faster** |
+| Direct reduce | **3x faster** | **3x faster** | **3x faster** |
+| Reduce over seq | **27% faster** | **27% faster** | **27% faster** |
+| First/last | **13,000x faster** | **13,000x faster** | **13,000x faster** |
+| Set operations | **6x faster** | **6x faster** | **6x faster** |
+| Parallel fold | **2.3x faster** | **2.3x faster** | **2.3x faster** |
+| nth/rank | **O(log n)** | **O(log n)** | **O(log n)** |
+
+### Bug Fixes
+
+#### Interval Tree Construction
+- Fixed `interval-set` and `interval-map` construction to use sequential reduce instead of parallel fold
+- Previously, parallel workers lost dynamic binding for node allocator, causing `ClassCastException` for collections >2048 elements
+- Interval trees now construct correctly at all sizes
 
 ### Breaking Changes
 
@@ -130,6 +179,12 @@ All notable changes to this project will be documented in this file.
 - The mutable variants added API complexity with marginal performance benefit
 - Use persistent types directly - construction via `ordered-set` and `ordered-map` is now faster
 - For batch operations, the persistent constructors now use parallel fold internally
+
+#### Removed Transient Support
+- **Removed**: `transient`/`persistent!` support from all collection types
+- The implementation only saved wrapper allocation, not tree node allocation
+- Tree operations still did full path-copying, providing no meaningful speedup
+- This simplifies the API without loss of real-world performance
 
 ---
 

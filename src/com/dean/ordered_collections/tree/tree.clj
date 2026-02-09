@@ -4,7 +4,7 @@
             [com.dean.ordered-collections.tree.order    :as order]
             [com.dean.ordered-collections.tree.node     :as node
              :refer [leaf? leaf -k -v -l -r -x -z -kv]])
-  (:import  [clojure.lang MapEntry]
+  (:import  [clojure.lang ASeq MapEntry RT ISeq Seqable Sequential IPersistentCollection]
             [java.util Comparator]))
 
 (set! *warn-on-reflection* true)
@@ -775,9 +775,6 @@
 (defn node-find-intervals [n i]
   ((node-find-interval-fn i nil) n))
 
-(defn node-find-best-interval [n i pred]
-  ((node-find-interval-fn i pred) n))
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Iteration and Accumulation
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -952,22 +949,6 @@
   "eager right reduction of the tree rooted at n. does not support clojure.core/reduced."
   ([f n] (node-fold-right* f nil n))
   ([f base n] ((node-fold*-fn :>) f base n)))
-
-(defn node-filter
-  "return a tree with all nodes of n satisfying predicate p."
-  [p n]
-  (node-fold-left* (fn [x y]
-                      (if (p y)
-                        x
-                        (node-remove x (-k y))))
-                    n n))
-
-(defn node-invert
-  "return a tree in which the keys and values of n are reversed."
-  [n]
-  (node-fold-left* (fn [acc x]
-                      (node-add acc (-v x) (-k x)))
-                   (leaf) n))
 
 (defn node-healthy?
   "verify node `n` and all descendants satisfy the node-invariants
@@ -1551,6 +1532,333 @@
   "Return a (lazy) seq of nodes in tree rooted at n in reverse order."
   [n]
   ((node-seq-fn :>) (node-enumerator-reverse n)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Efficient Direct Seq Types
+;;
+;; These implement ISeq directly without lazy-seq or map wrappers,
+;; providing faster iteration for ordered collections.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- seq-equiv
+  "Compare two sequences for equivalence, element by element."
+  [s1 o]
+  (if-not (or (instance? clojure.lang.Sequential o) (instance? java.util.List o))
+    false
+    (loop [s1 (seq s1) s2 (seq o)]
+      (cond
+        (nil? s1) (nil? s2)
+        (nil? s2) false
+        (not (clojure.lang.Util/equiv (first s1) (first s2))) false
+        :else (recur (next s1) (next s2))))))
+
+(deftype KeySeq [enum cnt _meta]
+  clojure.lang.ISeq
+  (first [_]
+    (-k (node-enum-first enum)))
+  (next [_]
+    (when-let [e (node-enum-rest enum)]
+      (KeySeq. e (when cnt (unchecked-dec-int cnt)) nil)))
+  (more [this]
+    (or (.next this) ()))
+  (cons [this o]
+    (clojure.lang.Cons. o this))
+
+  clojure.lang.Seqable
+  (seq [this] this)
+
+  clojure.lang.Sequential
+
+  java.lang.Iterable
+  (iterator [this]
+    (clojure.lang.SeqIterator. this))
+
+  clojure.lang.Counted
+  (count [_]
+    (if cnt cnt (loop [e enum n 0]
+                  (if e (recur (node-enum-rest e) (unchecked-inc-int n)) n))))
+
+  clojure.lang.IReduceInit
+  (reduce [_ f init]
+    (loop [e enum acc init]
+      (if e
+        (let [ret (f acc (-k (node-enum-first e)))]
+          (if (reduced? ret)
+            @ret
+            (recur (node-enum-rest e) ret)))
+        acc)))
+
+  clojure.lang.IReduce
+  (reduce [_ f]
+    (if enum
+      (loop [e (node-enum-rest enum) acc (-k (node-enum-first enum))]
+        (if e
+          (let [ret (f acc (-k (node-enum-first e)))]
+            (if (reduced? ret)
+              @ret
+              (recur (node-enum-rest e) ret)))
+          acc))
+      (f)))
+
+  clojure.lang.IHashEq
+  (hasheq [this]
+    (clojure.lang.Murmur3/hashOrdered this))
+
+  clojure.lang.IPersistentCollection
+  (empty [_] ())
+  (equiv [this o]
+    (seq-equiv this o))
+
+  java.lang.Object
+  (hashCode [this]
+    (clojure.lang.Util/hash this))
+  (equals [this o]
+    (clojure.lang.Util/equals this o))
+
+  clojure.lang.IMeta
+  (meta [_] _meta)
+
+  clojure.lang.IObj
+  (withMeta [_ m]
+    (KeySeq. enum cnt m)))
+
+(deftype EntrySeq [enum cnt _meta]
+  clojure.lang.ISeq
+  (first [_]
+    (-kv (node-enum-first enum)))
+  (next [_]
+    (when-let [e (node-enum-rest enum)]
+      (EntrySeq. e (when cnt (unchecked-dec-int cnt)) nil)))
+  (more [this]
+    (or (.next this) ()))
+  (cons [this o]
+    (clojure.lang.Cons. o this))
+
+  clojure.lang.Seqable
+  (seq [this] this)
+
+  clojure.lang.Sequential
+
+  java.lang.Iterable
+  (iterator [this]
+    (clojure.lang.SeqIterator. this))
+
+  clojure.lang.Counted
+  (count [_]
+    (if cnt cnt (loop [e enum n 0]
+                  (if e (recur (node-enum-rest e) (unchecked-inc-int n)) n))))
+
+  clojure.lang.IReduceInit
+  (reduce [_ f init]
+    (loop [e enum acc init]
+      (if e
+        (let [ret (f acc (-kv (node-enum-first e)))]
+          (if (reduced? ret)
+            @ret
+            (recur (node-enum-rest e) ret)))
+        acc)))
+
+  clojure.lang.IReduce
+  (reduce [_ f]
+    (if enum
+      (loop [e (node-enum-rest enum) acc (-kv (node-enum-first enum))]
+        (if e
+          (let [ret (f acc (-kv (node-enum-first e)))]
+            (if (reduced? ret)
+              @ret
+              (recur (node-enum-rest e) ret)))
+          acc))
+      (f)))
+
+  clojure.lang.IHashEq
+  (hasheq [this]
+    (clojure.lang.Murmur3/hashOrdered this))
+
+  clojure.lang.IPersistentCollection
+  (empty [_] ())
+  (equiv [this o]
+    (seq-equiv this o))
+
+  java.lang.Object
+  (hashCode [this]
+    (clojure.lang.Util/hash this))
+  (equals [this o]
+    (clojure.lang.Util/equals this o))
+
+  clojure.lang.IMeta
+  (meta [_] _meta)
+
+  clojure.lang.IObj
+  (withMeta [_ m]
+    (EntrySeq. enum cnt m)))
+
+(defn key-seq
+  "Return an efficient seq of keys from tree rooted at n."
+  ([n] (key-seq n nil))
+  ([n cnt]
+   (when-let [e (node-enumerator n)]
+     (KeySeq. e cnt nil))))
+
+(defn entry-seq
+  "Return an efficient seq of map entries from tree rooted at n."
+  ([n] (entry-seq n nil))
+  ([n cnt]
+   (when-let [e (node-enumerator n)]
+     (EntrySeq. e cnt nil))))
+
+(deftype KeySeqReverse [enum cnt _meta]
+  clojure.lang.ISeq
+  (first [_]
+    (-k (node-enum-first enum)))
+  (next [_]
+    (when-let [e (node-enum-prior enum)]
+      (KeySeqReverse. e (when cnt (unchecked-dec-int cnt)) nil)))
+  (more [this]
+    (or (.next this) ()))
+  (cons [this o]
+    (clojure.lang.Cons. o this))
+
+  clojure.lang.Seqable
+  (seq [this] this)
+
+  clojure.lang.Sequential
+
+  java.lang.Iterable
+  (iterator [this]
+    (clojure.lang.SeqIterator. this))
+
+  clojure.lang.Counted
+  (count [_]
+    (if cnt cnt (loop [e enum n 0]
+                  (if e (recur (node-enum-prior e) (unchecked-inc-int n)) n))))
+
+  clojure.lang.IReduceInit
+  (reduce [_ f init]
+    (loop [e enum acc init]
+      (if e
+        (let [ret (f acc (-k (node-enum-first e)))]
+          (if (reduced? ret)
+            @ret
+            (recur (node-enum-prior e) ret)))
+        acc)))
+
+  clojure.lang.IReduce
+  (reduce [_ f]
+    (if enum
+      (loop [e (node-enum-prior enum) acc (-k (node-enum-first enum))]
+        (if e
+          (let [ret (f acc (-k (node-enum-first e)))]
+            (if (reduced? ret)
+              @ret
+              (recur (node-enum-prior e) ret)))
+          acc))
+      (f)))
+
+  clojure.lang.IHashEq
+  (hasheq [this]
+    (clojure.lang.Murmur3/hashOrdered this))
+
+  clojure.lang.IPersistentCollection
+  (empty [_] ())
+  (equiv [this o]
+    (seq-equiv this o))
+
+  java.lang.Object
+  (hashCode [this]
+    (clojure.lang.Util/hash this))
+  (equals [this o]
+    (clojure.lang.Util/equals this o))
+
+  clojure.lang.IMeta
+  (meta [_] _meta)
+
+  clojure.lang.IObj
+  (withMeta [_ m]
+    (KeySeqReverse. enum cnt m)))
+
+(deftype EntrySeqReverse [enum cnt _meta]
+  clojure.lang.ISeq
+  (first [_]
+    (-kv (node-enum-first enum)))
+  (next [_]
+    (when-let [e (node-enum-prior enum)]
+      (EntrySeqReverse. e (when cnt (unchecked-dec-int cnt)) nil)))
+  (more [this]
+    (or (.next this) ()))
+  (cons [this o]
+    (clojure.lang.Cons. o this))
+
+  clojure.lang.Seqable
+  (seq [this] this)
+
+  clojure.lang.Sequential
+
+  java.lang.Iterable
+  (iterator [this]
+    (clojure.lang.SeqIterator. this))
+
+  clojure.lang.Counted
+  (count [_]
+    (if cnt cnt (loop [e enum n 0]
+                  (if e (recur (node-enum-prior e) (unchecked-inc-int n)) n))))
+
+  clojure.lang.IReduceInit
+  (reduce [_ f init]
+    (loop [e enum acc init]
+      (if e
+        (let [ret (f acc (-kv (node-enum-first e)))]
+          (if (reduced? ret)
+            @ret
+            (recur (node-enum-prior e) ret)))
+        acc)))
+
+  clojure.lang.IReduce
+  (reduce [_ f]
+    (if enum
+      (loop [e (node-enum-prior enum) acc (-kv (node-enum-first enum))]
+        (if e
+          (let [ret (f acc (-kv (node-enum-first e)))]
+            (if (reduced? ret)
+              @ret
+              (recur (node-enum-prior e) ret)))
+          acc))
+      (f)))
+
+  clojure.lang.IHashEq
+  (hasheq [this]
+    (clojure.lang.Murmur3/hashOrdered this))
+
+  clojure.lang.IPersistentCollection
+  (empty [_] ())
+  (equiv [this o]
+    (seq-equiv this o))
+
+  java.lang.Object
+  (hashCode [this]
+    (clojure.lang.Util/hash this))
+  (equals [this o]
+    (clojure.lang.Util/equals this o))
+
+  clojure.lang.IMeta
+  (meta [_] _meta)
+
+  clojure.lang.IObj
+  (withMeta [_ m]
+    (EntrySeqReverse. enum cnt m)))
+
+(defn key-seq-reverse
+  "Return an efficient reverse seq of keys from tree rooted at n."
+  ([n] (key-seq-reverse n nil))
+  ([n cnt]
+   (when-let [e (node-enumerator-reverse n)]
+     (KeySeqReverse. e cnt nil))))
+
+(defn entry-seq-reverse
+  "Return an efficient reverse seq of map entries from tree rooted at n."
+  ([n] (entry-seq-reverse n nil))
+  ([n cnt]
+   (when-let [e (node-enumerator-reverse n)]
+     (EntrySeqReverse. e cnt nil))))
 
 (defn node-subseq
   "Return a (lazy) seq of nodes for the slice of the tree beginning

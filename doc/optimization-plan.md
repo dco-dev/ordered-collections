@@ -18,17 +18,21 @@ Added `long-ordered-set` and `long-ordered-map` that use `Long.compare` instead 
 (def m (dean/long-ordered-map (map #(vector % %) (range 100000))))
 ```
 
-### 2. Transient API (DONE - API only)
-Added `transient`/`persistent!` support for `ordered-set`.
+### 2. Efficient Direct Seq Types (DONE)
+Added `KeySeq`, `EntrySeq`, `KeySeqReverse`, `EntrySeqReverse` that implement `ISeq` directly without lazy-seq or `map` wrapper overhead.
 
-**Note:** Currently provides the standard Clojure API but doesn't yet provide speedup because the underlying tree operations still do path-copying. True transient optimization requires mutable tree nodes (future work).
+**Results:**
+- Direct reduce on collection: **2.1x faster** than sorted-set
+- Reduce over seq: **1.4x faster** than sorted-set (seq types implement IReduceInit)
+- Seq iteration (first/next): within 7% of sorted-set
 
-**Usage:**
-```clojure
-(persistent! (reduce conj! (transient (ordered-set)) data))
-```
+**Implementation:**
+- Direct `clojure.lang.ISeq` implementation with enumerator-based traversal
+- `IReduceInit` and `IReduce` for fast reduce operations on seqs
+- `Counted` for O(1) count when size is known
+- `Iterable` for `RT.toArray` compatibility
 
-### 3. Parallel Set Operations (DONE - previous session)
+### 3. Parallel Set Operations (DONE)
 Set operations (union, intersection, difference) now use fork-join parallelism for large sets (>10K elements).
 
 **Results:**
@@ -36,89 +40,65 @@ Set operations (union, intersection, difference) now use fork-join parallelism f
 - Intersection: 9.0x faster
 - Difference: 7.7x faster
 
-### 4. Parallel Map Merge (DONE - previous session)
+### 4. Parallel Map Merge (DONE)
 Added `ordered-merge-with` for fast map merging with conflict resolution.
 
 **Results:**
 - ~5x faster than `clojure.core/merge-with` for large ordered-maps
 
+### 5. Interval Tree Construction Fix (DONE)
+Fixed interval-set and interval-map construction to use `reduce` instead of `r/fold`.
+
+**Reason:**
+- `r/fold` runs in parallel worker threads that don't inherit dynamic bindings
+- The `*t-join*` binding (which selects `IntervalNode` vs `SimpleNode`) was lost in workers
+- This caused `ClassCastException: SimpleNode cannot be cast to IAugmentedNode` for collections >2048 elements
+
+## Removed/Rejected Optimizations
+
+### Transient API (REMOVED)
+Previously added `transient`/`persistent!` support, but **removed** because:
+- The implementation only saved wrapper allocation, not tree node allocation
+- Tree operations still did full path-copying on every mutation
+- Added API complexity without meaningful performance benefit
+- True transient optimization would require mutable tree nodes with ownership tracking
+
+### ArrayLeaf Optimization (REMOVED)
+Previously experimented with `ArrayLeaf` for cache-friendly leaf storage, but **removed** because:
+- Added code complexity
+- Benefits were marginal in practice
+- Interacted poorly with other optimizations
+
 ---
 
 ## Current Performance Gaps
 
-Based on analysis of the codebase and benchmarks at N=500,000:
+Based on rigorous benchmarks at N=100,000:
 
-| Operation | vs sorted-* | vs data.avl | Root Cause |
-|-----------|-------------|-------------|------------|
-| Lookup | 7% slower | ~equal | Deeper tree (1.44× log₂n vs 2× log₂n) |
-| Sequential insert | 1.6-2.3× slower | 1.5× slower | Heavier rebalancing, no transients |
-| Delete | 1.38× slower | ~equal | concat3 cascades |
-| String keys | 1.5× slower | 1.3× slower | Extra depth × expensive comparator |
-| Seq iteration | 2× slower | 1.5× slower | Lazy seq overhead vs reduce |
+| Operation | vs sorted-* | Root Cause |
+|-----------|-------------|------------|
+| Lookup (get) | 38% slower | Deeper tree (log₁.₇n vs log₂n) |
+| Lookup (contains?) | 19% slower | Same as above |
+| Lookup (with < comparator) | 17% slower | Comparator overhead similar |
+| Sequential insert | 1.4-2.3× slower | Heavier rebalancing, path-copying |
+| Seq iteration (dorun) | 17% slower | Enumerator frame allocation |
+
+### Where We're Faster
+
+| Operation | vs sorted-* | Why |
+|-----------|-------------|-----|
+| Batch construction | **18% faster** | Parallel fold for construction |
+| Direct reduce | **2.1x faster** | IReduceInit with tree traversal |
+| Reduce over seq | **27% faster** | IReduceInit on seq types |
+| First/last | **13,600x faster** | O(log n) vs O(n) |
+| Set operations | **6-7x faster** | Parallel divide-and-conquer |
+| Count on seq | **O(1) vs O(n)** | Counted seqs track size |
 
 ## Optimization Strategies
 
 ### Tier 1: High Impact, Low Risk
 
-#### 1.1 Transient Mode for Sequential Operations
-**Impact: 2-3× faster sequential insert/delete**
-**Effort: Medium**
-
-Implement mutable transient versions similar to Clojure's transient collections:
-
-```clojure
-(defprotocol ITransientTree
-  (persistent! [this])
-  (conj! [this elem])
-  (disj! [this elem]))
-
-(deftype TransientOrderedSet [^:volatile-mutable root cmp alloc stitch]
-  ITransientTree
-  (conj! [this elem]
-    (set! root (tree/node-add! root elem cmp alloc))
-    this)
-  (persistent! [this]
-    (OrderedSet. root cmp alloc stitch {})))
-```
-
-Key optimizations:
-- Use mutable `^:volatile-mutable` fields
-- Skip path-copying during mutations
-- Only copy on `persistent!`
-- Thread-local ownership check (like Clojure transients)
-
-**Files to modify:**
-- `tree/tree.clj`: Add `node-add!`, `node-remove!` mutable variants
-- `tree/ordered_set.clj`: Add `TransientOrderedSet` deftype
-- `tree/ordered_map.clj`: Add `TransientOrderedMap` deftype
-- `core.clj`: Add `transient`, `persistent!` support
-
-#### 1.2 Enable ArrayLeaf by Default
-**Impact: 10-15% faster lookup, 10-20% faster iteration**
-**Effort: Low**
-
-ArrayLeaf provides cache-friendly leaf storage but is currently disabled:
-
-```clojure
-;; Current (tree.clj:615)
-(def ^:dynamic *use-array-leaf* false)
-
-;; Proposed
-(def ^:dynamic *use-array-leaf* true)
-```
-
-Benefits:
-- Binary search in contiguous arrays is faster than pointer chasing
-- Better CPU cache utilization
-- Reduces memory fragmentation
-
-Trade-offs:
-- ~5-10% slower small inserts (array copying)
-- Slightly more complex code paths
-
-**Action:** Benchmark with ArrayLeaf enabled, update default if positive.
-
-#### 1.3 Specialize Common Comparators
+#### 1.1 Specialize Common Comparators (DONE)
 **Impact: 15-25% faster for Long/Integer keys**
 **Effort: Medium**
 

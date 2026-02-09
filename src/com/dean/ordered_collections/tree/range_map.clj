@@ -73,9 +73,7 @@
 
   Seqable
   (seq [_]
-    (when-not (node/leaf? root)
-      (binding [order/*compare* cmp]
-        (map node/-kv (tree/node-seq root)))))
+    (tree/entry-seq root (tree/node-size root)))
 
   ILookup
   (valAt [this x] (.valAt this x nil))

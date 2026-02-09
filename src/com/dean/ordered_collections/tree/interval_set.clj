@@ -121,14 +121,12 @@
       (node/-k (tree/node-nth root i))))
 
   clojure.lang.Seqable
-  (seq [this]
-    (with-interval-set this
-      (map node/-k (tree/node-seq root))))
+  (seq [_]
+    (tree/key-seq root (tree/node-size root)))
 
   clojure.lang.Reversible
-  (rseq [this]
-    (with-interval-set this
-      (map node/-k (tree/node-seq-reverse root))))
+  (rseq [_]
+    (tree/key-seq-reverse root (tree/node-size root)))
 
   clojure.lang.ILookup
   (valAt [this k not-found]

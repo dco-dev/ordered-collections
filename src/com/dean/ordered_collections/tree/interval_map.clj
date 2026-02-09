@@ -64,14 +64,12 @@
   clojure.lang.MapEquivalence
 
   clojure.lang.Seqable
-  (seq [this]
-    (with-interval-map this
-      (map node/-kv (tree/node-seq root))))
+  (seq [_]
+    (tree/entry-seq root (tree/node-size root)))
 
   clojure.lang.Reversible
-  (rseq [this]
-    (with-interval-map this
-      (map node/-kv (tree/node-seq-reverse root))))
+  (rseq [_]
+    (tree/entry-seq-reverse root (tree/node-size root)))
 
   clojure.lang.ILookup
   (valAt [this k not-found]
