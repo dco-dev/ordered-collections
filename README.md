@@ -1,72 +1,149 @@
 # com.dean/ordered-collections
 
-This library provides a collection of data structures implemented using a
-modular, extensible, foldable, weight balanced persistent binary tree:
-ordered-sets, ordered-maps, interval-sets, and interval-maps.
+A collection of persistent sorted data structures for Clojure, built on weight-balanced binary trees. Drop-in replacements for `sorted-set` and `sorted-map`, plus interval maps, segment trees, range maps, priority queues, and more—all sharing a common foundation that enables efficient splitting, joining, and parallel operations.
 
 ![tests](https://github.com/dco-dev/ordered-collections/actions/workflows/clojure.yml/badge.svg)
 [![Clojars Project](https://img.shields.io/clojars/v/com.dean/ordered-collections.svg)](https://clojars.org/com.dean/ordered-collections)
 
 ---
 
-**New to the library?** See how Zorp uses ordered-maps, interval-maps, segment-trees, and more to run his sneaker empire on the dark side of Pluto: **[Zorp's Sneaker Emporium](doc/zorp-example.md)** — a practical tutorial disguised as interplanetary commerce.
+## Installation
 
----
-
-### Usage
-
-To install, add the following dependency to your project or build file:
-
-```
+```clojure
 [com.dean/ordered-collections "0.2.0"]
 ```
 
-#### Public API
-
-The public api resides in the top-level `com.dean.ordered-collections.core` namespace:
-
-```clj
-(require '[com.dean.ordered-collections.core :as dean])
+```clojure
+(require '[com.dean.ordered-collections.core :as oc])
 ```
 
-The basic operation of this library is as a drop-in replacement for
-`clojure.core/sorted-set` and `clojure.core/sorted-map`.
+The basic operation of this library is as a drop-in replacement for `clojure.core/sorted-set` and `clojure.core/sorted-map`.
 
-#### Key Features
+### Key Features
 
 - **Full `clojure.lang.Sorted` support**: Use `subseq` and `rsubseq` natively
 - **O(log n) first/last**: Via `java.util.SortedSet` interface (~7000x faster than `sorted-set` at scale)
+- **O(log n) nth and rank**: Positional access and rank queries in logarithmic time
 - **Parallel fold**: All types implement `CollFold` for efficient `r/fold` (2.3x faster)
-- **Fast set operations**: Union, intersection, difference 5-9x faster than `clojure.set`
-- **Proper hashing**: `IHashEq` support for use in hash-based collections
+- **Fast set operations**: Union, intersection, difference 7-9x faster than `clojure.set`
+- **Proper hashing**: `IHashEq` support for correct behavior in hash-based collections
 - **Serializable**: `java.io.Serializable` marker interface
-- **Fast iteration**: Optimized `IReduceInit`/`IReduce` (faster than `sorted-set`)
 
-#### Constructors
+### Constructors
 
-* `(dean/ordered-set   coll)` - sorted set
-* `(dean/ordered-set-by   pred coll)` - sorted set with custom comparator
-* `(dean/long-ordered-set coll)` - sorted set optimized for Long keys (25% faster lookup)
-* `(dean/ordered-map   coll)` - sorted map
-* `(dean/ordered-map-by   pred coll)` - sorted map with custom comparator
-* `(dean/long-ordered-map coll)` - sorted map optimized for Long keys
-* `(dean/interval-set  coll)` - set supporting interval overlap queries
-* `(dean/interval-map  coll)` - map supporting interval overlap queries
-* `(dean/priority-queue coll)` - persistent priority queue (min-heap)
-* `(dean/ordered-multiset coll)` - sorted multiset (allows duplicates)
-* `(dean/fuzzy-set coll)` - set returning closest element to query
-* `(dean/fuzzy-map coll)` - map returning value for closest key to query
+| Constructor | Description |
+|-------------|-------------|
+| `(oc/ordered-set coll)` | Sorted set (drop-in replacement for `sorted-set`) |
+| `(oc/ordered-set-by pred coll)` | Sorted set with custom comparator |
+| `(oc/long-ordered-set coll)` | Sorted set optimized for Long keys (20% faster lookup) |
+| `(oc/string-ordered-set coll)` | Sorted set optimized for String keys |
+| `(oc/ordered-map coll)` | Sorted map (drop-in replacement for `sorted-map`) |
+| `(oc/ordered-map-by pred coll)` | Sorted map with custom comparator |
+| `(oc/long-ordered-map coll)` | Sorted map optimized for Long keys |
+| `(oc/string-ordered-map coll)` | Sorted map optimized for String keys |
+| `(oc/interval-set coll)` | Set supporting interval overlap queries |
+| `(oc/interval-map coll)` | Map supporting interval overlap queries |
+| `(oc/range-map)` | Non-overlapping ranges with automatic coalescing |
+| `(oc/segment-tree f identity coll)` | O(log n) range aggregate queries |
+| `(oc/ranked-set coll)` | Sorted set with O(log n) rank and nth |
+| `(oc/priority-queue coll)` | Persistent priority queue (min-heap) |
+| `(oc/ordered-multiset coll)` | Sorted multiset (allows duplicates) |
+| `(oc/fuzzy-set coll)` | Returns closest element to query |
+| `(oc/fuzzy-map coll)` | Returns value for closest key to query |
 
-### Topics
+---
 
-#### What is an Interval Map?
+## Performance
 
-Imagine you'd like to associate values with members of a set of
-intervals over some continuous domain such as time or real numbers.
-An example of this is shown below. An interval map answers the question,
-which intervals overlap at some point on the domain. At 3.14159, in this
-case, would be `x4` and `x7`.  The interval map is sparse itself, of
-course, and would only need to contain the 8 constituent intervals.
+Benchmarks at N=500,000 elements (JVM 21, Clojure 1.12):
+
+**Where ordered-set wins:**
+
+| Operation | sorted-set | data.avl | ordered-set | Speedup |
+|-----------|------------|----------|-------------|---------|
+| First/last access | 17s | 2.6ms | **2.4ms** | **~7000x** vs sorted-set |
+| Union | 1.1s | 180ms | **129ms** | **8x** vs sorted-set |
+| Intersection | 870ms | 140ms | **91ms** | **9x** vs sorted-set |
+| Difference | 977ms | 155ms | **102ms** | **8x** vs sorted-set |
+| Parallel fold | 98ms | 95ms | **42ms** | **2.3x** |
+| Construction | 1.5s | 1.3s | **1.2s** | **1.25x** |
+| Reduce | 96ms | 85ms | **81ms** | **1.2x** |
+
+**Trade-offs:**
+
+| Operation | sorted-set | data.avl | ordered-set | Ratio |
+|-----------|------------|----------|-------------|-------|
+| Lookup (10K queries) | 12ms | 13ms | 15ms | 0.8x |
+| Sequential insert | 1.6s | 2.1s | 2.5s | 0.64x |
+
+The first/last speedup comes from O(log n) positional access via size annotations—`sorted-set` must traverse the entire seq. Set operations use Adams' divide-and-conquer algorithm parallelized across a ForkJoinPool. `data.avl` also provides O(log n) positional access but uses sequential set operations.
+
+For numeric keys, use `long-ordered-set` which matches or beats `sorted-set` lookup performance.
+
+---
+
+## How It Works
+
+The core is a weight-balanced binary tree using balance parameters (δ=3, γ=2) from Hirai and Yamamoto (2011), which corrected subtle bugs in earlier formulations. Each node stores its subtree size, enabling O(log n) positional access and efficient parallel decomposition.
+
+Set operations use Adams' divide-and-conquer algorithm with O(m log(n/m + 1)) complexity. The implementation parallelizes across a ForkJoinPool when inputs exceed a threshold.
+
+Interval trees augment each node with the maximum endpoint in its subtree, enabling O(log n + k) overlap queries while preserving all the benefits of the underlying weight-balanced structure.
+
+---
+
+## Meet Zorp
+
+Zorp runs the only sneaker store on the dark side of Pluto. Business is good—the perpetual darkness means nobody can see your shoes, which paradoxically makes everyone *obsessed* with having the freshest ones. "It's about knowing," Zorp explains to confused off-world visitors. "Knowing you're dripping."
+
+The examples below show how Zorp uses each data structure to manage his interplanetary sneaker empire.
+
+---
+
+## The Data Structures
+
+### ordered-map / ordered-set
+
+Drop-in replacements for `sorted-map` and `sorted-set` with better performance for bulk operations, parallel fold, and O(log n) positional access.
+
+Zorp's inventory is chaos. Shipments arrive from Earth (8-month delay), Mars (3 weeks), and the Jovian moons (2 days, but they only make sandals). He needs to track thousands of SKUs, look them up fast, and always know what's in stock.
+
+```clojure
+;; Zorp's inventory: SKU -> {:name, :size, :quantity, :price}
+(def inventory
+  (oc/ordered-map
+    {"PLT-001" {:name "Shadow Walker 9000" :size 10 :quantity 45 :price 299.99}
+     "PLT-002" {:name "Dark Side Dunks"    :size 11 :quantity 12 :price 450.00}
+     "PLT-003" {:name "Void Runner"        :size 9  :quantity 0  :price 175.50}
+     "JUP-017" {:name "Europa Ice Grip"    :size 10 :quantity 88 :price 225.00}
+     "MRS-042" {:name "Olympus Max"        :size 12 :quantity 33 :price 380.00}}))
+
+;; Fast lookup
+(inventory "PLT-002")
+;; => {:name "Dark Side Dunks", :size 11, :quantity 12, :price 450.00}
+
+;; The ordered-map keeps keys sorted, so Zorp can grab a range efficiently
+;; All Plutonian models (SKUs starting with PLT):
+(subseq inventory >= "PLT" < "PLU")
+;; => (["PLT-001" {...}] ["PLT-002" {...}] ["PLT-003" {...}])
+
+;; New shipment arrives! Immutable update, Zorp's accountant loves the audit trail
+(def inventory' (update-in inventory ["PLT-003" :quantity] + 50))
+```
+
+"The sorted keys," Zorp muses, stroking his antenna, "they let me slice the catalog by manufacturer prefix. Very satisfying."
+
+**Key features:**
+- Full `clojure.lang.Sorted` support: native `subseq` and `rsubseq`
+- O(log n) `first`/`last` via `java.util.SortedSet` interface (~7000x faster than `sorted-set` at scale)
+- Parallel fold via `CollFold` (2.3x faster)
+- Fast set operations: union, intersection, difference 7-9x faster than `clojure.set`
+
+---
+
+### interval-map / interval-set
+
+An interval map associates values with intervals over a continuous domain. Query any point (or range) to find all overlapping intervals. O(log n + k) where k is the number of results.
 
 ```
  x8:                         +-----+
@@ -81,251 +158,403 @@ course, and would only need to contain the 8 constituent intervals.
      0=====1=====2=====3=====4=====5=====6=====7=====8=====9
 ```
 
-This corresponds to the following example code:
+Zorp's store is open during "business hours"—but on the dark side of Pluto, time is meaningless. So he defines shifts by arbitrary time units (PTU: Pluto Time Units). He needs to quickly answer: "Who's working at PTU 4500?"
 
-```clj
+```clojure
+(def shift-schedule
+  (oc/interval-map
+    {[0 2000]     "Glorm (morning shift)"
+     [2000 4000]  "Blixxa (afternoon shift)"
+     [4000 6000]  "Zorp (evening shift)"
+     [6000 8000]  "Night Bot 3000 (graveyard)"
+     [1800 2200]  "Krix Jr. (overlap coverage)"}))
 
-(def x (dean/interval-map {[1 3] :x1
-                           [4 7] :x2
-                           [8 9] :x3
-                           [0 5] :x4
-                           [6 8] :x5
-                           [9 9] :x6
-                           [3 9] :x7
-                           [4 5] :x8}))
+;; Customer calls at PTU 4500. Who picks up?
+(shift-schedule 4500)
+;; => ("Zorp (evening shift)")
 
-(x 3.141592654) ;; =>  [:x4 :x7]
-(x [5 5])       ;; =>  [:x4 :x7 :x8 :x2]
+;; During shift change at PTU 2000, who's available?
+(shift-schedule 2000)
+;; => ("Glorm (morning shift)" "Blixxa (afternoon shift)" "Krix Jr. (overlap coverage)")
 
-(get x 9)       ;; =>  [:x7 :x3 :x6]
-(get x 9.00001) ;; =>  nil
-(get x [1 4])   ;; =>  [:x4 :x1 :x7 :x8 :x2]
-
+;; Query a range: who works any time between PTU 1900-2100?
+(shift-schedule [1900 2100])
+;; => ("Glorm (morning shift)" "Blixxa (afternoon shift)" "Krix Jr. (overlap coverage)")
 ```
 
-#### Performance
+"The interval map," Zorp explains to his new hire, "handles the overlaps automatically. Krix Jr. wanted 'creative scheduling.' Now I can just query any moment and know who's supposed to be here."
 
-Benchmarks at N=500,000 elements (JVM 25, Clojure 1.12.4). See [full benchmarks](doc/benchmarks.md) for details.
+---
 
-**Where ordered-set wins:**
+### range-map
 
-| Operation | sorted-set | ordered-set | Speedup |
-|-----------|------------|-------------|---------|
-| Construction | 1.5s | **1.2s** | **1.25x** (parallel fold) |
-| First/last access | 17s | **2.4ms** | **~7000x** (O(log n) vs O(n)) |
-| Iteration (reduce) | 96ms | **81ms** | **1.2x** (IReduceInit) |
-| Parallel fold | 98ms | **42ms** | **2.3x** (CollFold) |
-| Union | 1.1s | **129ms** | **7.8x** (parallel divide-and-conquer) |
-| Intersection | 870ms | **91ms** | **9.0x** |
-| Difference | 977ms | **102ms** | **7.7x** |
-| Split operations | — | 2.5ms | **4.5x** vs data.avl |
+A range map maintains non-overlapping ranges. When you insert a new range, it automatically carves out space by splitting or removing existing ranges that overlap. Each point maps to exactly one value (or none).
 
-**Where ordered-set is competitive:**
+```
+ Before inserting [50, 150] :flash-sale:
 
-| Operation | sorted-set | ordered-set | Ratio |
-|-----------|------------|-------------|-------|
-| Lookup (10K queries) | 12ms | 15ms | 0.8x |
-| Sequential insert | 1.6s | 2.5s | 0.64x |
-| Delete | 840ms | 1.2s | 0.7x |
+ :bronze ████████████████████████████████████████
+ :silver                                         ████████████████████████████████████████████████████████████
+         0        50       100      150      200      250      300      350      400      450      500
 
-**Maps** — ordered-map vs sorted-map:
+ After inserting [50, 150] :flash-sale:
 
-| Operation | sorted-map | ordered-map | Notes |
-|-----------|------------|-------------|-------|
-| Construction | 1.2s | **1.2s** | **equal** (parallel fold) |
-| Lookup | 14ms | 15ms | 0.93x (~equal) |
-| Iteration | 121ms | 120ms | ~equal |
+ :bronze ████████████████████
+ :flash  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+ :silver                                         ████████████████████████████████████████████████████████████
+         0        50       100      150      200      250      300      350      400      450      500
+```
 
-**Summary**: Both ordered-set and ordered-map excel at bulk operations via parallel fold, with construction matching or beating Clojure builtins. ordered-set also wins at set operations (7-9x with parallelism) and endpoint access (7000x). The trade-off is slightly slower sequential mutation.
+Zorp's discount system is based on purchase amount. Different ranges get different discounts, and ranges can't overlap—each credit amount maps to exactly one discount tier.
 
-#### Efficient Set and Map Operations
+```clojure
+(def discount-tiers
+  (-> (oc/range-map)
+      (assoc [0 100]      :no-discount)
+      (assoc [100 500]    :bronze-5-percent)
+      (assoc [500 1000]   :silver-10-percent)
+      (assoc [1000 5000]  :gold-15-percent)
+      (assoc [5000 50000] :platinum-20-percent)))
 
-This library implements parallel divide-and-conquer operations that exploit tree structure for 7-9x speedups over `clojure.set`:
+;; Customer's cart is 750 credits
+(discount-tiers 750)
+;; => :silver-10-percent
 
-```clj
+;; Edge case: exactly 1000 credits (ranges are [lo, hi) half-open)
+(discount-tiers 1000)
+;; => :gold-15-percent
+
+;; Zorp runs a flash sale: 20% off for purchases 200-400 credits
+;; This automatically splits the bronze tier!
+(def flash-sale-tiers
+  (assoc discount-tiers [200 400] :flash-sale-20-percent))
+
+(oc/ranges flash-sale-tiers)
+;; => ([[0 100] :no-discount]
+;;     [[100 200] :bronze-5-percent]      ; auto-trimmed!
+;;     [[200 400] :flash-sale-20-percent] ; inserted
+;;     [[400 500] :bronze-5-percent]      ; auto-trimmed!
+;;     [[500 1000] :silver-10-percent]
+;;     ...)
+```
+
+"Before the range-map," Zorp recalls darkly, "I had seventeen overlapping discount codes and a customer who got 95% off a limited edition. Never again."
+
+---
+
+### segment-tree
+
+A segment tree answers range aggregate queries: "what is f(a, a+1, ..., b) for some associative function f?" in O(log n) time, with O(log n) updates.
+
+```
+ Index:    1     2     3     4     5     6     7     8
+ Value:   100   150   200   175   225   300   125   275
+
+ Query [2,5] with +   => 150 + 200 + 175 + 225 = 750
+ Query [1,8] with max => 300
+ Query [3,6] with min => 175
+```
+
+Zorp wants to analyze daily sales. Specifically, he needs to answer range queries like "What were total sales from day 50 to day 75?" and update individual days as sales come in—all in logarithmic time.
+
+```clojure
+;; Daily sales for the first quarter (90 days)
+(def daily-sales
+  (oc/segment-tree + 0  ; operation: +, identity: 0
+    (into {} (for [day (range 1 91)]
+               [day (+ 1000 (rand-int 500))]))))  ; 1000-1500 credits/day
+
+;; Total sales for days 1-30 (first month)
+(oc/query daily-sales 1 30)
+;; => ~37500
+
+;; Big sale day! Update day 45 with actual figure
+(def daily-sales' (assoc daily-sales 45 8500))
+
+;; Requery - the tree updates in O(log n)
+(oc/query daily-sales' 40 50)
+;; => includes the 8500 spike
+
+;; Zorp also tracks minimum daily sales to identify slow days
+(def min-daily-sales
+  (oc/segment-tree min Long/MAX_VALUE
+    (into {} (for [day (range 1 91)]
+               [day (+ 1000 (rand-int 500))]))))
+
+;; Worst day in the second month?
+(oc/query min-daily-sales 31 60)
+;; => ~1000-1050
+```
+
+"The segment tree," Zorp tells his accountant (a sentient calculator from Neptune), "gives me range sums instantly. Quarterly reports used to take hours. Now? Logarithmic time."
+
+---
+
+### ranked-set
+
+A sorted set with O(log n) positional access: `nth`, `rank`, `median`, and percentile queries.
+
+Zorp's loyalty program tracks customer spending. He needs to answer questions like "Who are my top 10 spenders?" and "What percentile is this customer in?" without re-sorting everything constantly.
+
+```clojure
+;; Store [total-spent customer-id] pairs so they sort by spending
+(def customer-spending
+  (oc/ranked-set
+    [[15420.00 "CUST-0042"]   ; Krix, the methane baron
+     [8730.50  "CUST-0117"]   ; Anonymous (pays in nitrogen credits)
+     [45200.00 "CUST-0001"]   ; The Mayor's office
+     [3200.00  "CUST-0233"]   ; First-time buyer
+     [12800.00 "CUST-0089"]   ; Repeat customer
+     [52100.00 "CUST-0007"]   ; "Big Toe" Tony
+     [9999.99  "CUST-0404"]])) ; Suspicious round number
+
+;; Who's the biggest spender?
+(last customer-spending)
+;; => [52100.0 "CUST-0007"]  -- Big Toe Tony, of course
+
+;; Top 3 spenders
+(take-last 3 customer-spending)
+;; => ([15420.0 "CUST-0042"] [45200.0 "CUST-0001"] [52100.0 "CUST-0007"])
+
+;; What's the median spending level?
+(oc/median customer-spending)
+;; => [12800.0 "CUST-0089"]
+
+;; A customer wants to know: "Am I in the top 25%?"
+(let [spending [8730.50 "CUST-0117"]
+      rank (oc/rank customer-spending spending)
+      percentile (* 100.0 (/ rank (count customer-spending)))]
+  (println "You're at the" (int percentile) "percentile!")
+  (> percentile 75))
+;; You're at the 14 percentile!
+;; => false
+```
+
+"Big Toe Tony," Zorp sighs. "He bought every color of the Void Runner. Every. Color. The man has 47 feet."
+
+---
+
+### priority-queue
+
+A persistent priority queue (min-heap) with O(log n) push/peek/pop.
+
+Shoes break. It happens. Zorp offers repair services, but some repairs are more urgent than others. A customer's only pair? Rush job. Seventh pair of limited editions? They can wait.
+
+```clojure
+(def repair-queue
+  (oc/priority-queue
+    [[1 {:customer "CUST-0042" :issue "Sole detachment, only pair"}]
+     [5 {:customer "CUST-0007" :issue "Scuff marks, has 46 other pairs"}]
+     [2 {:customer "CUST-0117" :issue "Lace replacement, formal event tomorrow"}]
+     [3 {:customer "CUST-0233" :issue "Squeaky heel"}]
+     [1 {:customer "CUST-0089" :issue "Zipper stuck, only winter boots"}]]))
+
+;; Who's first? (lowest priority number = most urgent)
+(peek repair-queue)
+;; => [1 {:customer "CUST-0042" :issue "Sole detachment, only pair"}]
+
+;; Process both priority-1 jobs, then see who's next
+(-> repair-queue pop pop peek)
+;; => [2 {:customer "CUST-0117" :issue "Lace replacement, formal event tomorrow"}]
+
+;; Add a new urgent repair
+(def repair-queue' (conj repair-queue [0 {:customer "VIP" :issue "Emergency!"}]))
+(peek repair-queue')
+;; => [0 {:customer "VIP" :issue "Emergency!"}]
+```
+
+"Big Toe Tony's scuff marks," Zorp mutters, "can wait until the heat death of the universe."
+
+---
+
+### ordered-set Operations
+
+Fast set algebra with parallel divide-and-conquer for large sets.
+
+Zorp's hottest releases require a reservation system. Customers select time slots to pick up their shoes. Each slot can only be used once.
+
+```clojure
+(def all-slots
+  (oc/ordered-set (range 100 200)))  ; slots 100-199 available today
+
+(def reserved-slots
+  (oc/ordered-set [105 110 115 120 125 142 143 144 150 175 188]))
+
+;; Available slots = all-slots - reserved-slots
+(def available (oc/difference all-slots reserved-slots))
+
+(count available)
+;; => 89 slots still open
+
+;; Customer wants the earliest available slot at or after 140
+(first (subseq available >= 140))
+;; => 140 (it's available!)
+
+;; VIP customer wants to know: are ANY slots between 170-180 open?
+(seq (subseq available >= 170 < 180))
+;; => (170 171 172 173 174 176 177 178 179)  -- plenty! (175 was reserved)
+
+;; Set operations are 7-9x faster than clojure.set for large sets
+(def s1 (oc/ordered-set (range 0 500000)))
+(def s2 (oc/ordered-set (range 250000 750000)))
+(oc/union s1 s2)        ;; 129ms (clojure.set: 1.1s)
+(oc/intersection s1 s2) ;; 91ms (clojure.set: 870ms)
+(oc/difference s1 s2)   ;; 102ms (clojure.set: 977ms)
+```
+
+---
+
+### Also Available
+
+| Constructor | What it does |
+|-------------|--------------|
+| `ordered-multiset` | Sorted bag allowing duplicates |
+| `fuzzy-set`, `fuzzy-map` | Nearest-neighbor lookup: returns closest element to query |
+| `long-ordered-set`, `long-ordered-map` | Optimized for Long keys (20% faster lookup) |
+| `string-ordered-set`, `string-ordered-map` | Optimized for String keys |
+
+---
+
+## Architecture
+
+This library is designed around modularity and extensibility. The collections are built on standard Clojure/Java interfaces, so working with an `ordered-set` is identical to working with `sorted-set`—all the familiar functions work: `meta`, `nth`, `seq`, `rseq`, `assoc`, `get`, `first`, `last`, `count`, `contains?`, `conj`, `disj`, `reduce`, and more.
+
+### Interfaces
+
+Each collection type is a `deftype` container holding the root of a weight-balanced tree. The container implements several protocol layers:
+
+| Interface | Purpose |
+|-----------|---------|
+| `INodeCollection` | Access to node allocation and root node. Enables variants like persistent (on-disk) storage. |
+| `IBalancedCollection` | The `stitch` function for creating balanced trees. Default is weight-balanced; red-black is also supported. |
+| `IOrderedCollection` | Comparator and compatibility predicates. Interval collections are a specialized variant. |
+
+### Set Operations
+
+Since `clojure.set` doesn't provide interfaces for extensible set operations, this library provides its own `union`, `intersection`, `difference`, `subset?`, and `superset?`. These work most efficiently on ordered-collections but fall back gracefully to `clojure.set` behavior for other set types.
+
+```clojure
 (require '[clojure.core.reducers :as r])
 
-(def foo (shuffle (range 500000)))
-(def x (dean/ordered-set foo))
-
 ;; Parallel fold: 2.3x faster than sorted-set
-(r/fold + x)                               ;; 500K: ~42ms (sorted-set: 98ms)
+(r/fold + (oc/ordered-set (range 500000)))
 
-;; First/last access: O(log n) via SortedSet interface
-(.first ^java.util.SortedSet x)            ;; 2.4ms for 1000 calls
-(.last ^java.util.SortedSet x)             ;; (sorted-set: 17s - must traverse seq)
+;; First/last via Java SortedSet interface: O(log n)
+(.first ^java.util.SortedSet (oc/ordered-set (range 500000)))
+(.last ^java.util.SortedSet (oc/ordered-set (range 500000)))
 
 ;; Range queries via clojure.lang.Sorted
-(subseq x >= 100 < 200)                    ;; efficient range queries
-(rsubseq x > 500)                          ;; reverse range queries
+(subseq (oc/ordered-set (range 100)) >= 25 < 75)
+(rsubseq (oc/ordered-set (range 100)) > 50)
 
-;; Set operations: 7-9x faster than clojure.set (parallel for large sets)
-(def s0 (dean/ordered-set (range 0 500000)))
-(def s1 (dean/ordered-set (range 250000 750000)))
-(dean/union s0 s1)                         ;; 129ms (clojure.set: 1.1s)
-(dean/intersection s0 s1)                  ;; 91ms (clojure.set: 870ms)
-(dean/difference s0 s1)                    ;; 102ms (clojure.set: 977ms)
+;; Parallel set operations: 7-9x faster than clojure.set
+(let [s1 (oc/ordered-set (range 0 500000))
+      s2 (oc/ordered-set (range 250000 750000))]
+  (oc/union s1 s2)
+  (oc/intersection s1 s2)
+  (oc/difference s1 s2))
 
-;; Map merge: parallel divide-and-conquer for large maps
-(def m1 (dean/ordered-map (map #(vector % %) (range 15000))))
-(def m2 (dean/ordered-map (map #(vector % (* 2 %)) (range 10000 25000))))
-(dean/ordered-merge-with (fn [k a b] (+ a b)) m1 m2)  ;; ~10ms
+;; Map merge with conflict resolution
+(let [m1 (oc/ordered-map (map #(vector % %) (range 15000)))
+      m2 (oc/ordered-map (map #(vector % (* 2 %)) (range 10000 25000)))]
+  (oc/merge-with + m1 m2))
 ```
 
-### Testing
+### Tree Implementation
 
-Testing is accomplished with the standard `lein test`
+The heart of the library is the [persistent tree](https://github.com/dco-dev/ordered-collections/blob/master/src/com/dean/ordered_collections/tree/tree.clj). It supports sets, maps, and indexed access with:
+
+- **Key/range queries**: Standard sorted collection operations
+- **Positional access**: `nth` returns the nth element in O(log n)
+- **Rank queries**: `rank` returns the position of a key in O(log n)
+- **Parallel decomposition**: Trees split efficiently for `r/fold`
+
+The tree is parameterized by comparator, node constructor, and join strategy—these correspond to the interfaces above and enable the variety of collection types.
+
+---
+
+## Testing
+
 ```
 $ lein test
-
-lein test com.dean.ordered-collections.fuzzy-test
-lein test com.dean.ordered-collections.interval-map-test
-lein test com.dean.ordered-collections.interval-set-test
-lein test com.dean.ordered-collections.interval-test
-lein test com.dean.ordered-collections.ordered-map-test
-lein test com.dean.ordered-collections.ordered-multiset-test
-lein test com.dean.ordered-collections.ordered-set-test
-lein test com.dean.ordered-collections.priority-queue-test
-lein test com.dean.ordered-collections.range-map-test
-lein test com.dean.ordered-collections.ranked-set-test
-lein test com.dean.ordered-collections.segment-tree-test
-lein test com.dean.ordered-collections.tree-test
-lein test com.dean.ordered-collections.zorp-test
 
 Ran 211 tests containing 426446 assertions.
 0 failures, 0 errors.
 ```
 
-### Modularity
+The test suite includes generative tests via `test.check`.
 
-This data structure library is designed around the following concepts of
-modularity and extensibility.
+---
 
-#### Clojure/Java Interfaces
+## Inspiration
 
-The top level collections are built on the standard Clojure/Java
-interfaces, so, for example, working with an `ordered-set` is
-identical to working with Clojure's `sorted-set`, using all of the same
-standard collection functions, for the 99% case: meta, nth, seq, rseq,
-assoc(-in), get(-in), invoke, compare, to-array, empty, .indexOf,
-.lastIndexof, size, iterator-seq, first, last, =, count, empty,
-contains, conj. disj, cons, fold, and many old friends will just
-work, using an efficient implementation that takes full advantage of the
-capabilities of our underlying tree index.
+This implementation of a weight-balanced binary interval-tree data
+structure was inspired by the following:
 
-#### PExtensibleset
+-  Adams (1992)
+   'Implementing Sets Efficiently in a Functional Language'
+   Technical Report CSTR 92-10, University of Southampton.
+   <http://groups.csail.mit.edu/mac/users/adams/BB/92-10.ps>
 
-An exception to the above is due to the fact that `clojure.set` does not
-provide interfaces for extensible sets. So, we provide our own
-intersection, union, difference, subset, and superset.  These operators
-work most efficiently on com.dean.ordered-collections collections and provide
-support for backward interoperability with clojure (or possibly other)
-set datatypes.
+-  Hirai and Yamamoto (2011)
+   'Balancing Weight-Balanced Trees'
+   Journal of Functional Programming / 21 (3):
+   Pages 287-307
+   <https://yoichihirai.com/bst.pdf>
 
-#### Root Container
+-  Oleg Kiselyov
+   'Towards the best collection API, A design of the overall optimal
+   collection traversal interface'
+   <https://okmij.org/ftp/Scheme/enumerators-callcc.html>
 
-The individual collection types (ordered-set, ordered-map, interval-set,
-interval-map} are defined by their individual Class (clojure
-`deftype`) of top level container that holds the root of an
-indexed tree.  This container describes the behavior of the underlying
-tree data structure along several architectural dimensions.
+-  Nievergelt and Reingold (1972)
+   'Binary Search Trees of Bounded Balance'
+   STOC '72 Proceedings
+   4th Annual ACM symposium on Theory of Computing
+   Pages 137-142
 
-##### INodeCollection
+-  Driscoll, Sarnak, Sleator, and Tarjan (1989)
+   'Making Data Structures Persistent'
+   Journal of Computer and System Sciences Volume 38 Issue 1, February 1989
+   18th Annual ACM Symposium on Theory of Computing
+   Pages 86-124
 
+-  MIT Scheme weight balanced tree as reimplemented by Yoichi Hirai
+   and Kazuhiko Yamamoto using the revised non-variant algorithm recommended
+   integer balance parameters from (Hirai/Yamamoto 2011).
 
-The fundamental collection of nodes provides an interface to node
-allocation machinery and to the root contained node.  A variant
-based on persistent (on-disk) storage, for example, has been built
-with customizations at this layer.
+-  Wikipedia
+   'Interval Tree'
+   <https://en.wikipedia.org/wiki/Interval_tree>
 
-##### IBalancedCollection
+-  Wikipedia
+   'Segment Tree'
+   <https://en.wikipedia.org/wiki/Segment_tree>
 
-For functional balanced trees, provides an interface to the `stitch`
-function that returns a new, properly balanced tree containing one newly
-allocated node adjoined.  The provided algorithm is
-[weight balanced](https://en.wikipedia.org/wiki/Weight-balanced_tree)
-however others may be used. We've experimented with red-black trees,
-in particular, as variants at this layer.
+-  Google Guava
+   'RangeMap'
+   <https://guava.dev/releases/snapshot/api/docs/com/google/common/collect/RangeMap.html>
 
-##### IOrderedCollection
+-  Wikipedia
+   'Weight Balanced Tree'
+   <https://en.wikipedia.org/wiki/Weight-balanced_tree>
 
-Ordered collections define a comparator and predicates to determine the
-underlying algorithmic compatibility of other collections. Interval
-Collections are a special type of OrderedCollection.
+-  Andrew Baine (2007)
+   'Purely Functional Data Structures in Common Lisp'
+   Google Summer of Code 2007, mentored by Rahul Jain
+   <https://funds.common-lisp.dev/funds.pdf>
+   <https://developers.google.com/open-source/gsoc/2007/>
 
-#### Tree
+- Scott L. Burson
+   'Functional Set-Theoretic Collections for Common Lisp'
+   <https://fset.common-lisp.dev/>
 
-The heart of the library is our [persistent tree](https://github.com/dco-dev/ordered-collections/blob/master/src/com/dean/ordered_collections/tree/tree.clj).
+---
 
-The code is well documented and explains in more detail the efficiencies
-of the internal collection operators.
-
-This species of binary tree supports representations of sets, maps,
-and vectors.  In addition to indexed key and range query, it
-supports the `nth` operation to return nth node from the beginning of
-the ordered tree, and `node-rank` to return the rank (sequential
-position) of a given key within the ordered tree, both in logarithmic
-time.
-
-The axes of exstensibility of the tree implemntation
-(`*compare*`,`*n-join*`, `*t-join*`) correspond to the interfaces
-described above.
-
-### Inspiration
-
- This implementation of a weight-balanced binary interval-tree data
- structure was inspired by the following:
-
- -  Adams (1992)
-     'Implementing Sets Efficiently in a Functional Language'
-     Technical Report CSTR 92-10, University of Southampton.
-     <http://groups.csail.mit.edu/mac/users/adams/BB/92-10.ps>
-
- -  Hirai and Yamamoto (2011)
-     'Balancing Weight-Balanced Trees'
-     Journal of Functional Programming / 21 (3):
-     Pages 287-307
-     <https://yoichihirai.com/bst.pdf>
-
- -  Oleg Kiselyov
-     'Towards the best collection API, A design of the overall optimal
-     collection traversal interface'
-     <http://pobox.com/~oleg/ftp/papers/LL3-collections-enumerators.txt>
-
- -  Nievergelt and Reingold (1972)
-     'Binary Search Trees of Bounded Balance'
-     STOC '72 Proceedings
-     4th Annual ACM symposium on Theory of Computing
-     Pages 137-142
-
- -  Driscoll, Sarnak, Sleator, and Tarjan (1989)
-     'Making Data Structures Persistent'
-     Journal of Computer and System Sciences Volume 38 Issue 1, February 1989
-     18th Annual ACM Symposium on Theory of Computing
-     Pages 86-124
-
- -  MIT Scheme weight balanced tree as reimplemented by Yoichi Hirai
-     and Kazuhiko Yamamoto using the revised non-variant algorithm recommended
-     integer balance parameters from (Hirai/Yamomoto 2011).
-
- -  Wikipedia
-     'Interval Tree'
-     <https://en.wikipedia.org/wiki/Interval_tree>
-
- -  Wikipedia
-     'Weight Balanced Tree'
-     <https://en.wikipedia.org/wiki/Weight-balanced_tree>
-
- -  Andrew Baine, Rahul Jaine (2007)
-     'Purely Functional Data Structures in Common Lisp'
-     Google Summer of Code 2007
-     <https://common-lisp.net/project/funds/funds.pdf>
-     <https://developers.google.com/open-source/gsoc/2007/>
-
- - Scott L. Burson
-     'Functional Set-Theoretic Collections for Common Lisp'
-     <https://common-lisp.net/project/fset/>
-
-### License
+## License
 
 The use and distribution terms for this software are covered by the [Eclipse Public License 1.0](http://opensource.org/licenses/eclipse-1.0.php), which can be found in the file LICENSE.txt at the root of this distribution. By using this software in any fashion, you are agreeing to be bound by the terms of this license. You must not remove this notice, or any other, from this software.
+
+---
+
+*Zorp's Sneaker Emporium is a registered trademark of Zorp Enterprises, LLC (Pluto Division). No actual Plutonians were harmed in the making of this documentation. Big Toe Tony is a real customer and has given written consent for his likeness to be used in educational materials.*

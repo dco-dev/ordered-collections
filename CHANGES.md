@@ -121,6 +121,23 @@ All notable changes to this project will be documented in this file.
 
 ### Performance Improvements
 
+#### ForkJoinPool Parallel Set Operations
+- Set operations (union, intersection, difference) now use `java.util.concurrent.ForkJoinPool`
+- Work-stealing parallelism based on Blelloch, Ferizovic, Sun (2016) join-based algorithms
+- **6.9x faster** union, **7.4x faster** intersection vs `clojure.set`
+- Automatic threshold tuning (8K elements) for optimal sequential/parallel tradeoff
+
+#### Primitive Lookup Optimization
+- `long-ordered-set` and `long-ordered-map` now use primitive `Long/compare` directly
+- Bypasses `java.util.Comparator` interface dispatch entirely
+- **20% faster** lookups than `sorted-set` for Long keys
+- Automatic detection: uses fast path when comparator is `long-compare`
+
+#### Primitive Node Types
+- `LongKeyNode` and `DoubleKeyNode` store keys as primitives (not boxed)
+- Used automatically by `long-ordered-set`, `long-ordered-map`, etc.
+- Reduces GC pressure and memory overhead for numeric workloads
+
 #### Iteration Performance
 - All types implement optimized `IReduceInit` and `IReduce` for fast reduce
 - **Direct reduce: 2.1x faster than sorted-set** via direct tree traversal
@@ -155,13 +172,13 @@ All notable changes to this project will be documented in this file.
 
 | Operation | ordered-* | long-ordered-* | string-ordered-* |
 |-----------|-----------|----------------|------------------|
-| Construction (batch) | **18% faster** | **18% faster** | **18% faster** |
+| Construction (batch) | **14% faster** | **7% faster** | **14% faster** |
 | Sequential insert | 1.4-2.3x slower | 1.4-2.3x slower | 1.4-2.3x slower |
-| Lookup | 14-21% slower | **3% faster** | **5% faster** |
-| Direct reduce | **3x faster** | **3x faster** | **3x faster** |
+| Lookup | 58% slower | **20% faster** | **5% faster** |
+| Direct reduce | **2.4x faster** | **2.4x faster** | **2.4x faster** |
 | Reduce over seq | **27% faster** | **27% faster** | **27% faster** |
 | First/last | **13,000x faster** | **13,000x faster** | **13,000x faster** |
-| Set operations | **6x faster** | **6x faster** | **6x faster** |
+| Set operations | **7x faster** | **7x faster** | **7x faster** |
 | Parallel fold | **2.3x faster** | **2.3x faster** | **2.3x faster** |
 | nth/rank | **O(log n)** | **O(log n)** | **O(log n)** |
 
