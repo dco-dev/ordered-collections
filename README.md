@@ -28,6 +28,7 @@ The basic operation of this library is as a drop-in replacement for `clojure.cor
 - **Fast set operations**: Union, intersection, difference 7-9x faster than `clojure.set`
 - **Proper hashing**: `IHashEq` support for correct behavior in hash-based collections
 - **Serializable**: `java.io.Serializable` marker interface
+- **Fast iteration**: Optimized `IReduceInit`/`IReduce` (faster than `sorted-set`)
 
 ### Constructors
 
