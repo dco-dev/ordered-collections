@@ -135,7 +135,12 @@
 
   clojure.lang.ILookup
   (valAt [this k not-found]
-    (if (tree/node-contains? root k cmp) k not-found))
+    ;; Fast paths for specialized comparators
+    (if (cond
+          (identical? cmp order/long-compare)   (tree/node-contains-long? root (long k))
+          (identical? cmp order/string-compare) (tree/node-contains-string? root k)
+          :else (tree/node-contains? root k cmp))
+      k not-found))
   (valAt [this k]
     (.valAt this k nil))
 
@@ -282,7 +287,11 @@
   (empty [_]
     (new OrderedSet (node/leaf) cmp alloc stitch {}))
   (contains [this k]
-    (tree/node-contains? root k cmp))
+    ;; Fast paths for specialized comparators
+    (cond
+      (identical? cmp order/long-compare)   (tree/node-contains-long? root (long k))
+      (identical? cmp order/string-compare) (tree/node-contains-string? root k)
+      :else (tree/node-contains? root k cmp)))
   (disjoin [this k]
     (new OrderedSet (tree/node-remove root k cmp tree/node-create-weight-balanced) cmp alloc stitch _meta))
   (cons [this k]

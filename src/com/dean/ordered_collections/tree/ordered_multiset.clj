@@ -21,20 +21,31 @@
 ;; Multiset Comparator
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; Using deftype instead of reify so comparator is serializable.
+
+(deftype MultisetComparator [^Comparator value-cmp]
+  java.io.Serializable
+  Comparator
+  (compare [_ a b]
+    (let [[va sa] a
+          [vb sb] b
+          c (.compare value-cmp va vb)]
+      (if (zero? c)
+        (Long/compare ^long sa ^long sb)
+        c)))
+  Object
+  (equals [_ o]
+    (and (instance? MultisetComparator o)
+         (.equals value-cmp (.-value-cmp ^MultisetComparator o))))
+  (hashCode [_] (hash value-cmp)))
+
 (defn- make-multiset-comparator
   "Create a comparator for multiset entries.
   Entries are [value seqnum] pairs.
   Comparison is first by value (using the user's comparator),
   then by seqnum (for distinguishing duplicates)."
   ^Comparator [^Comparator value-cmp]
-  (reify Comparator
-    (compare [_ a b]
-      (let [[va sa] a
-            [vb sb] b
-            c (.compare value-cmp va vb)]
-        (if (zero? c)
-          (Long/compare ^long sa ^long sb)
-          c)))))
+  (->MultisetComparator value-cmp))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Ordered Multiset

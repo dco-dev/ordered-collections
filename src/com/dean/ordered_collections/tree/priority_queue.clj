@@ -19,20 +19,31 @@
 ;; Priority Queue Comparator
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; Using deftype instead of reify so comparator is serializable.
+
+(deftype PriorityQueueComparator [^Comparator priority-cmp]
+  java.io.Serializable
+  Comparator
+  (compare [_ a b]
+    (let [[pa sa _] a
+          [pb sb _] b
+          c (.compare priority-cmp pa pb)]
+      (if (zero? c)
+        (Long/compare ^long sa ^long sb)
+        c)))
+  Object
+  (equals [_ o]
+    (and (instance? PriorityQueueComparator o)
+         (.equals priority-cmp (.-priority-cmp ^PriorityQueueComparator o))))
+  (hashCode [_] (hash priority-cmp)))
+
 (defn- make-pq-comparator
   "Create a comparator for priority queue entries.
   Entries are [priority seqnum value] triples.
   Comparison is first by priority (using the user's comparator),
   then by seqnum (for stable ordering of equal priorities)."
   ^Comparator [^Comparator priority-cmp]
-  (reify Comparator
-    (compare [_ a b]
-      (let [[pa sa _] a
-            [pb sb _] b
-            c (.compare priority-cmp pa pb)]
-        (if (zero? c)
-          (Long/compare ^long sa ^long sb)
-          c)))))
+  (->PriorityQueueComparator priority-cmp))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Priority Queue

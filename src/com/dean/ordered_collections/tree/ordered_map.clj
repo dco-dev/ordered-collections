@@ -73,7 +73,11 @@
 
   clojure.lang.ILookup
   (valAt [this k not-found]
-    (tree/node-find-val root k not-found cmp))
+    ;; Fast paths for specialized comparators
+    (cond
+      (identical? cmp order/long-compare)   (tree/node-find-val-long root (long k) not-found)
+      (identical? cmp order/string-compare) (tree/node-find-val-string root k not-found)
+      :else (tree/node-find-val root k not-found cmp)))
   (valAt [this k]
     (.valAt this k nil))
 
@@ -105,9 +109,18 @@
 
   clojure.lang.Associative
   (containsKey [this k]
-    (tree/node-contains? root k cmp))
+    ;; Fast paths for specialized comparators
+    (cond
+      (identical? cmp order/long-compare)   (tree/node-contains-long? root (long k))
+      (identical? cmp order/string-compare) (tree/node-contains-string? root k)
+      :else (tree/node-contains? root k cmp)))
   (entryAt [this k]
-    (some-> root (tree/node-find k cmp) node/-kv))
+    ;; Fast paths for specialized comparators
+    (when-let [n (cond
+                   (identical? cmp order/long-compare)   (tree/node-find-long root (long k))
+                   (identical? cmp order/string-compare) (tree/node-find-string root k)
+                   :else (tree/node-find root k cmp))]
+      (node/-kv n)))
   (assoc [this k v]
     (OrderedMap. (tree/node-add root k v cmp tree/node-create-weight-balanced) cmp alloc stitch _meta))
   (empty [this]
