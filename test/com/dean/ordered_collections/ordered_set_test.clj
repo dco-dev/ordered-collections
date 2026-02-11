@@ -1,4 +1,5 @@
 (ns com.dean.ordered-collections.ordered-set-test
+  (:refer-clojure :exclude [split-at])
   (:require [clojure.core.reducers        :as r]
             [clojure.math.combinatorics   :as combo]
             [clojure.set                  :as set]
@@ -107,3 +108,115 @@
           this (ordered-set data)]
       (is (= sum (r/fold chunk + + this)))
       (is (= sum (reduce + this))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Split and Range Operations (data.avl compatible)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest split-key-test
+  (testing "split-key on ordered-set"
+    (let [s (ordered-set [1 2 3 4 5])]
+      ;; Split at existing key
+      (let [[left entry right] (split-key s 3)]
+        (is (= #{1 2} left))
+        (is (= 3 entry))
+        (is (= #{4 5} right)))
+      ;; Split at non-existing key
+      (let [[left entry right] (split-key s 2.5)]
+        (is (= #{1 2} left))
+        (is (nil? entry))
+        (is (= #{3 4 5} right)))
+      ;; Split at first element
+      (let [[left entry right] (split-key s 1)]
+        (is (= #{} left))
+        (is (= 1 entry))
+        (is (= #{2 3 4 5} right)))
+      ;; Split at last element
+      (let [[left entry right] (split-key s 5)]
+        (is (= #{1 2 3 4} left))
+        (is (= 5 entry))
+        (is (= #{} right)))))
+
+  (testing "split-key on ordered-map"
+    (let [m (ordered-map [[1 :a] [2 :b] [3 :c] [4 :d] [5 :e]])]
+      ;; Split at existing key
+      (let [[left entry right] (split-key m 3)]
+        (is (= {1 :a 2 :b} left))
+        (is (= [3 :c] entry))
+        (is (= {4 :d 5 :e} right)))
+      ;; Split at non-existing key
+      (let [[left entry right] (split-key m 2.5)]
+        (is (= {1 :a 2 :b} left))
+        (is (nil? entry))
+        (is (= {3 :c 4 :d 5 :e} right))))))
+
+(deftest split-at-test
+  (testing "split-at on ordered-set"
+    (let [s (ordered-set [1 2 3 4 5])]
+      ;; Split at middle
+      (let [[left right] (split-at s 2)]
+        (is (= #{1 2} left))
+        (is (= #{3 4 5} right)))
+      ;; Split at 0
+      (let [[left right] (split-at s 0)]
+        (is (= #{} left))
+        (is (= #{1 2 3 4 5} right)))
+      ;; Split at end
+      (let [[left right] (split-at s 5)]
+        (is (= #{1 2 3 4 5} left))
+        (is (= #{} right)))
+      ;; Split at 1
+      (let [[left right] (split-at s 1)]
+        (is (= #{1} left))
+        (is (= #{2 3 4 5} right)))))
+
+  (testing "split-at on ordered-map"
+    (let [m (ordered-map [[1 :a] [2 :b] [3 :c] [4 :d] [5 :e]])]
+      (let [[left right] (split-at m 2)]
+        (is (= {1 :a 2 :b} left))
+        (is (= {3 :c 4 :d 5 :e} right))))))
+
+(deftest subrange-test
+  (testing "subrange with single test"
+    (let [s (ordered-set (range 10))]
+      (is (= #{0 1 2 3 4} (subrange s < 5)))
+      (is (= #{0 1 2 3 4 5} (subrange s <= 5)))
+      (is (= #{6 7 8 9} (subrange s > 5)))
+      (is (= #{5 6 7 8 9} (subrange s >= 5)))))
+
+  (testing "subrange with two tests"
+    (let [s (ordered-set (range 10))]
+      (is (= #{3 4 5 6} (subrange s >= 3 < 7)))
+      (is (= #{3 4 5 6 7} (subrange s >= 3 <= 7)))
+      (is (= #{4 5 6} (subrange s > 3 < 7)))
+      (is (= #{4 5 6 7} (subrange s > 3 <= 7)))))
+
+  (testing "subrange on ordered-map"
+    (let [m (ordered-map (for [i (range 10)] [i (keyword (str i))]))]
+      (is (= {3 :3 4 :4 5 :5 6 :6} (subrange m >= 3 < 7))))))
+
+(deftest nearest-test
+  (testing "nearest on ordered-set"
+    (let [s (ordered-set [1 3 5 7 9])]
+      ;; < - greatest less than
+      (is (= 5 (nearest s < 6)))
+      (is (= 5 (nearest s < 5.5)))
+      (is (nil? (nearest s < 1)))
+      ;; <= - greatest less than or equal
+      (is (= 5 (nearest s <= 5)))
+      (is (= 5 (nearest s <= 6)))
+      (is (= 1 (nearest s <= 1)))
+      ;; > - least greater than
+      (is (= 7 (nearest s > 6)))
+      (is (nil? (nearest s > 9)))
+      ;; >= - least greater than or equal
+      (is (= 5 (nearest s >= 5)))
+      (is (= 7 (nearest s >= 6)))
+      (is (= 9 (nearest s >= 9)))))
+
+  (testing "nearest on ordered-map"
+    (let [m (ordered-map [[1 :a] [3 :b] [5 :c] [7 :d] [9 :e]])]
+      (is (= [5 :c] (nearest m < 6)))
+      (is (= [5 :c] (nearest m <= 5)))
+      (is (= [7 :d] (nearest m > 6)))
+      (is (= [5 :c] (nearest m >= 5))))))
