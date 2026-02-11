@@ -953,9 +953,14 @@
       (cond
         ;; < : greatest less than k
         (identical? test <)
-        (when-let [n (tree/node-find-nearest root k :<)]
-          ;; node-find-nearest returns <= so filter exact matches
-          (when (neg? (.compare cmp (node/-k n) k))
+        (if-let [exact (tree/node-find root k)]
+          ;; k exists in tree, we need its predecessor
+          (let [lesser-tree (tree/node-split-lesser root k)]
+            (when-not (node/leaf? lesser-tree)
+              (let [max-lesser (tree/node-nth lesser-tree (dec (tree/node-size lesser-tree)))]
+                (format-result max-lesser))))
+          ;; k doesn't exist, node-find-nearest :< finds greatest <= k which is < k
+          (when-let [n (tree/node-find-nearest root k :<)]
             (format-result n)))
 
         ;; <= : greatest less than or equal to k
@@ -967,9 +972,14 @@
 
         ;; > : least greater than k
         (identical? test >)
-        (when-let [n (tree/node-find-nearest root k :>)]
-          ;; node-find-nearest returns >= so filter exact matches
-          (when (pos? (.compare cmp (node/-k n) k))
+        (if-let [exact (tree/node-find root k)]
+          ;; k exists in tree, we need its successor
+          (let [greater-tree (tree/node-split-greater root k)]
+            (when-not (node/leaf? greater-tree)
+              (let [min-greater (tree/node-nth greater-tree 0)]
+                (format-result min-greater))))
+          ;; k doesn't exist, node-find-nearest :> finds least >= k which is > k
+          (when-let [n (tree/node-find-nearest root k :>)]
             (format-result n)))
 
         ;; >= : least greater than or equal to k

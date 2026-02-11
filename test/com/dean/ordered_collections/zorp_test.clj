@@ -1,320 +1,294 @@
 (ns com.dean.ordered-collections.zorp-test
-  "Tests for all examples in doc/zorp-example.md
+  "Tests for examples in doc/zorp-example.md
 
-   Zorp's Sneaker Emporium: ensuring the dark side of Pluto
-   has reliable data structures since PTU 0."
+   Zorp's Sneaker Emporium: Advanced Patterns
+   Testing the 0.2.0 API features."
+  (:refer-clojure :exclude [split-at])
   (:require [clojure.test :refer [deftest testing is are]]
-            [com.dean.ordered-collections.core :as oc]
-            [com.dean.ordered-collections.tree.protocol :as proto]))
+            [com.dean.ordered-collections.core :as oc]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Chapter 1: The Inventory Problem (OrderedMap)
+;; Chapter 1: The Fuzzy Warehouse (FuzzySet)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def inventory
+(def catalog-prices
+  (oc/fuzzy-set
+    [99.99 149.50 175.00 225.00 299.99 375.00 450.00 599.00 899.00]
+    :distance (fn [a b] (Math/abs (- a b)))))
+
+(deftest chapter-1-fuzzy-warehouse-test
+  (testing "Fuzzy lookup finds closest match"
+    (is (= 175.0 (catalog-prices 180)))
+    (is (= 299.99 (catalog-prices 300)))
+    (is (= 99.99 (catalog-prices 100))))
+
+  (testing "fuzzy-nearest returns value and distance"
+    (let [[value distance] (oc/fuzzy-nearest catalog-prices 180)]
+      (is (= 175.0 value))
+      (is (= 5.0 distance)))
+    (let [[value distance] (oc/fuzzy-nearest catalog-prices 550)]
+      (is (= 599.0 value))
+      (is (= 49.0 distance))))
+
+  (testing "Tiebreak preference"
+    (let [size-catalog-down (oc/fuzzy-set
+                              [6.0 6.5 7.0 7.5 8.0 8.5 9.0 9.5 10.0]
+                              :distance (fn [a b] (Math/abs (- a b)))
+                              :tiebreak :<)]
+      ;; 9.25 is equidistant from 9.0 and 9.5, tiebreak :< prefers smaller
+      (is (= 9.0 (size-catalog-down 9.25))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Chapter 2: The Fuzzy Customer Database (FuzzyMap)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn levenshtein [^String s1 ^String s2]
+  (let [n (count s1) m (count s2)]
+    (cond
+      (zero? n) m
+      (zero? m) n
+      :else
+      (let [d (make-array Long/TYPE (inc n) (inc m))]
+        (doseq [i (range (inc n))] (aset d i 0 (long i)))
+        (doseq [j (range (inc m))] (aset d 0 j (long j)))
+        (doseq [i (range 1 (inc n))
+                j (range 1 (inc m))]
+          (aset d i j
+            (long (min (inc (aget d (dec i) j))
+                       (inc (aget d i (dec j)))
+                       (+ (aget d (dec i) (dec j))
+                          (if (= (.charAt s1 (dec i))
+                                 (.charAt s2 (dec j))) 0 1))))))
+        (aget d n m)))))
+
+(def customers
+  (oc/fuzzy-map
+    [["Krix" {:id "CUST-0042" :tier :gold}]
+     ["Big Toe Tony" {:id "CUST-0007" :tier :diamond}]
+     ["Mayor Glorbix" {:id "CUST-0001" :tier :platinum}]
+     ["Blixxa" {:id "CUST-0117" :tier :silver}]
+     ["Night Bot 3000" {:id "CUST-0099" :tier :bronze}]]
+    :distance levenshtein))
+
+(deftest chapter-2-fuzzy-customer-database-test
+  (testing "Typo tolerance"
+    (is (= {:id "CUST-0042" :tier :gold} (customers "Kricks")))
+    (is (= {:id "CUST-0042" :tier :gold} (customers "Krix"))))
+
+  (testing "Partial name matching"
+    ;; Note: Levenshtein distance doesn't do substring matching.
+    ;; "Tony" has edit distance 4 to "Krix" (all substitutions),
+    ;; but distance 8 to "Big Toe Tony" (8 insertions).
+    ;; Use a typo-like query instead:
+    (is (= {:id "CUST-0007" :tier :diamond} (customers "Big Tow Tony"))))
+
+  (testing "Mangled names"
+    (is (= {:id "CUST-0001" :tier :platinum} (customers "Mayor Glorbox"))))
+
+  (testing "Distance indicates confidence"
+    ;; fuzzy-nearest on fuzzy-map returns [key value distance]
+    (let [[_ _ distance] (oc/fuzzy-nearest customers "Krix")]
+      (is (zero? distance)))  ; exact match
+    (let [[_ _ distance] (oc/fuzzy-nearest customers "Zorp himself")]
+      (is (> distance 5)))))  ; poor match
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Chapter 3: The Split Decision (split-key, split-at)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def yearly-transactions
+  (oc/ordered-set
+    [150 320 450 890 1200 1850 2400 3100 4500
+     5200 6800 7500 8900 12000 15000 18500 22000]))
+
+(deftest chapter-3-split-decision-test
+  (testing "split-key partitions at threshold"
+    (let [[small-biz mid-biz large-biz] (oc/split-key yearly-transactions 5000)]
+      (is (= [150 320 450 890 1200 1850 2400 3100 4500] (vec small-biz)))
+      (is (nil? mid-biz))  ; no transaction exactly at 5000
+      (is (= [5200 6800 7500 8900 12000 15000 18500 22000] (vec large-biz)))))
+
+  (testing "split-key with existing element"
+    (let [[below entry above] (oc/split-key yearly-transactions 1200)]
+      (is (= [150 320 450 890] (vec below)))
+      (is (= 1200 entry))
+      (is (= [1850 2400 3100 4500 5200 6800 7500 8900 12000 15000 18500 22000]
+             (vec above)))))
+
+  (testing "split-at partitions at index"
+    (let [n (count yearly-transactions)
+          q1 (quot n 4)
+          [left right] (oc/split-at yearly-transactions q1)]
+      (is (= q1 (count left)))
+      (is (= (- n q1) (count right)))))
+
+  (testing "split-at edge cases"
+    (let [[left right] (oc/split-at yearly-transactions 0)]
+      (is (empty? left))
+      (is (= yearly-transactions right)))
+    (let [[left right] (oc/split-at yearly-transactions (count yearly-transactions))]
+      (is (= yearly-transactions left))
+      (is (empty? right)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Chapter 4: The Subrange Inventory (subrange)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def inventory-by-size
   (oc/ordered-map
-    {"PLT-001" {:name "Shadow Walker 9000" :size 10 :quantity 45 :price 299.99}
-     "PLT-002" {:name "Dark Side Dunks"    :size 11 :quantity 12 :price 450.00}
-     "PLT-003" {:name "Void Runner"        :size 9  :quantity 0  :price 175.50}
-     "JUP-017" {:name "Europa Ice Grip"    :size 10 :quantity 88 :price 225.00}
-     "MRS-042" {:name "Olympus Max"        :size 12 :quantity 33 :price 380.00}}))
+    [[6.0  ["Comet Cruiser" "Starlight Slip-on"]]
+     [7.0  ["Void Runner" "Shadow Walker"]]
+     [8.0  ["Void Runner" "Europa Ice" "Olympus Max"]]
+     [9.0  ["Event Horizon" "Gravity Well"]]
+     [10.0 ["Dark Side Dunk" "Void Runner" "Shadow Walker"]]
+     [11.0 ["Olympus Max" "Event Horizon"]]
+     [12.0 ["Void Runner" "Dark Side Dunk"]]
+     [13.0 ["Shadow Walker"]]
+     [14.0 ["Gravity Well" "Olympus Max"]]
+     [15.0 ["Event Horizon XI"]]]))
 
-(deftest chapter-1-inventory-test
-  (testing "Fast lookup by SKU"
-    (is (= {:name "Dark Side Dunks" :size 11 :quantity 12 :price 450.00}
-           (inventory "PLT-002")))
-    (is (nil? (inventory "NONEXISTENT"))))
+(deftest chapter-4-subrange-inventory-test
+  (testing "subrange with >= and <="
+    (let [big-sizes (oc/subrange inventory-by-size >= 11.0 <= 15.0)]
+      (is (= 5 (count big-sizes)))
+      (is (contains? big-sizes 11.0))
+      (is (contains? big-sizes 15.0))))
 
-  (testing "Range query by SKU prefix"
-    (let [plt-skus (subseq inventory >= "PLT" < "PLU")]
-      (is (= 3 (count plt-skus)))
-      (is (= ["PLT-001" "PLT-002" "PLT-003"]
-             (map first plt-skus)))))
+  (testing "subrange with >= and <"
+    (let [mid-sizes (oc/subrange inventory-by-size >= 7.0 < 11.0)]
+      (is (= 4 (count mid-sizes)))
+      (is (contains? mid-sizes 7.0))
+      (is (contains? mid-sizes 10.0))
+      (is (not (contains? mid-sizes 11.0)))))
 
-  (testing "Immutable update preserves original"
-    (let [inventory' (assoc inventory "PLT-003"
-                       (update (inventory "PLT-003") :quantity + 50))]
-      (is (= 0 (get-in inventory ["PLT-003" :quantity])))
-      (is (= 50 (get-in inventory' ["PLT-003" :quantity])))))
-
-  (testing "Keys are sorted"
-    (is (= ["JUP-017" "MRS-042" "PLT-001" "PLT-002" "PLT-003"]
-           (map first (seq inventory))))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Chapter 2: The VIP Customer Rankings (RankedSet)
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(def customer-spending
-  (oc/ranked-set
-    [[15420.00 "CUST-0042"]   ; Krix, the methane baron
-     [8730.50  "CUST-0117"]   ; Anonymous
-     [45200.00 "CUST-0001"]   ; The Mayor's office
-     [3200.00  "CUST-0233"]   ; First-time buyer
-     [12800.00 "CUST-0089"]   ; Repeat customer
-     [52100.00 "CUST-0007"]   ; "Big Toe" Tony
-     [9999.99  "CUST-0404"]])); Suspicious round number
-
-(deftest chapter-2-customer-rankings-test
-  (testing "Biggest spender (last element)"
-    (is (= [52100.00 "CUST-0007"]
-           (oc/nth-element customer-spending (dec (count customer-spending))))))
-
-  (testing "Top 3 spenders"
-    (let [n (count customer-spending)
-          top-3 (map #(oc/nth-element customer-spending %) (range (- n 3) n))]
-      (is (= [[15420.0 "CUST-0042"]
-              [45200.0 "CUST-0001"]
-              [52100.0 "CUST-0007"]]
-             top-3))))
-
-  (testing "Median spending"
-    ;; 7 elements sorted: [3200, 8730.5, 9999.99, 12800, 15420, 45200, 52100]
-    ;; Median index = (quot 6 2) = 3 -> [12800.0 "CUST-0089"]
-    (is (= [12800.0 "CUST-0089"]
-           (oc/median customer-spending))))
-
-  (testing "Rank lookup"
-    ;; Sorted: 0=[3200], 1=[8730.5], 2=[9999.99], 3=[12800], 4=[15420], 5=[45200], 6=[52100]
-    (is (= 1 (oc/rank customer-spending [8730.50 "CUST-0117"])))
-    (is (= 0 (oc/rank customer-spending [3200.00 "CUST-0233"])))
-    (is (= 6 (oc/rank customer-spending [52100.00 "CUST-0007"]))))
-
-  (testing "Percentile calculation"
-    (let [spending [8730.50 "CUST-0117"]
-          rank (oc/rank customer-spending spending)
-          percentile (* 100 (/ rank (count customer-spending)))]
-      (is (< percentile 75) "Customer should not be in top 25%"))))
+  (testing "subrange single-bound"
+    (let [large (oc/subrange inventory-by-size > 10.0)]
+      (is (= 5 (count large)))
+      (is (not (contains? large 10.0))))
+    (let [small (oc/subrange inventory-by-size < 8.0)]
+      (is (= 2 (count small)))
+      (is (contains? small 6.0))
+      (is (contains? small 7.0)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Chapter 3: The Shift Schedule (IntervalMap)
+;; Chapter 5: The Nearest Competitor (nearest)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def shift-schedule
-  (oc/interval-map
-    {[0 2000]     "Glorm (morning shift)"
-     [2000 4000]  "Blixxa (afternoon shift)"
-     [4000 6000]  "Zorp (evening shift, owner's hours)"
-     [6000 8000]  "Night Bot 3000 (graveyard shift)"
-     [1800 2200]  "Krix Jr. (overlap coverage)"}))
+(def our-prices
+  (oc/ordered-set
+    [99.99 149.50 175.00 225.00 275.00 299.99
+     350.00 399.00 450.00 525.00 599.00 750.00 899.00]))
 
-(deftest chapter-3-shift-schedule-test
-  (testing "Single shift query"
-    (is (= ["Zorp (evening shift, owner's hours)"]
-           (shift-schedule 4500)))
-    (is (= ["Night Bot 3000 (graveyard shift)"]
-           (shift-schedule 7000))))
+(deftest chapter-5-nearest-competitor-test
+  (testing "nearest <="
+    (is (= 275.0 (oc/nearest our-prices <= 280)))
+    (is (= 399.0 (oc/nearest our-prices <= 400)))
+    (is (= 899.0 (oc/nearest our-prices <= 1000))))
 
-  (testing "Overlapping shifts at shift change"
-    (let [workers (set (shift-schedule 2000))]
-      (is (contains? workers "Glorm (morning shift)"))
-      (is (contains? workers "Blixxa (afternoon shift)"))
-      (is (contains? workers "Krix Jr. (overlap coverage)"))))
+  (testing "nearest >="
+    (is (= 299.99 (oc/nearest our-prices >= 280)))
+    (is (= 450.0 (oc/nearest our-prices >= 400)))
+    (is (= 525.0 (oc/nearest our-prices >= 500))))
 
-  (testing "Krix Jr. overlap coverage"
-    (let [workers-1900 (set (shift-schedule 1900))
-          workers-2100 (set (shift-schedule 2100))]
-      (is (contains? workers-1900 "Glorm (morning shift)"))
-      (is (contains? workers-1900 "Krix Jr. (overlap coverage)"))
-      (is (contains? workers-2100 "Blixxa (afternoon shift)"))
-      (is (contains? workers-2100 "Krix Jr. (overlap coverage)"))))
+  (testing "nearest < (strict)"
+    (is (= 275.0 (oc/nearest our-prices < 280)))
+    (is (= 399.0 (oc/nearest our-prices < 400)))
+    (is (= 350.0 (oc/nearest our-prices < 399))))
 
-  (testing "No coverage outside defined shifts"
-    (is (nil? (shift-schedule 9000)))))
+  (testing "nearest > (strict)"
+    (is (= 299.99 (oc/nearest our-prices > 280)))
+    (is (= 450.0 (oc/nearest our-prices > 400)))
+    (is (= 450.0 (oc/nearest our-prices > 399))))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Chapter 4: The Discount Tiers (RangeMap)
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  (testing "nearest at boundaries"
+    (is (nil? (oc/nearest our-prices < 99.99)))
+    (is (nil? (oc/nearest our-prices > 899.0)))
+    (is (= 99.99 (oc/nearest our-prices <= 99.99)))
+    (is (= 899.0 (oc/nearest our-prices >= 899.0))))
 
-(def discount-tiers
-  (-> (oc/range-map)
-      (assoc [0 100]      :no-discount)
-      (assoc [100 500]    :bronze-5-percent)
-      (assoc [500 1000]   :silver-10-percent)
-      (assoc [1000 5000]  :gold-15-percent)
-      (assoc [5000 50000] :platinum-20-percent)))
-
-(deftest chapter-4-discount-tiers-test
-  (testing "Basic tier lookups"
-    (is (= :no-discount (discount-tiers 50)))
-    (is (= :bronze-5-percent (discount-tiers 250)))
-    (is (= :silver-10-percent (discount-tiers 750)))
-    (is (= :gold-15-percent (discount-tiers 2500)))
-    (is (= :platinum-20-percent (discount-tiers 12000))))
-
-  (testing "Edge cases at tier boundaries (half-open intervals)"
-    (is (= :no-discount (discount-tiers 0)))
-    (is (= :no-discount (discount-tiers 99)))
-    (is (= :bronze-5-percent (discount-tiers 100)))
-    (is (= :silver-10-percent (discount-tiers 500)))
-    (is (= :gold-15-percent (discount-tiers 1000))))
-
-  (testing "Flash sale splits existing tier"
-    (let [flash-sale-tiers (assoc discount-tiers [200 400] :flash-sale-20-percent)
-          ranges (oc/ranges flash-sale-tiers)]
-      ;; Bronze tier should be split into [100,200) and [400,500)
-      (is (= :bronze-5-percent (flash-sale-tiers 150)))
-      (is (= :flash-sale-20-percent (flash-sale-tiers 300)))
-      (is (= :bronze-5-percent (flash-sale-tiers 450)))
-      ;; Verify the split happened
-      (is (some #(= [[100 200] :bronze-5-percent] %) ranges))
-      (is (some #(= [[200 400] :flash-sale-20-percent] %) ranges))
-      (is (some #(= [[400 500] :bronze-5-percent] %) ranges))))
-
-  (testing "Outside all ranges returns nil"
-    (is (nil? (discount-tiers 100000)))))
+  (testing "nearest on ordered-map"
+    (let [price-map (oc/ordered-map
+                      [[100 :budget]
+                       [250 :mid]
+                       [500 :premium]])]
+      (is (= [250 :mid] (oc/nearest price-map <= 300)))
+      (is (= [500 :premium] (oc/nearest price-map >= 400))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Chapter 5: The Sales Analytics (SegmentTree)
+;; Chapter 6: Combining Structures
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def daily-sales
-  (oc/segment-tree + 0
-    (into {} (for [day (range 1 91)]
-               [day (* 100 day)]))))  ; Predictable: day 1 = 100, day 2 = 200, etc.
+(def tony-purchases
+  (oc/ordered-map
+    [[1000 2500]  [1500 3200]  [2000 4100]  [2500 1800]
+     [3000 5500]  [3500 2900]  [4000 7200]  [4500 4400]
+     [5000 8100]  [5500 3300]  [6000 6600]]))
 
-(deftest chapter-5-sales-analytics-test
-  (testing "Range sum query"
-    ;; Sum of days 1-10: 100 + 200 + ... + 1000 = 100 * (1+2+...+10) = 100 * 55 = 5500
-    (is (= 5500 (oc/query daily-sales 1 10)))
-    ;; Sum of days 1-30: 100 * (1+2+...+30) = 100 * 465 = 46500
-    (is (= 46500 (oc/query daily-sales 1 30))))
+(deftest chapter-6-combining-structures-test
+  (testing "Segment tree for range sums"
+    (let [tony-spending (oc/sum-tree (into {} tony-purchases))]
+      ;; Q1: timestamps 1000-3000
+      (is (= (+ 2500 3200 4100 1800 5500)
+             (oc/query tony-spending 1000 3000)))
+      ;; Q2: timestamps 3500-6000
+      (is (= (+ 2900 7200 4400 8100 3300 6600)
+             (oc/query tony-spending 3500 6000)))))
 
-  (testing "Single day query"
-    (is (= 4500 (oc/query daily-sales 45 45))))
-
-  (testing "Update value and requery"
-    (let [daily-sales' (oc/update-val daily-sales 45 10000)]
-      ;; Day 45 was 4500, now 10000
-      (is (= 10000 (oc/query daily-sales' 45 45)))
-      ;; Range 40-50 should reflect the change
-      ;; Original: 100*(40+41+...+50) = 100*495 = 49500
-      ;; New: 49500 - 4500 + 10000 = 55000
-      (is (= 55000 (oc/query daily-sales' 40 50)))
-      ;; Original unchanged
-      (is (= 4500 (oc/query daily-sales 45 45)))))
-
-  (testing "Aggregate of entire tree"
-    ;; Sum of 1-90: 100 * (1+2+...+90) = 100 * 4095 = 409500
-    (is (= 409500 (oc/aggregate daily-sales))))
-
-  (testing "Min segment tree"
-    (let [min-sales (oc/min-tree
-                      (into {} (for [day (range 1 91)]
-                                 [day (if (= day 45) 50 1000)])))]
-      ;; Day 45 has the minimum
-      (is (= 50 (oc/query min-sales 40 50)))
-      (is (= 1000 (oc/query min-sales 1 10)))))
-
-  (testing "Max segment tree"
-    (let [max-sales (oc/max-tree
-                      (into {} (for [day (range 1 91)]
-                                 [day (if (= day 45) 9999 100)])))]
-      (is (= 9999 (oc/query max-sales 40 50)))
-      (is (= 100 (oc/query max-sales 1 10))))))
+  (testing "Split purchases by amount"
+    (let [amounts (oc/ordered-set (vals tony-purchases))
+          [small _ medium-up] (oc/split-key amounts 3000)
+          [medium _ large] (oc/split-key medium-up 5000)]
+      (is (= #{1800 2500 2900} (set small)))
+      (is (= #{3200 3300 4100 4400} (set medium)))
+      (is (= #{5500 6600 7200 8100} (set large))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Chapter 6: The Sneaker Reservation System (OrderedSet)
+;; Chapter 7: The Time-Slice Analysis
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def all-slots
-  (oc/ordered-set (range 100 200)))
+(def inventory-events
+  [[1000 "VR" +100]  [1100 "SW" +50]   [1200 "VR" -20]
+   [1300 "EH" +75]   [1400 "SW" -15]   [1500 "VR" -30]
+   [1600 "DD" +40]   [1700 "EH" -25]   [1800 "VR" +50]
+   [1900 "SW" -10]   [2000 "DD" -5]    [2100 "VR" -40]])
 
-(def reserved-slots
-  (oc/ordered-set [105 110 115 120 125 142 143 144 150 175 188]))
+(defn inventory-at [events timestamp]
+  (let [relevant (filter #(<= (first %) timestamp) events)]
+    (->> relevant
+         (reduce (fn [inv [_ sku delta]]
+                   (update inv sku (fnil + 0) delta))
+                 (oc/ordered-map)))))
 
-(deftest chapter-6-reservation-system-test
-  (testing "Set difference for available slots"
-    (let [available (oc/difference all-slots reserved-slots)]
-      (is (= 89 (count available)))
-      (is (not (contains? available 105)))
-      (is (not (contains? available 142)))
-      (is (contains? available 106))
-      (is (contains? available 141))))
+(deftest chapter-7-time-slice-analysis-test
+  (testing "Inventory state at various times"
+    (is (= {"SW" 50 "VR" 80}
+           (into {} (inventory-at inventory-events 1200))))
+    (is (= {"DD" 40 "EH" 50 "SW" 35 "VR" 50}
+           (into {} (inventory-at inventory-events 1700))))
+    (is (= {"DD" 35 "EH" 50 "SW" 25 "VR" 60}
+           (into {} (inventory-at inventory-events 2100)))))
 
-  (testing "Find earliest slot after a time"
-    (let [available (oc/difference all-slots reserved-slots)]
-      ;; 140 is available, so >= 140 returns 140
-      (is (= 140 (first (subseq available >= 140))))
-      ;; First available > 140 is 141
-      (is (= 141 (first (subseq available > 140))))
-      ;; First available after 105 should be 106
-      (is (= 106 (first (subseq available > 105))))))
-
-  (testing "Check availability in range"
-    (let [available (oc/difference all-slots reserved-slots)
-          slots-170-180 (seq (subseq available >= 170 < 180))]
-      ;; 175 is reserved, so we should have 170-174 and 176-179
-      (is (= [170 171 172 173 174 176 177 178 179] (vec slots-170-180)))))
-
-  (testing "Disjoining a slot"
-    (let [available (oc/difference all-slots reserved-slots)
-          available' (disj available 141)]
-      (is (contains? available 141))
-      (is (not (contains? available' 141)))
-      (is (= 88 (count available')))))
-
-  (testing "Set union for all reserved"
-    (let [more-reserved (oc/ordered-set [106 107 108])
-          all-reserved (oc/union reserved-slots more-reserved)]
-      (is (= 14 (count all-reserved)))
-      (is (contains? all-reserved 106)))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Chapter 7: The Priority Repair Queue (PriorityQueue)
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(def repair-queue
-  (oc/priority-queue-by <
-    [[1 {:customer "CUST-0042" :issue "Sole detachment, only pair"}]
-     [5 {:customer "CUST-0007" :issue "Scuff marks, has 46 other pairs"}]
-     [2 {:customer "CUST-0117" :issue "Lace replacement, formal event tomorrow"}]
-     [3 {:customer "CUST-0233" :issue "Squeaky heel"}]
-     [1 {:customer "CUST-0089" :issue "Zipper stuck, only winter boots"}]]))
-
-(deftest chapter-7-repair-queue-test
-  ;; priority-queue-by returns just the value on peek, not [priority value]
-  (testing "Peek returns highest priority job (lowest number)"
-    (let [job (peek repair-queue)]
-      ;; Either CUST-0042 or CUST-0089 (both priority 1)
-      (is (contains? #{"CUST-0042" "CUST-0089"} (:customer job)))))
-
-  (testing "Pop removes highest priority"
-    (let [queue' (pop repair-queue)
-          job (peek queue')]
-      (is (= 4 (count queue')))
-      ;; Next job should be from priority 1 or 2
-      (is (contains? #{"CUST-0042" "CUST-0089" "CUST-0117"} (:customer job)))))
-
-  (testing "Processing drains priority-1 jobs first"
-    ;; Pop until we get a non-priority-1 job
-    (let [queue-after-priority-1 (-> repair-queue pop pop)]
-      ;; After popping 2 priority-1 jobs, next should be priority 2
-      (is (= {:customer "CUST-0117" :issue "Lace replacement, formal event tomorrow"}
-             (peek queue-after-priority-1)))))
-
-  (testing "Queue has correct count"
-    (is (= 5 (count repair-queue))))
-
-  (testing "Queue empties correctly"
-    (let [final-queue (-> repair-queue pop pop pop pop pop)]
-      (is (empty? final-queue)))))
+  (testing "Inventory is sorted by SKU"
+    (let [inv (inventory-at inventory-events 2100)]
+      (is (= ["DD" "EH" "SW" "VR"] (vec (keys inv)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Epilogue: Integration Test
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftest epilogue-integration-test
-  (testing "All data structures work together"
-    (let [inv-count (count inventory)
-          top-customer (last (seq customer-spending))
-          current-shift (first (shift-schedule 4500))
-          available-slots (count (oc/difference all-slots reserved-slots))
-          repairs-pending (count repair-queue)
-          q1-sales (oc/aggregate daily-sales)]
-      (is (= 5 inv-count))
-      (is (= [52100.0 "CUST-0007"] top-customer))
-      (is (= "Zorp (evening shift, owner's hours)" current-shift))
-      (is (= 89 available-slots))
-      (is (= 5 repairs-pending))
-      (is (= 409500 q1-sales)))))
+  (testing "All new 0.2.0 features work together"
+    ;; Fuzzy lookup
+    (is (= {:id "CUST-0007" :tier :diamond} (customers "Big Tow Tony")))
+
+    ;; Split at threshold
+    (let [[small _ large] (oc/split-key yearly-transactions 5000)]
+      (is (= 9 (count small)))
+      (is (= 8 (count large))))
+
+    ;; Subrange for filtering
+    (let [mid-tier (oc/subrange our-prices >= 200 < 500)]
+      (is (= 6 (count mid-tier))))  ; 225, 275, 299.99, 350, 399, 450
+
+    ;; Nearest for competitive analysis
+    (is (= 275.0 (oc/nearest our-prices <= 280)))))

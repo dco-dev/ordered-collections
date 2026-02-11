@@ -97,7 +97,7 @@ Interval trees augment each node with the maximum endpoint in its subtree, enabl
 
 Zorp runs the only sneaker store on the dark side of Pluto. Business is good—the perpetual darkness means nobody can see your shoes, which paradoxically makes everyone *obsessed* with having the freshest ones. "It's about knowing," Zorp explains to confused off-world visitors. "Knowing you're dripping."
 
-The examples below show how Zorp uses each data structure to manage his interplanetary sneaker empire.
+The examples below show how Zorp uses each data structure to manage his interplanetary sneaker empire. For advanced patterns including fuzzy matching, temporal queries, and the new 0.2.0 API, see [Zorp's Complete Tale](doc/zorp-example.md).
 
 ---
 
