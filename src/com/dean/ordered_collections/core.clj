@@ -1,4 +1,5 @@
 (ns com.dean.ordered-collections.core
+  (:refer-clojure :exclude [split-at])
   (:require [clojure.core.reducers                            :as r]
             [com.dean.ordered-collections.tree.interval             :as interval]
             [com.dean.ordered-collections.tree.interval-map         :refer [->IntervalMap]]

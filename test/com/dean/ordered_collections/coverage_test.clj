@@ -1,5 +1,6 @@
 (ns com.dean.ordered-collections.coverage-test
   "Additional tests to improve code coverage."
+  (:refer-clojure :exclude [split-at])
   (:require [clojure.core.reducers :as r]
             [clojure.test :refer :all]
             [com.dean.ordered-collections.core :refer :all])
