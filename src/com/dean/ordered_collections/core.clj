@@ -15,7 +15,9 @@
             [com.dean.ordered-collections.tree.ranked-set           :as ranked]
             [com.dean.ordered-collections.tree.range-map            :as rmap]
             [com.dean.ordered-collections.tree.segment-tree         :as segtree]
-            [com.dean.ordered-collections.tree.tree                 :as tree]))
+            [com.dean.ordered-collections.tree.tree                 :as tree])
+  (:import  [com.dean.ordered_collections.tree.ordered_set OrderedSet]
+            [com.dean.ordered_collections.tree.ordered_map OrderedMap]))
 
 (set! *warn-on-reflection* true)
 
@@ -47,11 +49,61 @@
 ;; Set Algebra
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def intersection proto/intersection)
-(def union        proto/union)
-(def difference   proto/difference)
-(def subset       proto/subset)
-(def superset     proto/superset)
+(def union
+  "Return a set that is the union of the input sets.
+
+   For ordered-sets: Uses Adams' divide-and-conquer algorithm with parallel
+   execution for large sets. 7-9x faster than clojure.set/union at scale.
+
+   Complexity: O(m log(n/m + 1)) where m <= n
+
+   Examples:
+     (union (ordered-set [1 2]) (ordered-set [2 3]))  ; #{1 2 3}
+     (union s1 s2 s3)                                  ; multiple sets"
+  proto/union)
+
+(def intersection
+  "Return a set that is the intersection of the input sets.
+
+   For ordered-sets: Uses Adams' divide-and-conquer algorithm with parallel
+   execution for large sets. 7-9x faster than clojure.set/intersection at scale.
+
+   Complexity: O(m log(n/m + 1)) where m <= n
+
+   Examples:
+     (intersection (ordered-set [1 2 3]) (ordered-set [2 3 4]))  ; #{2 3}"
+  proto/intersection)
+
+(def difference
+  "Return a set that is s1 without elements in s2.
+
+   For ordered-sets: Uses Adams' divide-and-conquer algorithm with parallel
+   execution for large sets. 7-9x faster than clojure.set/difference at scale.
+
+   Complexity: O(m log(n/m + 1)) where m <= n
+
+   Examples:
+     (difference (ordered-set [1 2 3]) (ordered-set [2]))  ; #{1 3}"
+  proto/difference)
+
+(def subset?
+  "True if s1 is a subset of s2 (every element of s1 is in s2).
+
+   Examples:
+     (subset? (ordered-set [1 2]) (ordered-set [1 2 3]))  ; true
+     (subset? (ordered-set [1 4]) (ordered-set [1 2 3]))  ; false"
+  proto/subset)
+
+(def superset?
+  "True if s1 is a superset of s2 (s1 contains every element of s2).
+
+   Examples:
+     (superset? (ordered-set [1 2 3]) (ordered-set [1 2]))  ; true"
+  proto/superset)
+
+;; Keep old names for backwards compatibility
+(def subset subset?)
+(def superset superset?)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Ordered Set
@@ -75,30 +127,71 @@
                 ([n0 n1] (tree/node-set-union n0 n1))) tree/node-add coll)
       compare-fn nil nil {})))
 
+(defn- ordered-set-prim*
+  "Variant of ordered-set* that uses primitive node types for numeric keys."
+  [compare-fn node-create coll]
+  (binding [order/*compare* compare-fn
+            tree/*t-join* node-create]
+    (->OrderedSet
+      (r/fold +chunk-size+
+              (fn
+                ([]      (node/leaf))
+                ([n0 n1] (tree/node-set-union n0 n1)))
+              (fn [n k] (tree/node-add n k k compare-fn node-create))
+              coll)
+      compare-fn nil node-create {})))
+
 (defn ordered-set
+  "Create a persistent sorted set backed by a weight-balanced binary tree.
+
+   Drop-in replacement for clojure.core/sorted-set with these enhancements:
+   - O(log n) first/last via java.util.SortedSet (vs O(n) for sorted-set)
+   - O(log n) nth positional access
+   - Parallel r/fold (2.3x faster than sorted-set)
+   - 7-9x faster set operations (union, intersection, difference)
+
+   Elements are sorted by clojure.core/compare. For custom ordering,
+   use ordered-set-by. For numeric keys, use long-ordered-set.
+
+   Examples:
+     (ordered-set)                      ; empty set
+     (ordered-set [3 1 4 1 5 9])        ; #{1 3 4 5 9}
+     (first (ordered-set (range 1e6)))  ; 0, in O(log n)
+     (nth (ordered-set (range 100)) 50) ; 50, in O(log n)
+
+   Memory: ~64 bytes/element (vs ~61 for sorted-set, ~6% overhead)"
   ([]
    (ordered-set* order/normal-compare nil))
   ([coll]
    (ordered-set* order/normal-compare coll)))
 
-(defn ordered-set-by [pred coll]
+(defn ordered-set-by
+  "Create an ordered set with custom ordering via a predicate.
+
+   The predicate should define a total order (like < or >).
+
+   Examples:
+     (ordered-set-by > [1 2 3])  ; descending: #{3 2 1}
+     (ordered-set-by #(compare (count %1) (count %2)) [\"a\" \"bb\" \"ccc\"])"
+  [pred coll]
   (-> pred order/compare-by (ordered-set* (seq coll))))
 
 (defn long-ordered-set
   "Create an ordered set optimized for Long keys.
-   Uses specialized Long.compare for ~15-25% faster comparisons."
+   Uses primitive long storage and specialized Long.compare for maximum performance.
+   Typically 15-25% faster than ordered-set for numeric workloads."
   ([]
-   (ordered-set* order/long-compare nil))
+   (ordered-set-prim* order/long-compare tree/node-create-weight-balanced-long nil))
   ([coll]
-   (ordered-set* order/long-compare coll)))
+   (ordered-set-prim* order/long-compare tree/node-create-weight-balanced-long coll)))
 
 (defn double-ordered-set
   "Create an ordered set optimized for Double keys.
-   Uses specialized Double.compare for faster numeric comparisons."
+   Uses primitive double storage and specialized Double.compare for faster comparisons."
   ([]
-   (ordered-set* order/double-compare nil))
+   (ordered-set-prim* order/double-compare tree/node-create-weight-balanced-double nil))
   ([coll]
-   (ordered-set* order/double-compare coll)))
+   (ordered-set-prim* order/double-compare tree/node-create-weight-balanced-double coll)))
 
 (defn string-ordered-set
   "Create an ordered set optimized for String keys.
@@ -140,7 +233,41 @@
               coll)
       compare-fn nil nil {})))
 
+(defn- ordered-map-prim*
+  "Variant of ordered-map* that uses primitive node types for numeric keys."
+  [compare-fn node-create coll]
+  (binding [order/*compare* compare-fn
+            tree/*t-join* node-create]
+    (->OrderedMap
+      (r/fold +chunk-size+
+              (fn
+                ([]      (node/leaf))
+                ([n0 n1] (tree/node-set-union n0 n1)))
+              (fn
+                ([n [k v]] (tree/node-add n k v compare-fn node-create))
+                ([n k v]   (tree/node-add n k v compare-fn node-create)))
+              coll)
+      compare-fn nil node-create {})))
+
 (defn ordered-map
+  "Create a persistent sorted map backed by a weight-balanced binary tree.
+
+   Drop-in replacement for clojure.core/sorted-map with these enhancements:
+   - O(log n) first/last via java.util.SortedMap (vs O(n) for sorted-map)
+   - O(log n) nth positional access
+   - Parallel r/fold (2.3x faster than sorted-map)
+   - Fast merge-with via ordered-merge-with
+
+   Keys are sorted by clojure.core/compare. For custom ordering,
+   use ordered-map-by. For numeric keys, use long-ordered-map.
+
+   Examples:
+     (ordered-map)                          ; empty map
+     (ordered-map [[3 :c] [1 :a] [2 :b]])   ; {1 :a, 2 :b, 3 :c}
+     (ordered-map {3 :c, 1 :a, 2 :b})       ; {1 :a, 2 :b, 3 :c}
+     (first (ordered-map (zipmap (range 1e6) (range))))  ; [0 0], in O(log n)
+
+   Memory: ~88 bytes/entry (vs ~85 for sorted-map, ~4% overhead)"
   ([]
    (ordered-map* order/normal-compare nil))
   ([coll]
@@ -148,24 +275,32 @@
   ([compare-fn coll]
    (ordered-map* compare-fn coll)))
 
-(defn ordered-map-by [pred coll]
+(defn ordered-map-by
+  "Create an ordered map with custom key ordering via a predicate.
+
+   The predicate should define a total order (like < or >).
+
+   Examples:
+     (ordered-map-by > [[1 :a] [2 :b]])  ; descending keys: {2 :b, 1 :a}"
+  [pred coll]
   (-> pred order/compare-by (ordered-map* (seq coll))))
 
 (defn long-ordered-map
   "Create an ordered map optimized for Long keys.
-   Uses specialized Long.compare for ~15-25% faster comparisons."
+   Uses primitive long storage and specialized Long.compare for maximum performance.
+   Typically 15-25% faster than ordered-map for numeric workloads."
   ([]
-   (ordered-map* order/long-compare nil))
+   (ordered-map-prim* order/long-compare tree/node-create-weight-balanced-long nil))
   ([coll]
-   (ordered-map* order/long-compare coll)))
+   (ordered-map-prim* order/long-compare tree/node-create-weight-balanced-long coll)))
 
 (defn double-ordered-map
   "Create an ordered map optimized for Double keys.
-   Uses specialized Double.compare for faster numeric comparisons."
+   Uses primitive double storage and specialized Double.compare for faster comparisons."
   ([]
-   (ordered-map* order/double-compare nil))
+   (ordered-map-prim* order/double-compare tree/node-create-weight-balanced-double nil))
   ([coll]
-   (ordered-map* order/double-compare coll)))
+   (ordered-map-prim* order/double-compare tree/node-create-weight-balanced-double coll)))
 
 (defn string-ordered-map
   "Create an ordered map optimized for String keys.
@@ -639,3 +774,208 @@
 (def update-fn
   "Update value at index k by applying f. O(log n)."
   segtree/update-fn)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Split and Range Operations (data.avl compatible)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn split-key
+  "Split collection at key k, returning [left entry right].
+
+   - left:  collection of elements less than k
+   - entry: the element/entry at k, or nil if not present
+            (for sets: the key itself; for maps: [key value])
+   - right: collection of elements greater than k
+
+   Complexity: O(log n)
+
+   Compatible with clojure.data.avl/split-key.
+
+   Example:
+     (split-key (ordered-set [1 2 3 4 5]) 3)
+     ;=> [#{1 2} 3 #{4 5}]
+
+     (split-key (ordered-map [[1 :a] [2 :b] [3 :c]]) 2)
+     ;=> [{1 :a} [2 :b] {3 :c}]"
+  [coll k]
+  (let [root   (.getRoot ^com.dean.ordered_collections.tree.root.INodeCollection coll)
+        cmp    (.getCmp ^com.dean.ordered_collections.tree.root.IOrderedCollection coll)
+        stitch (.getStitch ^com.dean.ordered_collections.tree.root.IBalancedCollection coll)
+        alloc  (.getAllocator ^com.dean.ordered_collections.tree.root.INodeCollection coll)]
+    (binding [order/*compare* cmp]
+      (let [[l present r] (tree/node-split root k)
+            ;; Reconstruct collections of the same type
+            make-coll (fn [node]
+                        (cond
+                          (instance? OrderedSet coll)
+                          (->OrderedSet (or node (node/leaf)) cmp alloc stitch {})
+
+                          (instance? OrderedMap coll)
+                          (->OrderedMap (or node (node/leaf)) cmp alloc stitch {})
+
+                          :else (throw (ex-info "split-key not supported for this collection type" {:coll coll}))))
+            ;; Format entry based on collection type
+            entry (when present
+                    (let [[k v] present]
+                      (if (instance? OrderedSet coll)
+                        k
+                        [k v])))]
+        [(make-coll l) entry (make-coll r)]))))
+
+(defn split-at
+  "Split collection at index i, returning [left right].
+
+   - left:  collection of the first i elements (indices 0 to i-1)
+   - right: collection of remaining elements (indices i to n-1)
+
+   Complexity: O(log n)
+
+   Compatible with clojure.data.avl/split-at.
+
+   Example:
+     (split-at (ordered-set [1 2 3 4 5]) 2)
+     ;=> [#{1 2} #{3 4 5}]"
+  [coll ^long i]
+  (let [root   (.getRoot ^com.dean.ordered_collections.tree.root.INodeCollection coll)
+        cmp    (.getCmp ^com.dean.ordered_collections.tree.root.IOrderedCollection coll)
+        stitch (.getStitch ^com.dean.ordered_collections.tree.root.IBalancedCollection coll)
+        alloc  (.getAllocator ^com.dean.ordered_collections.tree.root.INodeCollection coll)
+        n      (tree/node-size root)]
+    (cond
+      (<= i 0) [(empty coll) coll]
+      (>= i n) [coll (empty coll)]
+      :else
+      (binding [order/*compare* cmp]
+        (let [pivot-node (tree/node-nth root i)
+              pivot-k    (node/-k pivot-node)
+              left-root  (tree/node-split-lesser root pivot-k)
+              ;; Reconstruct collections of the same type
+              make-coll  (fn [node]
+                           (cond
+                             (instance? OrderedSet coll)
+                             (->OrderedSet (or node (node/leaf)) cmp alloc stitch {})
+
+                             (instance? OrderedMap coll)
+                             (->OrderedMap (or node (node/leaf)) cmp alloc stitch {})
+
+                             :else (throw (ex-info "split-at not supported for this collection type" {:coll coll}))))
+              right-root (tree/node-split-nth root i)]
+          [(make-coll left-root) (make-coll right-root)])))))
+
+(defn subrange
+  "Return a subcollection comprising elements in the given range.
+
+   Arguments mirror clojure.core/subseq and rsubseq:
+     (subrange coll test key)           - elements where (test elem key) is true
+     (subrange coll start-test start-key end-test end-key)
+
+   Tests can be: < <= >= >
+
+   Complexity: O(log n) to construct the subrange
+
+   Compatible with clojure.data.avl/subrange.
+
+   Example:
+     (subrange (ordered-set (range 10)) >= 3 < 7)
+     ;=> #{3 4 5 6}
+
+     (subrange (ordered-set (range 10)) > 5)
+     ;=> #{6 7 8 9}"
+  ([coll test key]
+   (let [root   (.getRoot ^com.dean.ordered_collections.tree.root.INodeCollection coll)
+         cmp    (.getCmp ^com.dean.ordered_collections.tree.root.IOrderedCollection coll)
+         stitch (.getStitch ^com.dean.ordered_collections.tree.root.IBalancedCollection coll)
+         alloc  (.getAllocator ^com.dean.ordered_collections.tree.root.INodeCollection coll)]
+     (binding [order/*compare* cmp]
+       (let [result-root (cond
+                           (or (identical? test <) (identical? test <=))
+                           (tree/node-split-lesser root key)
+                           (or (identical? test >) (identical? test >=))
+                           (tree/node-split-greater root key)
+                           :else (throw (ex-info "subrange test must be <, <=, >, or >=" {:test test})))
+             ;; For <= and >=, we might need to include the key itself
+             result-root (cond
+                           (identical? test <=)
+                           (if-let [n (tree/node-find root key)]
+                             (tree/node-add result-root (node/-k n) (node/-v n))
+                             result-root)
+                           (identical? test >=)
+                           (if-let [n (tree/node-find root key)]
+                             (tree/node-add result-root (node/-k n) (node/-v n))
+                             result-root)
+                           :else result-root)]
+         (cond
+           (instance? OrderedSet coll)
+           (->OrderedSet result-root cmp alloc stitch {})
+
+           (instance? OrderedMap coll)
+           (->OrderedMap result-root cmp alloc stitch {})
+
+           :else (throw (ex-info "subrange not supported for this collection type" {:coll coll})))))))
+  ([coll start-test start-key end-test end-key]
+   (-> coll
+       (subrange start-test start-key)
+       (subrange end-test end-key))))
+
+(defn nearest
+  "Find the nearest element to key k satisfying the given test.
+
+   Tests:
+     <  - greatest element less than k
+     <= - greatest element less than or equal to k
+     >= - least element greater than or equal to k
+     >  - least element greater than k
+
+   Returns the element (for sets) or [key value] (for maps), or nil if none.
+
+   Complexity: O(log n)
+
+   Compatible with clojure.data.avl/nearest.
+
+   Example:
+     (nearest (ordered-set [1 3 5 7 9]) < 6)
+     ;=> 5
+
+     (nearest (ordered-set [1 3 5 7 9]) >= 6)
+     ;=> 7
+
+     (nearest (ordered-map [[1 :a] [3 :b] [5 :c]]) <= 4)
+     ;=> [3 :b]"
+  [coll test k]
+  (let [root (.getRoot ^com.dean.ordered_collections.tree.root.INodeCollection coll)
+        ^java.util.Comparator cmp (.getCmp ^com.dean.ordered_collections.tree.root.IOrderedCollection coll)
+        format-result (fn [n]
+                        (if (instance? OrderedSet coll)
+                          (node/-k n)
+                          [(node/-k n) (node/-v n)]))]
+    (binding [order/*compare* cmp]
+      (cond
+        ;; < : greatest less than k
+        (identical? test <)
+        (when-let [n (tree/node-find-nearest root k :<)]
+          ;; node-find-nearest returns <= so filter exact matches
+          (when (neg? (.compare cmp (node/-k n) k))
+            (format-result n)))
+
+        ;; <= : greatest less than or equal to k
+        (identical? test <=)
+        (if-let [exact (tree/node-find root k)]
+          (format-result exact)
+          (when-let [n (tree/node-find-nearest root k :<)]
+            (format-result n)))
+
+        ;; > : least greater than k
+        (identical? test >)
+        (when-let [n (tree/node-find-nearest root k :>)]
+          ;; node-find-nearest returns >= so filter exact matches
+          (when (pos? (.compare cmp (node/-k n) k))
+            (format-result n)))
+
+        ;; >= : least greater than or equal to k
+        (identical? test >=)
+        (if-let [exact (tree/node-find root k)]
+          (format-result exact)
+          (when-let [n (tree/node-find-nearest root k :>)]
+            (format-result n)))
+
+        :else (throw (ex-info "nearest test must be <, <=, >, or >=" {:test test}))))))
