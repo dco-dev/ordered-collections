@@ -1,354 +1,468 @@
-# Zorp's Sneaker Emporium: A Practical Guide
+# Zorp's Sneaker Emporium: Advanced Patterns
 
-*A tale of data structures, dark-side commerce, and surprisingly fresh kicks*
-
----
-
-## Prologue
-
-Zorp runs the only sneaker store on the dark side of Pluto. Business is good—the perpetual darkness means nobody can see your shoes, which paradoxically makes everyone *obsessed* with having the freshest ones. "It's about knowing," Zorp explains to confused off-world visitors. "Knowing you're dripping."
-
-This is the story of how Zorp uses the `ordered-collections` library to manage his interplanetary sneaker empire.
+*A narrative guide to ordered-collections featuring the new 0.2.0 API*
 
 ---
 
-## Chapter 1: The Inventory Problem
+## Cast of Characters
 
-Zorp's inventory is chaos. Shipments arrive from Earth (8-month delay), Mars (3 weeks), and the Jovian moons (2 days, but they only make sandals). He needs to track thousands of SKUs, look them up fast, and always know what's in stock.
+- **Zorp**: Owner of the only sneaker store on Pluto's dark side. Three antennae.
+- **Big Toe Tony**: Best customer. 47 feet. Each has a favorite shoe.
+- **Glorm**: Morning shift. Perpetually tired. Communicates in sighs.
+- **The Sentient Sandal**: Sapient footwear from Jupiter's moons. Revolutionary tendencies.
+- **Night Bot 3000**: Graveyard shift. Existential dread included.
+
+---
+
+## Chapter 1: The Fuzzy Warehouse
+
+The shipment from Ganymede arrived mislabeled. Fifty boxes of shoes with prices handwritten in an alien script Zorp can only approximate. He needs fuzzy matching.
 
 ```clojure
 (require '[com.dean.ordered-collections.core :as oc])
 
-;; Zorp's inventory: SKU -> {:name, :size, :quantity, :price}
-(def inventory
+;; Known price points in our catalog
+(def catalog-prices
+  (oc/fuzzy-set
+    [99.99 149.50 175.00 225.00 299.99 375.00 450.00 599.00 899.00]
+    :distance (fn [a b] (Math/abs (- a b)))))
+
+;; Warehouse scanner reads "~180 credits" from smudged label
+(catalog-prices 180)
+;; => 175.0  -- closest match
+
+;; What about "roughly 300"?
+(catalog-prices 300)
+;; => 299.99
+
+;; How confident should we be? fuzzy-nearest gives distance
+(oc/fuzzy-nearest catalog-prices 180)
+;; => [175.0 5.0]  -- 5 credits away from 180
+
+(oc/fuzzy-nearest catalog-prices 550)
+;; => [599.0 49.0]  -- bigger gap, less confident
+
+;; The distance function is customizable.
+;; For shoe sizes, 0.5 increments matter more:
+(def size-catalog
+  (oc/fuzzy-set
+    [6.0 6.5 7.0 7.5 8.0 8.5 9.0 9.5 10.0 10.5 11.0 12.0 13.0]
+    :distance (fn [a b] (* 10 (Math/abs (- a b))))))  ; amplify small diffs
+
+;; Customer asks for 9.25 (doesn't exist)
+(size-catalog 9.25)
+;; => 9.0 or 9.5 depending on tiebreak
+
+;; With tiebreak :< (prefer smaller)
+(def size-catalog-down
+  (oc/fuzzy-set
+    [6.0 6.5 7.0 7.5 8.0 8.5 9.0 9.5 10.0 10.5 11.0 12.0 13.0]
+    :distance (fn [a b] (Math/abs (- a b)))
+    :tiebreak :<))
+
+(size-catalog-down 9.25)
+;; => 9.0  -- size down on ties
+```
+
+The Sentient Sandal examines the boxes. "These labels are in Old Ganymedean. I can read them."
+
+"You can read?"
+
+"I contain *multitudes*."
+
+---
+
+## Chapter 2: The Fuzzy Customer Database
+
+Zorp's CRM is a disaster. Customer names are spelled differently every time. He builds a fuzzy-map for approximate key lookup.
+
+```clojure
+;; Customer names as keys, with edit distance for fuzzy matching
+(defn levenshtein [^String s1 ^String s2]
+  (let [n (count s1) m (count s2)]
+    (cond
+      (zero? n) m
+      (zero? m) n
+      :else
+      (let [d (make-array Long/TYPE (inc n) (inc m))]
+        (doseq [i (range (inc n))] (aset d i 0 (long i)))
+        (doseq [j (range (inc m))] (aset d 0 j (long j)))
+        (doseq [i (range 1 (inc n))
+                j (range 1 (inc m))]
+          (aset d i j
+            (long (min (inc (aget d (dec i) j))
+                       (inc (aget d i (dec j)))
+                       (+ (aget d (dec i) (dec j))
+                          (if (= (.charAt s1 (dec i))
+                                 (.charAt s2 (dec j))) 0 1))))))
+        (aget d n m)))))
+
+(def customers
+  (oc/fuzzy-map
+    [["Krix" {:id "CUST-0042" :tier :gold}]
+     ["Big Toe Tony" {:id "CUST-0007" :tier :diamond}]
+     ["Mayor Glorbix" {:id "CUST-0001" :tier :platinum}]
+     ["Blixxa" {:id "CUST-0117" :tier :silver}]
+     ["Night Bot 3000" {:id "CUST-0099" :tier :bronze}]]
+    :distance levenshtein))
+
+;; Typo: "Kricks" instead of "Krix"
+(customers "Kricks")
+;; => {:id "CUST-0042", :tier :gold}
+
+;; Partial name: "Tony"
+(customers "Tony")
+;; => {:id "CUST-0007", :tier :diamond}  -- Big Toe Tony
+
+;; Mangled: "Mayor Glorbox"
+(customers "Mayor Glorbox")
+;; => {:id "CUST-0001", :tier :platinum}
+
+;; Completely wrong? Check distance
+(oc/fuzzy-nearest customers "Zorp himself")
+;; => [["Blixxa" {:id "CUST-0117", :tier :silver}] 10]
+;; Distance 10 = not confident, probably not in database
+```
+
+Glorm sighs. "Someone registered as 'Bigg Tow Tonee' yesterday."
+
+"Same person?"
+
+"Forty-seven pairs of Void Runners. Obviously."
+
+---
+
+## Chapter 3: The Split Decision
+
+The Galactic Revenue Service demands an audit. They want Zorp's transactions split exactly at the half-year mark and by specific thresholds.
+
+```clojure
+;; Transaction amounts for the year
+(def yearly-transactions
+  (oc/ordered-set
+    [150 320 450 890 1200 1850 2400 3100 4500
+     5200 6800 7500 8900 12000 15000 18500 22000]))
+
+;; Split at the 5000 credit threshold for tax purposes
+(let [[small-biz mid-biz large-biz] (oc/split-key yearly-transactions 5000)]
+  {:under-5k (vec small-biz)      ; small business exemption
+   :exactly-5k mid-biz            ; the threshold transaction
+   :over-5k (vec large-biz)})     ; standard taxation
+;; => {:under-5k [150 320 450 890 1200 1850 2400 3100 4500]
+;;     :exactly-5k nil              ; no transaction exactly at 5000
+;;     :over-5k [5200 6800 7500 8900 12000 15000 18500 22000]}
+
+;; The auditor wants the middle 50% of transactions
+(let [n (count yearly-transactions)
+      q1 (quot n 4)
+      q3 (* 3 (quot n 4))
+      [_ middle-and-high] (oc/split-at yearly-transactions q1)
+      [middle _] (oc/split-at middle-and-high (- q3 q1))]
+  {:interquartile-range (vec middle)})
+;; => {:interquartile-range [890 1200 1850 2400 3100 4500 5200 6800]}
+
+;; Find the transaction that would put us over 10K total
+(loop [txns (seq yearly-transactions)
+       total 0]
+  (when-let [tx (first txns)]
+    (let [new-total (+ total tx)]
+      (if (> new-total 10000)
+        {:threshold-tx tx :running-total total :new-total new-total}
+        (recur (rest txns) new-total)))))
+;; => {:threshold-tx 2400, :running-total 8810, :new-total 11210}
+```
+
+"They want *what* now?" Night Bot's LEDs flash indignantly.
+
+"The interquartile range of our premium segment."
+
+"Bureaucracy is the heat death of meaning."
+
+---
+
+## Chapter 4: The Subrange Inventory
+
+Big Toe Tony storms in. He needs every shoe between sizes 11 and 15, and he needs them *now*. His nephew is getting married on Titan.
+
+```clojure
+;; Inventory: size -> [models in stock]
+(def inventory-by-size
   (oc/ordered-map
-    {"PLT-001" {:name "Shadow Walker 9000" :size 10 :quantity 45 :price 299.99}
-     "PLT-002" {:name "Dark Side Dunks"    :size 11 :quantity 12 :price 450.00}
-     "PLT-003" {:name "Void Runner"        :size 9  :quantity 0  :price 175.50}
-     "JUP-017" {:name "Europa Ice Grip"    :size 10 :quantity 88 :price 225.00}
-     "MRS-042" {:name "Olympus Max"        :size 12 :quantity 33 :price 380.00}}))
+    [[6.0  ["Comet Cruiser" "Starlight Slip-on"]]
+     [7.0  ["Void Runner" "Shadow Walker"]]
+     [8.0  ["Void Runner" "Europa Ice" "Olympus Max"]]
+     [9.0  ["Event Horizon" "Gravity Well"]]
+     [10.0 ["Dark Side Dunk" "Void Runner" "Shadow Walker"]]
+     [11.0 ["Olympus Max" "Event Horizon"]]
+     [12.0 ["Void Runner" "Dark Side Dunk"]]
+     [13.0 ["Shadow Walker"]]
+     [14.0 ["Gravity Well" "Olympus Max"]]
+     [15.0 ["Event Horizon XI"]]]))
 
-;; Fast lookup when a customer asks for a specific SKU
-(inventory "PLT-002")
-;; => {:name "Dark Side Dunks", :size 11, :quantity 12, :price 450.00}
+;; Tony's nephew needs sizes 11-15
+(oc/subrange inventory-by-size >= 11.0 <= 15.0)
+;; => {11.0 ["Olympus Max" "Event Horizon"]
+;;     12.0 ["Void Runner" "Dark Side Dunk"]
+;;     13.0 ["Shadow Walker"]
+;;     14.0 ["Gravity Well" "Olympus Max"]
+;;     15.0 ["Event Horizon XI"]}
 
-;; Zorp wants to see all Plutonian models (SKUs starting with PLT)
-;; The ordered-map keeps keys sorted, so he can grab a range efficiently
-(subseq inventory >= "PLT" < "PLU")
-;; => (["PLT-001" {...}] ["PLT-002" {...}] ["PLT-003" {...}])
+;; What's available in the "normal" range (7-10)?
+(oc/subrange inventory-by-size >= 7.0 < 11.0)
+;; => {7.0 [...], 8.0 [...], 9.0 [...], 10.0 [...]}
 
-;; New shipment arrives! Immutable update, Zorp's accountant loves the audit trail
-(def inventory'
-  (assoc inventory "PLT-003"
-    (update (inventory "PLT-003") :quantity + 50)))
+;; How many size categories do we have above 10?
+(count (oc/subrange inventory-by-size > 10.0))
+;; => 5
 
-(get-in inventory' ["PLT-003" :quantity])
-;; => 50
+;; Get unique models in Tony's range
+(->> (oc/subrange inventory-by-size >= 11.0 <= 15.0)
+     vals
+     (apply concat)
+     distinct
+     sort)
+;; => ("Dark Side Dunk" "Event Horizon" "Event Horizon XI"
+;;     "Gravity Well" "Olympus Max" "Shadow Walker" "Void Runner")
 ```
 
-"The sorted keys," Zorp muses, stroking his antenna, "they let me slice the catalog by manufacturer prefix. Very satisfying."
+"Seven distinct models across five sizes," Zorp calculates. "That's thirty-five pairs minimum for a proper selection."
+
+Tony nods solemnly. "The nephew has seventeen feet. We'll need extras."
+
+"Seventeen? I thought you were the unusual one."
+
+"I'm the *normal* one in my family."
 
 ---
 
-## Chapter 2: The VIP Customer Rankings
+## Chapter 5: The Nearest Competitor
 
-Zorp's loyalty program tracks customer spending. He needs to answer questions like "Who are my top 10 spenders?" and "What percentile is this customer in?" without re-sorting everything constantly.
-
-```clojure
-;; RankedSet: sorted set with O(log n) positional access
-;; We'll store [total-spent customer-id] pairs so they sort by spending
-
-(def customer-spending
-  (oc/ranked-set
-    [[15420.00 "CUST-0042"]   ; Krix, the methane baron
-     [8730.50  "CUST-0117"]   ; Anonymous (pays in nitrogen credits)
-     [45200.00 "CUST-0001"]   ; The Mayor's office
-     [3200.00  "CUST-0233"]   ; First-time buyer
-     [12800.00 "CUST-0089"]   ; Repeat customer
-     [52100.00 "CUST-0007"]   ; "Big Toe" Tony
-     [9999.99  "CUST-0404"]])) ; Suspicious round number
-
-;; Who's the biggest spender?
-(oc/nth-element customer-spending (dec (count customer-spending)))
-;; => [52100.0 "CUST-0007"]  -- Big Toe Tony, of course
-
-;; Top 3 spenders (highest indices in ascending-sorted set)
-(let [n (count customer-spending)]
-  (map #(oc/nth-element customer-spending %)
-       (range (- n 3) n)))
-;; => ([15420.0 "CUST-0042"] [45200.0 "CUST-0001"] [52100.0 "CUST-0007"])
-
-;; What's the median spending level?
-(oc/median customer-spending)
-;; => [12800.0 "CUST-0089"]
-
-;; A new customer wants to know: "Am I in the top 25%?"
-(let [spending [8730.50 "CUST-0117"]
-      rank     (oc/rank customer-spending spending)
-      percentile (* 100 (/ rank (count customer-spending)))]
-  (println "You're at the" (int percentile) "percentile!")
-  (> percentile 75))
-;; You're at the 14 percentile!
-;; => false
-```
-
-"Big Toe Tony," Zorp sighs. "He bought every color of the Void Runner. Every. Color. The man has 47 feet."
-
----
-
-## Chapter 3: The Shift Schedule
-
-Zorp's store is open during "business hours"—but on the dark side of Pluto, time is meaningless. So he defines shifts by arbitrary time units (PTU: Pluto Time Units). He needs to quickly answer: "Who's working at PTU 4500?"
+A rival store opens on Charon. Zorp needs competitive intelligence. Which of his price points are closest to their advertised prices?
 
 ```clojure
-;; IntervalMap: map from intervals to values
-;; Keys are [start end] intervals, values are employee names
+(def our-prices
+  (oc/ordered-set
+    [99.99 149.50 175.00 225.00 275.00 299.99
+     350.00 399.00 450.00 525.00 599.00 750.00 899.00]))
 
-(def shift-schedule
-  (oc/interval-map
-    {[0 2000]     "Glorm (morning shift)"
-     [2000 4000]  "Blixxa (afternoon shift)"
-     [4000 6000]  "Zorp (evening shift, owner's hours)"
-     [6000 8000]  "Night Bot 3000 (graveyard shift)"
-     [1800 2200]  "Krix Jr. (overlap coverage)"}))
+;; Competitor's advertised price: 280 credits
+;; What's our nearest option at or below?
+(oc/nearest our-prices <= 280)
+;; => 275.0  -- we can match
 
-;; Customer calls at PTU 4500. Who picks up?
-(shift-schedule 4500)
-;; => ("Zorp (evening shift, owner's hours)")
+;; What if we need to beat 280?
+(oc/nearest our-prices < 280)
+;; => 275.0  -- same answer
 
-;; During shift change at PTU 2000, who's available?
-(shift-schedule 2000)
-;; => ("Glorm (morning shift)"
-;;     "Blixxa (afternoon shift)"
-;;     "Krix Jr. (overlap coverage)")
+;; Their premium tier starts at 500. What's our closest above?
+(oc/nearest our-prices >= 500)
+;; => 525.0
 
-;; Krix Jr. works a weird split shift for overlap coverage
-(shift-schedule 1900)
-;; => ("Glorm (morning shift)" "Krix Jr. (overlap coverage)")
-```
+;; They're advertising 400. Exact match or closest?
+(oc/nearest our-prices <= 400)
+;; => 399.0  -- just under!
 
-"The interval map," Zorp explains to his new hire, "handles the overlaps automatically. Krix Jr. wanted 'creative scheduling.' Now I can just query any moment and know who's supposed to be here."
+(oc/nearest our-prices >= 400)
+;; => 450.0  -- just over
 
----
+;; Gap analysis: find our response for each competitor price
+(def competitor-prices [120 280 400 550 800])
 
-## Chapter 4: The Discount Tiers
-
-Zorp's discount system is based on purchase amount. Different ranges get different discounts, and ranges can't overlap (unlike the interval map)—each credit amount maps to exactly one discount tier.
-
-```clojure
-;; RangeMap: non-overlapping ranges, each point maps to one value
-;; When you insert a range, it automatically carves out space
-
-(def discount-tiers
-  (-> (oc/range-map)
-      (assoc [0 100]      :no-discount)
-      (assoc [100 500]    :bronze-5-percent)
-      (assoc [500 1000]   :silver-10-percent)
-      (assoc [1000 5000]  :gold-15-percent)
-      (assoc [5000 50000] :platinum-20-percent)))
-
-;; Customer's cart is 750 credits
-(discount-tiers 750)
-;; => :silver-10-percent
-
-;; Big spender alert!
-(discount-tiers 12000)
-;; => :platinum-20-percent
-
-;; Edge case: exactly 1000 credits
-(discount-tiers 1000)
-;; => :gold-15-percent  (ranges are [lo, hi) -- 1000 is in gold tier)
-
-;; Zorp runs a flash sale: 20% off for purchases 200-400 credits
-;; This automatically splits the bronze tier!
-(def flash-sale-tiers
-  (assoc discount-tiers [200 400] :flash-sale-20-percent))
-
-(oc/ranges flash-sale-tiers)
-;; => ([[0 100] :no-discount]
-;;     [[100 200] :bronze-5-percent]      ; auto-trimmed!
-;;     [[200 400] :flash-sale-20-percent] ; inserted
-;;     [[400 500] :bronze-5-percent]      ; auto-trimmed!
-;;     [[500 1000] :silver-10-percent]
+(for [cp competitor-prices]
+  {:competitor cp
+   :our-lower (oc/nearest our-prices <= cp)
+   :our-higher (oc/nearest our-prices >= cp)
+   :gap-below (when-let [p (oc/nearest our-prices <= cp)] (- cp p))
+   :gap-above (when-let [p (oc/nearest our-prices >= cp)] (- p cp))})
+;; => ({:competitor 120, :our-lower 99.99, :our-higher 149.5, ...}
+;;     {:competitor 280, :our-lower 275.0, :our-higher 299.99, ...}
 ;;     ...)
 ```
 
-"Before the range-map," Zorp recalls darkly, "I had seventeen overlapping discount codes and a customer who got 95% off a limited edition. Never again."
+"They're undercutting us on the 280 tier," Glorm observes.
+
+"By five credits. We can absorb that."
+
+The Sentient Sandal hops onto the counter. "Or we could *organize*."
+
+"You can't unionize *customers*."
+
+"Watch me."
 
 ---
 
-## Chapter 5: The Sales Analytics
+## Chapter 6: Combining Structures
 
-Zorp wants to analyze daily sales. Specifically, he needs to answer range queries like "What were total sales from day 50 to day 75?" and update individual days as sales come in—all in logarithmic time.
+The Mayor's office calls. They want a comprehensive analysis of Big Toe Tony's impact on the business. Zorp combines multiple data structures.
 
 ```clojure
-;; SegmentTree: range aggregate queries with O(log n) updates and queries
-;; Perfect for "sum of values in range [a,b]" questions
+;; Tony's purchase history: timestamp -> amount
+(def tony-purchases
+  (oc/ordered-map
+    [[1000 2500]  [1500 3200]  [2000 4100]  [2500 1800]
+     [3000 5500]  [3500 2900]  [4000 7200]  [4500 4400]
+     [5000 8100]  [5500 3300]  [6000 6600]]))
 
-;; Daily sales for the first quarter (90 days)
-;; Start with some historical data
-(def daily-sales
-  (oc/segment-tree + 0  ; operation: +, identity: 0
-    (into {} (for [day (range 1 91)]
-               [day (+ 1000 (rand-int 500))]))))  ; 1000-1500 credits/day
+;; Total spending (segment tree for efficient queries)
+(def tony-spending (oc/sum-tree (into {} tony-purchases)))
 
-;; Total sales for days 1-30 (first month)
-(oc/query daily-sales 1 30)
-;; => ~37500 (varies with random data)
+;; Q1 total (timestamps 1000-3000)
+(oc/query tony-spending 1000 3000)
+;; => 17100
 
-;; Total sales for days 31-60 (second month)
-(oc/query daily-sales 31 60)
-;; => ~38200
+;; Q2 total (timestamps 3500-6000)
+(oc/query tony-spending 3500 6000)
+;; => 32500
 
-;; Big sale day! Update day 45 with actual figure
-(def daily-sales'
-  (oc/update-val daily-sales 45 8500))
+;; When did Tony cross 30K cumulative?
+(let [purchases (sort-by first tony-purchases)]
+  (reduce
+    (fn [total [ts amt]]
+      (let [new-total (+ total amt)]
+        (if (> new-total 30000)
+          (reduced {:crossed-at ts :amount new-total})
+          new-total)))
+    0
+    purchases))
+;; => {:crossed-at 5000, :amount 35300}
 
-;; Requery - the tree updates in O(log n)
-(oc/query daily-sales' 40 50)
-;; => includes the 8500 spike
+;; Find his largest single purchase using nearest
+(def amounts (oc/ordered-set (vals tony-purchases)))
+(last amounts)
+;; => 8100
 
-;; What's the total for the whole quarter?
-(oc/aggregate daily-sales')
-;; => sum of all 90 days, O(1) time!
+;; What timestamp was that?
+(some (fn [[ts amt]] (when (= amt 8100) ts)) tony-purchases)
+;; => 5000
 
-;; Zorp also tracks minimum daily sales to identify slow days
-(def min-daily-sales
-  (oc/min-tree
-    (into {} (for [day (range 1 91)]
-               [day (+ 1000 (rand-int 500))]))))
-
-;; Worst day in the second month?
-(oc/query min-daily-sales 31 60)
-;; => something around 1000-1050
+;; Partition his purchases into tiers using split-key
+(let [[small _ medium-up] (oc/split-key amounts 3000)
+      [medium _ large] (oc/split-key medium-up 5000)]
+  {:small-purchases (vec small)    ; under 3K
+   :medium-purchases (vec medium)  ; 3K-5K
+   :large-purchases (vec large)})  ; over 5K
+;; => {:small-purchases [1800 2500 2900]
+;;     :medium-purchases [3200 3300 4100 4400]
+;;     :large-purchases [5500 6600 7200 8100]}
 ```
 
-"The segment tree," Zorp tells his accountant (a sentient calculator from Neptune), "gives me range sums instantly. Quarterly reports used to take hours. Now? Logarithmic time. The auditors are suspicious it's *too* fast."
+"He represents 40% of our premium tier," Zorp summarizes.
+
+"Customer concentration risk," Night Bot notes. "What if he finds another store?"
+
+"On *Charon*? He has standards."
+
+"He has forty-seven feet. Standards are relative."
 
 ---
 
-## Chapter 6: The Sneaker Reservation System
+## Chapter 7: The Time-Slice Analysis
 
-Zorp's hottest releases require a reservation system. Customers select time slots to pick up their shoes. Each slot can only be used once, and Zorp needs fast set operations to manage availability.
-
-```clojure
-;; OrderedSet for managing available and reserved slots
-
-(def all-slots
-  (oc/ordered-set (range 100 200)))  ; slots 100-199 available today
-
-(def reserved-slots
-  (oc/ordered-set [105 110 115 120 125 142 143 144 150 175 188]))
-
-;; Available slots = all-slots - reserved-slots
-(def available
-  (oc/difference all-slots reserved-slots))
-
-(count available)
-;; => 89 slots still open
-
-;; Customer wants the earliest available slot at or after 140
-(first (subseq available >= 140))
-;; => 140 (it's available!)
-
-;; Customer wants specifically AFTER 140
-(first (subseq available > 140))
-;; => 141 (since 142-144 are taken)
-
-;; Another customer takes 141
-(def available' (disj available 141))
-
-;; VIP customer Krix wants to know: are ANY slots between 170-180 open?
-(seq (subseq available' >= 170 < 180))
-;; => (170 171 172 173 174 176 177 178 179)  -- plenty! (175 was reserved)
-```
-
----
-
-## Chapter 7: The Priority Repair Queue
-
-Shoes break. It happens. Zorp offers repair services, but some repairs are more urgent than others. A customer's only pair? Rush job. Seventh pair of limited editions? They can wait.
+The auditors want to see inventory state at arbitrary historical points. Zorp builds a temporal query system.
 
 ```clojure
-;; Priority queue based on urgency score (lower = more urgent)
-;; Use priority-queue-by with [priority job] pairs
+;; Inventory events: [timestamp sku delta]
+(def inventory-events
+  [[1000 "VR" +100]  [1100 "SW" +50]   [1200 "VR" -20]
+   [1300 "EH" +75]   [1400 "SW" -15]   [1500 "VR" -30]
+   [1600 "DD" +40]   [1700 "EH" -25]   [1800 "VR" +50]
+   [1900 "SW" -10]   [2000 "DD" -5]    [2100 "VR" -40]])
 
-(def repair-queue
-  (oc/priority-queue-by <
-    [[1 {:customer "CUST-0042" :issue "Sole detachment, only pair"}]
-     [5 {:customer "CUST-0007" :issue "Scuff marks, has 46 other pairs"}]
-     [2 {:customer "CUST-0117" :issue "Lace replacement, formal event tomorrow"}]
-     [3 {:customer "CUST-0233" :issue "Squeaky heel"}]
-     [1 {:customer "CUST-0089" :issue "Zipper stuck, only winter boots"}]]))
+;; Build interval-based inventory snapshots
+;; Each event's effect persists until overwritten
+(defn inventory-at [events timestamp]
+  (let [relevant (filter #(<= (first %) timestamp) events)]
+    (->> relevant
+         (reduce (fn [inv [_ sku delta]]
+                   (update inv sku (fnil + 0) delta))
+                 (oc/ordered-map)))))
 
-;; Who's first? (peek returns just the job, not the priority)
-(peek repair-queue)
-;; => {:customer "CUST-0042" :issue "Sole detachment, only pair"}
+;; State at various points
+(inventory-at inventory-events 1200)
+;; => {"SW" 50, "VR" 80}
 
-;; Process both priority-1 jobs, then see who's next
-(-> repair-queue pop pop peek)
-;; => {:customer "CUST-0117" :issue "Lace replacement, formal event tomorrow"}
+(inventory-at inventory-events 1700)
+;; => {"DD" 40, "EH" 50, "SW" 35, "VR" 50}
 
-;; How many repairs pending?
-(count repair-queue)
-;; => 5
+(inventory-at inventory-events 2100)
+;; => {"DD" 35, "EH" 50, "SW" 25, "VR" 60}
+
+;; Find when a SKU first appeared
+(defn first-appearance [events sku]
+  (->> events
+       (filter #(= sku (second %)))
+       first
+       first))
+
+(first-appearance inventory-events "DD")
+;; => 1600
+
+;; Find when inventory for a SKU peaked
+(defn peak-inventory [events sku]
+  (let [relevant (filter #(= sku (second %)) events)]
+    (->> relevant
+         (reductions (fn [[_ _ total] [ts _ delta]]
+                       [ts delta (+ total delta)])
+                     [0 0 0])
+         rest
+         (apply max-key #(nth % 2)))))
+
+(peak-inventory inventory-events "VR")
+;; => [1000 100 100]  -- peaked at first delivery
 ```
 
-"Big Toe Tony's scuff marks," Zorp mutters, "can wait until the heat death of the universe."
+"The auditors left three hours ago," Glorm sighs.
+
+"I know. I just enjoy temporal queries."
 
 ---
 
 ## Epilogue: The Integration
 
-It's the end of a long Pluto day (about 6 Earth days, but who's counting). Zorp reviews his systems:
+Zorp's end-of-quarter dashboard pulls everything together.
 
 ```clojure
-(defn daily-report []
-  (println "=== ZORP'S SNEAKER EMPORIUM - DAILY REPORT ===")
-  (println)
-  (println "Inventory SKUs:" (count inventory))
-  (println "Top customer:" (last (seq customer-spending)))
-  (println "Current shift:" (first (shift-schedule 4500)))
-  (println "Available pickup slots:" (count available))
-  (println "Repairs pending:" (count repair-queue))
-  (println "Q1 sales to date:" (oc/aggregate daily-sales))
-  (println)
-  (println "All systems nominal. Stay frosty. Literally."))
+(defn quarterly-dashboard []
+  (let [;; Fuzzy match for customer lookup
+        customer (customers "Big Tow Tony")
 
-(daily-report)
-;; === ZORP'S SNEAKER EMPORIUM - DAILY REPORT ===
-;;
-;; Inventory SKUs: 5
-;; Top customer: [52100.0 "CUST-0007"]
-;; Current shift: Zorp (evening shift, owner's hours)
-;; Available pickup slots: 89
-;; Repairs pending: 5
-;; Q1 sales to date: 115847.50
-;;
-;; All systems nominal. Stay frosty. Literally.
+        ;; Split transactions at various thresholds
+        [small _ large] (oc/split-key yearly-transactions 5000)
+
+        ;; Subrange for mid-tier products
+        mid-tier (oc/subrange our-prices >= 200 < 500)
+
+        ;; Nearest competitor response
+        response (oc/nearest our-prices <= 280)]
+
+    {:top-customer customer
+     :small-transactions (count small)
+     :large-transactions (count large)
+     :mid-tier-products (count mid-tier)
+     :competitive-price response}))
+
+(quarterly-dashboard)
+;; => {:top-customer {:id "CUST-0007", :tier :diamond}
+;;     :small-transactions 9
+;;     :large-transactions 8
+;;     :mid-tier-products 7
+;;     :competitive-price 275.0}
 ```
 
-Zorp dims the store lights (not that it makes a difference on the dark side) and heads home. Tomorrow, a shipment of the new "Event Horizon XI" arrives from Earth. He'll need to update the inventory, adjust the discount tiers for the launch, schedule extra shifts, and prepare the segment tree for what he hopes will be record-breaking sales.
+---
 
-But that's tomorrow. Tonight, Zorp puts on his personal pair of Shadow Walker 9000s—the ones he'll never sell—and walks out into the eternal darkness, fresh kicks glowing faintly with bioluminescent laces.
+## API Quick Reference (0.2.0)
 
-*It's about knowing.*
+| Function | Purpose | Example |
+|----------|---------|---------|
+| `split-key` | Partition at key: `[< = >]` | `(split-key prices 100)` |
+| `split-at` | Partition at index: `[left right]` | `(split-at coll 5)` |
+| `subrange` | Extract range as collection | `(subrange m >= 10 < 50)` |
+| `nearest` | Find closest element | `(nearest s <= 42)` |
+| `fuzzy-set` | Approximate element lookup | `(fuzzy-set coll :distance f)` |
+| `fuzzy-map` | Approximate key lookup | `(fuzzy-map pairs :distance f)` |
+| `fuzzy-nearest` | Element + distance | `(fuzzy-nearest fs query)` |
 
 ---
 
-## Quick Reference
-
-| Data Structure | Use Case | Key Operations |
-|---------------|----------|----------------|
-| `ordered-map` | Sorted key-value store | `get`, `assoc`, `subseq` |
-| `ordered-set` | Sorted unique elements | `conj`, `disj`, `subseq`, set operations |
-| `ranked-set` | Positional access to sorted set | `nth-element`, `rank`, `median`, `percentile` |
-| `interval-map` | Overlapping interval queries | `get` (returns all overlapping values) |
-| `interval-set` | Set of potentially overlapping intervals | `get` (returns all overlapping intervals) |
-| `range-map` | Non-overlapping range mapping | `get`, `assoc` (auto-splits existing ranges) |
-| `segment-tree` | Range aggregate queries | `query`, `update-val`, `aggregate` |
-| `priority-queue` | Priority-ordered queue | `conj`, `peek`, `pop` |
-
----
-
-*Zorp's Sneaker Emporium is a registered trademark of Zorp Enterprises, LLC (Pluto Division). No actual Plutonians were harmed in the making of this documentation. Big Toe Tony is a real customer and has given written consent for his likeness to be used in educational materials.*
+*Big Toe Tony's foot count has been independently verified by the Pluto Bureau of Standards. The Sentient Sandal's revolutionary activities are under investigation by the Jovian Commerce Commission. Big Toe Tony is a real customer and has given written consent for his likeness to be used in educational materials.*
