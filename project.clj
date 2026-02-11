@@ -10,7 +10,9 @@
 
   :profiles {:dev {:dependencies [[org.clojure/data.avl "0.2.0"]
                                   [org.clojure/test.check "1.1.1"]
-                                  [criterium "0.4.6"]]}}
+                                  [criterium "0.4.6"]
+                                  [com.clojure-goes-fast/clj-memory-meter "0.3.0"]]
+                   :jvm-opts ["-Djdk.attach.allowAttachSelf"]}}
 
   :plugins [[lein-codox "0.10.8"]
             [lein-ancient "0.7.0"]
