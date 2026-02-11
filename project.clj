@@ -9,6 +9,7 @@
                  [org.clojure/math.combinatorics "0.3.2"]]
 
   :profiles {:dev {:dependencies [[org.clojure/data.avl "0.2.0"]
+                                  [org.clojure/test.check "1.1.1"]
                                   [criterium "0.4.6"]]}}
 
   :plugins [[lein-codox "0.10.8"]
