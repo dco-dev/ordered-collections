@@ -47,6 +47,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftype SimpleNode [k v l r ^long x]
+  java.io.Serializable
   IBalancedNode
   (x  [_] x)
   INode
@@ -57,10 +58,43 @@
   (kv [_] (MapEntry. k v)))
 
 (deftype IntervalNode [k v l r ^long x z]
+  java.io.Serializable
   IBalancedNode
   (x  [_] x)
   IAugmentedNode
   (z  [_] z)     ;; max node child interval span
+  INode
+  (k  [_] k)
+  (v  [_] v)
+  (l  [_] l)
+  (r  [_] r)
+  (kv [_] (MapEntry. k v)))
+
+;; Primitive-specialized node types for better performance with numeric keys.
+;; These avoid boxing overhead for Long/Double keys.
+;;
+;; Academic justification: Boxing overhead for primitive comparisons can be
+;; 15-25% of total lookup time (see competitive-analysis.md). By storing
+;; the key as a primitive long, we eliminate:
+;;   1. Box allocation during insertion
+;;   2. Unboxing during comparison
+;;   3. GC pressure from boxed Long objects
+
+(deftype LongKeyNode [^long k v l r ^long x]
+  java.io.Serializable
+  IBalancedNode
+  (x  [_] x)
+  INode
+  (k  [_] k)
+  (v  [_] v)
+  (l  [_] l)
+  (r  [_] r)
+  (kv [_] (MapEntry. k v)))
+
+(deftype DoubleKeyNode [^double k v l r ^long x]
+  java.io.Serializable
+  IBalancedNode
+  (x  [_] x)
   INode
   (k  [_] k)
   (v  [_] v)
