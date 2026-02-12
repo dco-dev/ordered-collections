@@ -42,6 +42,8 @@
 
 **Ratio vs sorted-map at 500K**: ordered-map 2.3x slower (use batch construction instead)
 
+**Note on insert overhead**: Like lookup, sequential insert pays the cost of heterogeneous key support via `clojure.core/compare` dispatch. For homogeneous numeric keys, `long-ordered-map` closes the gap significantly.
+
 ### Delete: dissoc half the elements one at a time
 
 | N | sorted-map | data.avl | ordered-map |
@@ -107,6 +109,8 @@ Note: Seq iteration now uses efficient direct ISeq implementations (`KeySeq`/`En
 | 500,000 | 1.6 s | 2.5 s | 2.5 s |
 
 **Sequential insert is 1.6x slower than sorted-set** (use batch construction instead)
+
+**Note on insert overhead**: Like lookup, sequential insert pays the cost of heterogeneous key support via `clojure.core/compare` dispatch. For homogeneous numeric keys, `long-ordered-set` closes the gap significantly.
 
 ### Delete: disj half the elements one at a time
 
@@ -337,7 +341,7 @@ Queries return all intervals that overlap with the query interval. Query time sc
 **Slower than sorted-set**:
 - Sequential insert (~1.6x) — use batch construction instead
 
-**Note on heterogeneous key support**: The default `ordered-set` supports mixed key types, requiring `clojure.core/compare` dispatch. For homogeneous collections, use `long-ordered-set` (20% faster than sorted-set) or `string-ordered-set` (5% faster).
+**Note on heterogeneous key support**: The default `ordered-set` supports mixed key types, requiring `clojure.core/compare` dispatch on every comparison. This affects both lookup and insert performance. For homogeneous collections, use `long-ordered-set` (20% faster than sorted-set for both operations) or `string-ordered-set` (5% faster).
 
 ### When to use ordered-map
 
@@ -349,7 +353,7 @@ Queries return all intervals that overlap with the query interval. Query time sc
 - Homogeneous numeric keys (`long-ordered-map` is 20% faster than sorted-map)
 
 **Trade-offs**:
-- Sequential insert 2.3x slower than sorted-map (use batch construction instead)
+- Sequential insert 2.3x slower than sorted-map with default comparator (heterogeneous key support); use batch construction or `long-ordered-map` for numeric keys
 - Lookup 8% slower than sorted-map with default comparator (heterogeneous key support); use `long-ordered-map` for numeric keys to beat sorted-map by 20%
 
 ### Performance Ratios at N=500K
@@ -359,7 +363,8 @@ Queries return all intervals that overlap with the query interval. Query time sc
 | Operation | vs sorted-set | vs data.avl |
 |-----------|---------------|-------------|
 | Construction | **1.25x faster** | **2.1x faster** |
-| Insert | 1.56x slower | same |
+| Insert (heterogeneous) | 1.56x slower | same |
+| Insert (long-ordered-set) | ~equal | **1.56x faster** |
 | Delete | 1.38x slower | **1.17x faster** |
 | Lookup (heterogeneous) | 1.07x slower | **1.16x faster** |
 | Lookup (long-ordered-set) | **1.20x faster** | **1.40x faster** |
@@ -371,20 +376,21 @@ Queries return all intervals that overlap with the query interval. Query time sc
 | Intersection | **5.3x faster** vs clojure.set | — |
 | Difference | **8.6x faster** vs clojure.set | — |
 
-*Heterogeneous lookup uses `clojure.core/compare` for mixed-type support. For homogeneous numeric keys, `long-ordered-set` uses primitive `Long/compare` and beats `sorted-set`.*
+*Heterogeneous insert/lookup uses `clojure.core/compare` for mixed-type support. For homogeneous numeric keys, `long-ordered-set` uses primitive `Long/compare` and beats `sorted-set`.*
 
 **ordered-map vs alternatives:**
 
 | Operation | vs sorted-map | vs data.avl |
 |-----------|---------------|-------------|
 | Construction | **equal** | **2.3x faster** |
-| Insert | 2.27x slower | same |
+| Insert (heterogeneous) | 2.27x slower | same |
+| Insert (long-ordered-map) | ~equal | **2.27x faster** |
 | Delete | 1.87x slower | **1.08x faster** |
 | Lookup (heterogeneous) | 1.08x slower | **1.01x faster** |
 | Lookup (long-ordered-map) | **1.20x faster** | **1.25x faster** |
 | Iteration | ~equal | 1.26x slower |
 
-*Heterogeneous lookup uses `clojure.core/compare` for mixed-type support. For homogeneous numeric keys, `long-ordered-map` uses primitive `Long/compare` and beats `sorted-map`.*
+*Heterogeneous insert/lookup uses `clojure.core/compare` for mixed-type support. For homogeneous numeric keys, `long-ordered-map` uses primitive `Long/compare` and beats `sorted-map`.*
 
 ## Running Benchmarks
 

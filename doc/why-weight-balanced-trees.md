@@ -2,6 +2,8 @@
 
 This document explains why this library uses weight-balanced trees instead of the more common red-black trees (used by Clojure's `sorted-map`) or AVL trees (used by `data.avl`).
 
+Weight-balanced trees have a distinguished lineage in functional programming, powering Haskell's `Data.Set` and `Data.Map`, MIT Scheme's `wt-tree`, and several other persistent collection libraries. This isn't an accident—their structure is uniquely suited to functional programming's needs.
+
 ## The Three Contenders
 
 ### Red-Black Trees (Clojure's sorted-map/sorted-set)
@@ -157,17 +159,77 @@ For sets at N = 500,000:
 
 ## Historical Context
 
-Weight-balanced trees were introduced by Nievergelt and Reingold in 1972, predating red-black trees (1978). They fell out of favor because:
+Weight-balanced trees have a rich history spanning five decades:
 
-1. Early parameter choices led to edge cases
-2. Red-black trees dominated textbooks
-3. Split/join weren't valued in imperative programming
+### Origins (1972)
 
-The functional programming renaissance revived interest: Adams (1992) showed weight-balanced trees are ideal for persistent data structures, and Hirai/Yamamoto (2011) finally proved correct balance parameters.
+Nievergelt and Reingold introduced "binary search trees of bounded balance" (BB[α] trees). The key insight: balance based on subtree *sizes* rather than heights. This predates red-black trees (1978) by six years.
+
+### The Functional Renaissance (1992-1993)
+
+**Stephen Adams** revolutionized the use of weight-balanced trees for functional programming:
+
+- *Technical Report CSTR 92-10* (1992): "Implementing Sets Efficiently in a Functional Language" — the foundational work
+- *Journal of Functional Programming* (1993): "Efficient sets—a balancing act" — winner of the "elegance category" in a programming competition
+
+Adams showed that weight-balanced trees need only *one* balancing-scheme-specific function (`join`) to implement all set operations elegantly. His algorithms for union, intersection, and difference became the standard approach.
+
+### Production Implementations
+
+Adams' work directly influenced several major implementations:
+
+**MIT Scheme wt-tree** (mid-1980s onwards): One of the earliest production implementations, providing a comprehensive API for sets and maps. The [MIT Scheme Reference Manual](https://www.gnu.org/software/mit-scheme/documentation/stable/mit-scheme-ref/Weight_002dBalanced-Trees.html) notes: "Weight-balanced binary trees have several advantages over the other data structures for large aggregates."
+
+**Haskell containers** (Data.Set, Data.Map): The de facto standard collections in Haskell cite Adams directly. From the [source](https://hackage.haskell.org/package/containers/docs/Data-Map.html): "The implementation is based on size balanced binary trees as described by Stephen Adams."
+
+**FSet** (Common Lisp and Java): Scott Burson's [functional collections library](https://github.com/slburson/fset) uses "an evolution of Stephen Adams' weight-balanced binary trees," providing heterogeneous collections with correct ordering-collision handling.
+
+**SLIB** (Scheme): Aubrey Jaffer's portable Scheme library includes [weight-balanced trees](https://people.csail.mit.edu/jaffer/slib/Weight_002dBalanced-Trees.html) as a core data structure.
+
+### The Parameter Problem (2011)
+
+Adams' original analysis had a subtle flaw. Various implementations used different balance parameters, some leading to edge cases.
+
+**Hirai and Yamamoto** resolved this definitively in "Balancing Weight-Balanced Trees" (Journal of Functional Programming, 2011). Using the Coq proof assistant, they proved that **(δ=3, γ=2)** is the unique integer solution for correct balancing. Kazu Yamamoto [patched MIT Scheme and SLIB](https://github.com/kazu-yamamoto/wttree) accordingly.
+
+### Parallelism (2016)
+
+**Blelloch, Ferizovic, and Sun** published "[Just Join for Parallel Ordered Sets](https://www.cs.cmu.edu/~guyb/papers/BFS16.pdf)" (SPAA 2016), proving that Adams' algorithms are both *work-optimal* and *highly parallel* (polylogarithmic span). Their [PAM library](https://cmuparlay.github.io/PAMWeb/) demonstrates 45x+ speedup on 64 cores.
+
+This paper vindicated Adams' 1992 design: the elegant `join`-based approach wasn't just beautiful—it was optimal.
+
+## Why Weight-Balanced Trees Won in Functional Languages
+
+The pattern is clear: when functional programmers need ordered collections, they reach for weight-balanced trees. Why?
+
+1. **Persistence is free**: The functional/referential-transparent nature means subtree sharing just works
+2. **Split and join are fundamental**: Functional programming values composition; these operations compose naturally
+3. **Size tracking enables more operations**: nth, rank, and range queries come "for free"
+4. **Parallelism**: The ability to split enables divide-and-conquer parallelism
+
+As the MIT Scheme manual puts it: "The implementation is functional rather than imperative... The trees are referentially transparent thus the programmer need not worry about copying the trees."
 
 ## References
 
-- Adams, S. (1992). "Implementing Sets Efficiently in a Functional Language"
-- Hirai, Y. & Yamamoto, K. (2011). "Balancing Weight-Balanced Trees"
-- Nievergelt, J. & Reingold, E. (1972). "Binary Search Trees of Bounded Balance"
-- Blelloch, G., Ferizovic, D., & Sun, Y. (2016). "Just Join for Parallel Ordered Sets"
+### Foundational Papers
+
+- Nievergelt, J. & Reingold, E. (1972). "[Binary Search Trees of Bounded Balance](https://dl.acm.org/doi/10.1137/0202005)". *SIAM Journal of Computing* 2(1).
+
+- Adams, S. (1992). "Implementing Sets Efficiently in a Functional Language". *Technical Report CSTR 92-10*, University of Southampton.
+
+- Adams, S. (1993). "[Efficient sets—a balancing act](https://www.cambridge.org/core/journals/journal-of-functional-programming/article/functional-pearls-efficient-setsa-balancing-act/0CAA1C189B4F7C15CE9B8C02D0D4B54E)". *Journal of Functional Programming* 3(4):553-562.
+
+### Correctness and Optimization
+
+- Hirai, Y. & Yamamoto, K. (2011). "[Balancing Weight-Balanced Trees](https://www.cambridge.org/core/journals/journal-of-functional-programming/article/balancing-weightbalanced-trees/7281C4DE7E56B74F2D13F06E31DCBC5B)". *Journal of Functional Programming* 21(3):287-307.
+
+- Blelloch, G., Ferizovic, D., & Sun, Y. (2016). "[Just Join for Parallel Ordered Sets](https://dl.acm.org/doi/10.1145/2935764.2935768)". *ACM SPAA*.
+
+### Implementations
+
+- [MIT Scheme Weight-Balanced Trees](https://www.gnu.org/software/mit-scheme/documentation/stable/mit-scheme-ref/Weight_002dBalanced-Trees.html)
+- [Haskell containers (Data.Set, Data.Map)](https://hackage.haskell.org/package/containers)
+- [FSet for Common Lisp](https://github.com/slburson/fset)
+- [FSet for Java](https://github.com/slburson/fset-java)
+- [SLIB Weight-Balanced Trees](https://people.csail.mit.edu/jaffer/slib/Weight_002dBalanced-Trees.html)
+- [PAM: Parallel Augmented Maps](https://cmuparlay.github.io/PAMWeb/)
