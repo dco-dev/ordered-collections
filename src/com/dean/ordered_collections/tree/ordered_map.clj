@@ -191,10 +191,10 @@
         (fn [acc node] (reducef acc (node/-kv node))))))
 
   clojure.lang.IPersistentMap
-  (assocEx [this k v]               ;; TODO: use `tree/node-add-if`
-    (if (contains? this k)
-      (throw (Exception. "Key or value already present"))
-      (assoc this k v)))
+  (assocEx [this k v]
+    (if-let [new-root (tree/node-add-if-absent root k v cmp tree/node-create-weight-balanced)]
+      (OrderedMap. new-root cmp alloc stitch _meta)
+      (throw (Exception. "Key or value already present"))))
   (without [this k]
     (OrderedMap. (tree/node-remove root k cmp tree/node-create-weight-balanced) cmp alloc stitch _meta))
 

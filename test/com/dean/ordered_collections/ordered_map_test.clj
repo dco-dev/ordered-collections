@@ -5,9 +5,6 @@
 
 (set! *warn-on-reflection* true)
 
-
-;; TODO: more
-
 (deftest smoke-check
   (is (= {} (ordered-map)))
   (is (map? (ordered-map))) ;; => true
@@ -57,3 +54,21 @@
       (is (= s (-> x (assoc k v) (dissoc k))))
       (is (= (into s t) (into x t)))
       (is (= (into s t) (-> x (into t) (into t)))))))
+
+(deftest assoc-ex-test
+  (testing "assocEx adds new key"
+    (let [m (ordered-map {:a 1 :b 2})]
+      (is (= {:a 1 :b 2 :c 3} (.assocEx m :c 3)))))
+
+  (testing "assocEx throws on existing key"
+    (let [m (ordered-map {:a 1 :b 2})]
+      (is (thrown? Exception (.assocEx m :a 99)))))
+
+  (testing "assocEx works on empty map"
+    (let [m (ordered-map)]
+      (is (= {:x 1} (.assocEx m :x 1)))))
+
+  (testing "assocEx preserves ordering"
+    (let [m (ordered-map [[1 :a] [3 :c] [5 :e]])]
+      (is (= [[1 :a] [2 :b] [3 :c] [5 :e]]
+             (seq (.assocEx m 2 :b)))))))

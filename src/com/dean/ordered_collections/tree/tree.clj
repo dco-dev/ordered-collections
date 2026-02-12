@@ -490,6 +490,23 @@
                        (stitch-wb create key val l (add r))))))))]
      (add n))))
 
+(defn node-add-if-absent
+  "Insert key/value only if key doesn't exist. Returns new tree or nil if key exists.
+   Single traversal - more efficient than contains? + add for assocEx."
+  ([n k v ^Comparator cmp create]
+   (letfn [(add [n]
+             (if (leaf? n)
+               (create k v (leaf) (leaf))
+               (kvlr [key val l r] n
+                 (let [c (.compare cmp k key)]
+                   (cond
+                     (zero? c) nil  ; key exists, signal failure
+                     (neg? c)  (when-let [new-l (add l)]
+                                 (stitch-wb create key val new-l r))
+                     :else     (when-let [new-r (add r)]
+                                 (stitch-wb create key val l new-r)))))))]
+     (add n))))
+
 (defn node-concat3
   "Join two trees, the left rooted at l, and the right at r,
   with a new key/value, performing rotation operations on the resulting
