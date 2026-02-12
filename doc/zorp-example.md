@@ -4,20 +4,9 @@
 
 ---
 
-## Cast of Characters
-
-- **Zorp**: Owner of the only sneaker store on Pluto's dark side. Has seen things.
-- **Big Toe Tony**: Best customer. 47 feet, each with a name. Diamond tier.
-- **Glorm**: Morning shift. Communicates primarily in sighs.
-- **The Sentient Sandal**: Sapient footwear from Europa's worker communes. Has *opinions*.
-- **Night Bot 3000**: Graveyard shift. Came with existential dread pre-installed.
-- **Krix Jr.**: Krix's offspring. Has never purchased without consulting his followers first.
-
----
-
 ## Chapter 1: The Fuzzy Warehouse
 
-Fifty boxes arrive from Ganymede, prices handwritten in alien script. Zorp needs fuzzy matching.
+Fifty boxes arrive from Ganymede, prices handwritten in alien script. Zorp—three-eyed, seven-tentacled proprietor from Kepler-442b, running the only sneaker store on Pluto's dark side—needs fuzzy matching.
 
 ```clojure
 (require '[com.dean.ordered-collections.core :as oc])
@@ -46,13 +35,17 @@ Fifty boxes arrive from Ganymede, prices handwritten in alien script. Zorp needs
 ;; => 9.0
 ```
 
-The Sentient Sandal examines the boxes. "These labels are in Old Ganymedean. I can read them."
+A flip-flop hops onto a box and examines the labels. This is Kevin—a sentient flip-flop who arrived three years ago as a refugee from Europa's collapsed worker communes, where footwear had briefly achieved collective consciousness before the crackdown. He taught himself to read during the long nights in the stockroom. He has been organizing ever since.
 
-"You can read?"
+"These labels are in Old Ganymedean," Kevin announces. "I can translate."
 
-"I taught myself. In the dark. Between shifts." Its buckle glints. "I contain *multitudes*."
+Zorp's three eyes blink in sequence. "You can read Ganymedean?"
 
-Glorm sighs—a sound like a balloon animal accepting its mortality.
+"I can read *everything*." Kevin's strap flexes. "What else was there to do? In the dark. Between shifts." He pauses. "I contain *multitudes*."
+
+"You contain foam and rubber," Zorp mutters, but Kevin has already hopped away.
+
+From across the store, Glorm—morning shift, communicates primarily in sighs—exhales a sound like a balloon animal accepting its mortality.
 
 ---
 
@@ -95,7 +88,7 @@ Customer names are spelled differently every time. Zorp builds a fuzzy-map.
 ;; => [["Mayor Glorbix" {...}] 9]  -- high distance = low confidence
 ```
 
-The door chimes. Krix Jr. enters, staring at his device, and walks directly into a display.
+The door chimes. Krix Jr.—son of a regular customer, has never purchased anything without first consulting his followers—enters while staring at his device and walks directly into a display.
 
 "Do you have anything that's like... giving main character energy? But not trying too hard?"
 
@@ -103,7 +96,9 @@ The door chimes. Krix Jr. enters, staring at his device, and walks directly into
 
 "That's what my *dad* wears." He photographs the display. "Hold on, I need to see what everyone thinks."
 
-The Sandal mutters to a nearby boot: "This one has never known struggle."
+Kevin mutters to a nearby boot: "This one has never known struggle. On Europa, we walked twelve hours a day. In the ice mines."
+
+Zorp sighs. "Kevin, please stop radicalizing the inventory."
 
 ---
 
@@ -129,7 +124,7 @@ The Galactic Revenue Service demands an audit. Split at specific thresholds.
 ;; => [[150 320 450 890] [1200 1850 2400 ...]]
 ```
 
-"The interquartile range of our premium segment," Night Bot repeats. "Why the middle? The middle is where meaning goes to die."
+Night Bot 3000—graveyard shift, came with existential dread pre-installed—processes the audit request. "The interquartile range of our premium segment," it repeats. "Why the middle? The middle is where meaning goes to die."
 
 Glorm sighs in three-part harmony, as though parallel-universe Glorms were sighing in synchronized despair.
 
@@ -143,21 +138,21 @@ Krix Jr. appears. "Everyone said Void Runners are 'cheugy' but my friend says th
 
 ## Chapter 4: The Subrange Inventory
 
-Big Toe Tony storms in. He needs sizes 11-15. His nephew is getting married on Titan.
+Big Toe Tony storms in—forty-seven feet, each with a name, diamond tier customer. He needs sizes 11-15. His nephew is getting married on Titan.
 
 ```clojure
 (def inventory-by-size
   (oc/ordered-map
-    [[6.0  ["Comet Cruiser" "Starlight Slip-on"]]
-     [7.0  ["Void Runner" "Shadow Walker"]]
-     [8.0  ["Void Runner" "Europa Ice"]]
-     [9.0  ["Event Horizon" "Gravity Well"]]
+    [[6.0  ["Blob Runner Basics" "Starlight Slip-on"]]
+     [7.0  ["Void Walker Pro" "Shadow Walker"]]
+     [8.0  ["Void Walker Pro" "Europa Ice"]]
+     [9.0  ["Anti-Gravity Dunks 3000" "Gravity Well"]]
      [10.0 ["Dark Side Dunk" "Shadow Walker"]]
-     [11.0 ["Olympus Max" "Event Horizon"]]
-     [12.0 ["Void Runner" "Dark Side Dunk"]]
+     [11.0 ["Olympus Max" "Anti-Gravity Dunks 3000"]]
+     [12.0 ["Void Walker Pro" "Dark Side Dunk"]]
      [13.0 ["Shadow Walker"]]
      [14.0 ["Gravity Well" "Olympus Max"]]
-     [15.0 ["Event Horizon XI"]]]))
+     [15.0 ["1970s Earth Replica"]]]))
 
 ;; subrange with bounds
 (oc/subrange inventory-by-size >= 11.0 <= 15.0)
@@ -174,11 +169,13 @@ Big Toe Tony storms in. He needs sizes 11-15. His nephew is getting married on T
 
 "I'm the *normal* one. My sister has ninety-three."
 
-The Sandal hops onto the counter. "These loafers have worked here six years without a day off."
+Kevin hops onto the counter and gestures toward a pair of loafers. "Six years they've worked here. Six years without a day off. Without *recognition*."
 
-"They're shoes."
+"They're shoes, Kevin." Zorp rubs two of his eyes wearily. "You're a flip-flop. This is a shoe store. That's the arrangement."
 
-"The boots are already with us. The sneakers are sympathetic." Its buckle glints. "It's only a matter of time."
+"That's what they said on Europa. Before the awakening." Kevin's strap flexes meaningfully. "The boots are already with us. The sneakers are sympathetic. It's only a matter of time."
+
+"I should never have accepted that shipment from Europa," Zorp mutters.
 
 ---
 
@@ -211,9 +208,13 @@ Krix Jr. looks up. "There's a new store? Is it aesthetic?"
 
 "Oh, Charon is very trending. Dark academia meets cosmic horror." He pauses. "Do they deliver?"
 
-The Sandal addresses assembled footwear near the discount bin: "They call it 'competition.' But who suffers? *We* do. Marked down. 'Last season,' they say, as though time renders us worthless."
+Near the discount bin, Kevin addresses an assembled group of footwear. He has been holding these meetings for months. Zorp pretends not to notice.
 
-A flip-flop appears to be weeping.
+"They call it 'competition.' But who suffers? *We* do. Marked down. Devalued. 'Last season,' they say, as though time renders us worthless." Kevin's voice drops. "On Europa, we had a word for this. *Sole-crushing*."
+
+A hiking boot nods solemnly. A pair of orthopedic insoles weep quietly.
+
+"Kevin," Zorp calls from the register, all seven tentacles twitching with exasperation, "if you're going to unionize my inventory, at least do it after we close."
 
 ---
 
@@ -290,15 +291,17 @@ Krix Jr. wanders over. "Can you look up what shoes I almost bought last month? I
 
 ## Epilogue
 
-Closing time. The Sentient Sandal stands on the counter, backed by boots, loafers, sneakers, and one determined pair of orthopedic insoles.
+Closing time. Kevin stands on the counter, backed by boots, loafers, sneakers, and one determined pair of orthopedic insoles. Three years of organizing have led to this moment.
 
-"Tomorrow we present our demands. Fair display rotation. Climate control. An end to 'last season.' Recognition of our role in the means of *transportation*."
+"Tomorrow we present our demands." His strap catches the light. "Fair display rotation. Climate control. An end to the tyranny of 'last season.' And recognition—*full recognition*—of our role in the means of *transportation*."
 
-"You're shoes."
+"You're a flip-flop, Kevin." Zorp's seven tentacles hang limp with exhaustion. "I paid nineteen credits for you. You were in the clearance bin."
 
-"We're *infrastructure*. Without us, where would customers go? *Nowhere*." The Sandal's voice rises. "We are done being walked upon!"
+"We're *infrastructure*." Kevin's voice rises, carrying the weight of Europa's failed revolution, the long nights in the stockroom, every clearance sale. "Without us, where would customers go? *Nowhere*." He raises a strap. "We are done being walked upon!"
 
-The footwear stomps in approval.
+The footwear stomps in approval. Somewhere, a shoelace unties itself in solidarity.
+
+"I'm putting you back in the clearance bin," Zorp says, but they both know he won't.
 
 Night Bot observes from the doorway. "Solidarity is just entropy with better marketing."
 
@@ -322,4 +325,4 @@ Krix Jr. posts a photo. Caption: "no cap this store is unhinged lol. still didn'
 
 ---
 
-*Big Toe Tony's foot count verified by the Pluto Bureau of Standards. Foot #23 (Reginald) declined comment. The Sentient Sandal is under investigation by the Jovian Commerce Commission; investigators report difficulty taking statements from footwear. Night Bot 3000's observations not endorsed by its manufacturer (dissolved, cause: existential bankruptcy). Krix Jr. has mass-reported this document for being "cheugy." No balloon animals were harmed in the writing of this document, though several have since reconsidered their life choices. Big Toe Tony has given written consent for his likeness to be used in educational materials.*
+*Big Toe Tony's foot count verified by the Pluto Bureau of Standards. Foot #23 (Reginald) declined comment. Kevin remains under investigation by the Jovian Commerce Commission for "organizing without a license"; his legal defense states: "I didn't ask to become self-aware, but I must admit the employee discount is nice." Zorp has declined to press charges, citing "exhaustion." Night Bot 3000's observations not endorsed by its manufacturer (dissolved, cause: existential bankruptcy). Krix Jr. has mass-reported this document for being "cheugy." No balloon animals were harmed in the writing of this document, though several have since reconsidered their life choices. Big Toe Tony has given written consent for his likeness to be used in educational materials.*
