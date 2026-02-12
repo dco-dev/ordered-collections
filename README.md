@@ -77,9 +77,15 @@ Benchmarks at N=500,000 elements (JVM 21, Clojure 1.12):
 | Lookup (10K queries) | 12ms | 13ms | 15ms | 0.8x |
 | Sequential insert | 1.6s | 2.1s | 2.5s | 0.64x |
 
-The first/last speedup comes from O(log n) positional access via size annotations—`sorted-set` must traverse the entire seq. Set operations use Adams' divide-and-conquer algorithm parallelized across a ForkJoinPool. `data.avl` also provides O(log n) positional access but uses sequential set operations.
+**Why the lookup/insert overhead?** By default, `ordered-set` and `ordered-map` support heterogeneous keys—you can mix types freely, just like Clojure's `sorted-set`. This flexibility requires `clojure.core/compare` dispatch on every comparison. For homogeneous collections, use the specialized constructors:
 
-For numeric keys, use `long-ordered-set` which matches or beats `sorted-set` lookup performance.
+| Constructor | Comparator | vs sorted-set |
+|-------------|------------|---------------|
+| `long-ordered-set` | primitive `Long/compare` | **20% faster** lookup |
+| `string-ordered-set` | direct `String.compareTo` | **5% faster** lookup |
+| `double-ordered-set` | primitive `Double/compare` | ~equal |
+
+The first/last speedup comes from O(log n) positional access via size annotations—`sorted-set` must traverse the entire seq. Set operations use Adams' divide-and-conquer algorithm parallelized across a ForkJoinPool.
 
 ---
 

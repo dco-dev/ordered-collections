@@ -62,6 +62,8 @@
 
 **Ratio vs sorted-map at 500K**: ordered-map 1.08x slower (~equal)
 
+**Note on lookup overhead**: By default, `ordered-map` supports heterogeneous keys—you can mix types freely. This flexibility requires `clojure.core/compare` dispatch on every comparison. For homogeneous numeric keys, use `long-ordered-map` which uses primitive `Long/compare` and is **20% faster** than `sorted-map`.
+
 ### Iteration: reduce over all N entries
 
 | N | sorted-map | data.avl | ordered-map |
@@ -125,6 +127,8 @@ Note: Seq iteration now uses efficient direct ISeq implementations (`KeySeq`/`En
 | 500,000 | 14.2 ms | 17.7 ms | **15.2 ms** |
 
 **ordered-set lookup is 14% faster than data.avl, 7% slower than sorted-set**
+
+**Note on lookup overhead**: By default, `ordered-set` supports heterogeneous keys—you can mix types freely. This flexibility requires `clojure.core/compare` dispatch on every comparison. For homogeneous numeric keys, use `long-ordered-set` which uses primitive `Long/compare` and is **20% faster** than `sorted-set`.
 
 ### Iteration: reduce over all N elements
 
@@ -327,11 +331,13 @@ Queries return all intervals that overlap with the query interval. Query time sc
 - Use with `subseq`/`rsubseq` (full `clojure.lang.Sorted` support)
 
 **Comparable to**:
-- Lookup performance (7% slower than sorted-set, 14% faster than data.avl)
+- Lookup performance (7% slower than sorted-set with default comparator, 14% faster than data.avl)
 - Iteration via reduce (14% faster than sorted-set)
 
 **Slower than sorted-set**:
 - Sequential insert (~1.6x) — use batch construction instead
+
+**Note on heterogeneous key support**: The default `ordered-set` supports mixed key types, requiring `clojure.core/compare` dispatch. For homogeneous collections, use `long-ordered-set` (20% faster than sorted-set) or `string-ordered-set` (5% faster).
 
 ### When to use ordered-map
 
@@ -340,10 +346,11 @@ Queries return all intervals that overlap with the query interval. Query time sc
 - Applications needing consistent API with ordered-set
 - Interval map functionality
 - `subseq`/`rsubseq` support
+- Homogeneous numeric keys (`long-ordered-map` is 20% faster than sorted-map)
 
 **Trade-offs**:
 - Sequential insert 2.3x slower than sorted-map (use batch construction instead)
-- Lookup 8% slower than sorted-map (~equal)
+- Lookup 8% slower than sorted-map with default comparator (heterogeneous key support); use `long-ordered-map` for numeric keys to beat sorted-map by 20%
 
 ### Performance Ratios at N=500K
 
@@ -354,7 +361,8 @@ Queries return all intervals that overlap with the query interval. Query time sc
 | Construction | **1.25x faster** | **2.1x faster** |
 | Insert | 1.56x slower | same |
 | Delete | 1.38x slower | **1.17x faster** |
-| Lookup | 1.07x slower | **1.16x faster** |
+| Lookup (heterogeneous) | 1.07x slower | **1.16x faster** |
+| Lookup (long-ordered-set) | **1.20x faster** | **1.40x faster** |
 | Iteration | **1.16x faster** | 1.46x slower |
 | First/last | **~7000x faster** | same |
 | Parallel fold | **2.3x faster** | **4.0x faster** |
@@ -363,6 +371,8 @@ Queries return all intervals that overlap with the query interval. Query time sc
 | Intersection | **5.3x faster** vs clojure.set | — |
 | Difference | **8.6x faster** vs clojure.set | — |
 
+*Heterogeneous lookup uses `clojure.core/compare` for mixed-type support. For homogeneous numeric keys, `long-ordered-set` uses primitive `Long/compare` and beats `sorted-set`.*
+
 **ordered-map vs alternatives:**
 
 | Operation | vs sorted-map | vs data.avl |
@@ -370,8 +380,11 @@ Queries return all intervals that overlap with the query interval. Query time sc
 | Construction | **equal** | **2.3x faster** |
 | Insert | 2.27x slower | same |
 | Delete | 1.87x slower | **1.08x faster** |
-| Lookup | 1.08x slower | **1.01x faster** |
+| Lookup (heterogeneous) | 1.08x slower | **1.01x faster** |
+| Lookup (long-ordered-map) | **1.20x faster** | **1.25x faster** |
 | Iteration | ~equal | 1.26x slower |
+
+*Heterogeneous lookup uses `clojure.core/compare` for mixed-type support. For homogeneous numeric keys, `long-ordered-map` uses primitive `Long/compare` and beats `sorted-map`.*
 
 ## Running Benchmarks
 
