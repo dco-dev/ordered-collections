@@ -35,6 +35,8 @@ The basic operation of this library is as a drop-in replacement for `clojure.cor
 - **Full `clojure.lang.Sorted` support**: Use `subseq` and `rsubseq` natively
 - **O(log n) first/last**: Via `java.util.SortedSet` interface (~7000x faster than `sorted-set` at scale)
 - **O(log n) nth and rank**: Positional access and rank queries in logarithmic time
+- **O(log n) split/subrange**: Split at key or index, extract ranges efficiently
+- **O(log n) floor/ceiling**: Find nearest element via `nearest`
 - **Parallel fold**: All types implement `CollFold` for efficient `r/fold` (2.3x faster)
 - **Fast set operations**: Union, intersection, difference 7-9x faster than `clojure.set`
 - **Proper hashing**: `IHashEq` support for correct behavior in hash-based collections
@@ -289,7 +291,7 @@ Zorp wants to analyze daily sales. Specifically, he needs to answer range querie
 ;; Big sale day! Update day 45 with actual figure
 (def daily-sales' (assoc daily-sales 45 8500))
 
-;; Requery - the tree updates in O(log n)
+;; Query again - the tree updates in O(log n)
 (oc/query daily-sales' 40 50)
 ;; => includes the 8500 spike
 
@@ -418,6 +420,51 @@ Zorp's hottest releases require a reservation system. Customers select time slot
 (oc/union s1 s2)        ;; 129ms (clojure.set: 1.1s)
 (oc/intersection s1 s2) ;; 91ms (clojure.set: 870ms)
 (oc/difference s1 s2)   ;; 102ms (clojure.set: 977ms)
+```
+
+---
+
+### Split and Range Operations
+
+New in 0.2.0: O(log n) operations for partitioning and range extraction, compatible with `clojure.data.avl`.
+
+```clojure
+(def prices (oc/ordered-set [100 200 300 400 500 600 700 800 900]))
+
+;; split-key: partition at a key value
+;; Returns [elements-below, exact-match-or-nil, elements-above]
+(oc/split-key prices 500)
+;; => [#{100 200 300 400} 500 #{600 700 800 900}]
+
+;; split-at: partition at an index
+;; Returns [left, right]
+(oc/split-at prices 4)
+;; => [#{100 200 300 400} #{500 600 700 800 900}]
+
+;; subrange: extract elements by key bounds (returns a collection, not a seq)
+(oc/subrange prices >= 300 < 700)
+;; => #{300 400 500 600}
+
+;; nearest: floor/ceiling queries
+(oc/nearest prices <= 450)  ;; => 400 (greatest element ≤ 450)
+(oc/nearest prices >= 450)  ;; => 500 (least element ≥ 450)
+(oc/nearest prices < 300)   ;; => 200 (greatest element < 300)
+(oc/nearest prices > 700)   ;; => 800 (least element > 700)
+```
+
+These operations work on both sets and maps:
+
+```clojure
+(def inventory (oc/ordered-map [[10 :a] [20 :b] [30 :c] [40 :d]]))
+
+(oc/split-key inventory 25)
+;; => [{10 :a, 20 :b} nil {30 :c, 40 :d}]
+
+(oc/nearest inventory <= 25)
+;; => [20 :b]
+
+(oc/subrange inventory >= 15 <= 35)
+;; => {20 :b, 30 :c}
 ```
 
 ---

@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.2.0] - Unreleased
+## [0.2.0] - 2025-02-11
 
 ### New Features
 
@@ -168,6 +168,11 @@ All notable changes to this project will be documented in this file.
 - `subSet` now correctly returns elements >= from and < to
 - Matches Java `SortedSet` contract
 
+#### Interval Tree Construction
+- Fixed `interval-set` and `interval-map` construction to use sequential reduce instead of parallel fold
+- Previously, parallel workers lost dynamic binding for node allocator, causing `ClassCastException` for collections >2048 elements
+- Interval trees now construct correctly at all sizes
+
 ### Performance Summary (vs sorted-map/sorted-set at N=100K)
 
 | Operation | ordered-* | long-ordered-* | string-ordered-* |
@@ -181,13 +186,6 @@ All notable changes to this project will be documented in this file.
 | Set operations | **7x faster** | **7x faster** | **7x faster** |
 | Parallel fold | **2.3x faster** | **2.3x faster** | **2.3x faster** |
 | nth/rank | **O(log n)** | **O(log n)** | **O(log n)** |
-
-### Bug Fixes
-
-#### Interval Tree Construction
-- Fixed `interval-set` and `interval-map` construction to use sequential reduce instead of parallel fold
-- Previously, parallel workers lost dynamic binding for node allocator, causing `ClassCastException` for collections >2048 elements
-- Interval trees now construct correctly at all sizes
 
 ### Breaking Changes
 

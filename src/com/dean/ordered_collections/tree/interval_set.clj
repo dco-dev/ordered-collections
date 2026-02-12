@@ -178,7 +178,9 @@
     (tree/node-size root))
   (iterator [this]
     (clojure.lang.SeqIterator. (seq this)))
-  (containsAll [this s]  ;; TODO: is this how an interval-set should work?
+  (containsAll [this s]
+    ;; Checks if all intervals in s exist as exact intervals in this set.
+    ;; Does NOT check coverage (use interval queries for that).
     (with-interval-set this
       (cond
         (identical? this s)    true

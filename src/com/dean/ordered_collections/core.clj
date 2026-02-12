@@ -110,12 +110,10 @@
 ;; Ordered Set
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; TODO: allow high speed construction AND custom compare-fn
-;; TODO: refactor
-
-;; NOTE: subject to change!
-;; experimentally determined to be in the ballpark, given the current
-;; performance characteristics upstream
+;; Parallel construction chunk size for batch operations.
+;; Note: Parallel fold construction only works with the default comparator.
+;; Custom comparators use sequential insertion (still O(n log n) but single-threaded).
+;; This is because dynamic bindings don't propagate to ForkJoinPool workers.
 
 (def ^:private +chunk-size+ 2048)
 
