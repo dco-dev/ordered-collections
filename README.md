@@ -5,6 +5,17 @@ A collection of persistent sorted data structures for Clojure, built on weight-b
 ![tests](https://github.com/dco-dev/ordered-collections/actions/workflows/clojure.yml/badge.svg)
 [![Clojars Project](https://img.shields.io/clojars/v/com.dean/ordered-collections.svg)](https://clojars.org/com.dean/ordered-collections)
 
+### Documentation
+
+- [Cookbook](doc/cookbook.md) — Practical examples: leaderboards, time-series, scheduling, IP ranges, parallel aggregation
+- [Zorp's Sneaker Emporium](doc/zorp-example.md) — Narrative guide to the 0.2.0 API
+- [When to Use](doc/when-to-use.md) — Decision guide for choosing the right collection type
+- [Benchmarks](doc/benchmarks.md) — Detailed performance measurements
+- [Performance Analysis](doc/perf-analysis.md) — In-depth performance comparison
+- [Competitive Analysis](doc/competitive-analysis.md) — Comparison with other libraries
+- [Algorithms](doc/algorithms.md) — Tree structure, rotations, split/join, interval augmentation
+- [Why Weight-Balanced Trees?](doc/why-weight-balanced-trees.md) — Comparison with red-black and AVL trees
+
 ---
 
 ## Installation
