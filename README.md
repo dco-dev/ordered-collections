@@ -556,6 +556,25 @@ structure was inspired by the following:
    'Functional Set-Theoretic Collections for Common Lisp'
    <https://fset.common-lisp.dev/>
 
+-  Adams (1993)
+   'Efficient sets—a balancing act'
+   Journal of Functional Programming 3(4): 553-562
+   <https://www.cambridge.org/core/journals/journal-of-functional-programming/article/functional-pearls-efficient-setsa-balancing-act/0CAA1C189B4F7C15CE9B8C02D0D4B54E>
+
+-  Blelloch, Ferizovic, and Sun (2016)
+   'Just Join for Parallel Ordered Sets'
+   ACM SPAA 2016
+   <https://dl.acm.org/doi/10.1145/2935764.2935768>
+
+-  Haskell containers library (Data.Set, Data.Map)
+   <https://hackage.haskell.org/package/containers>
+
+-  SLIB Weight-Balanced Trees (Aubrey Jaffer)
+   <https://people.csail.mit.edu/jaffer/slib/Weight_002dBalanced-Trees.html>
+
+-  PAM: Parallel Augmented Maps
+   <https://cmuparlay.github.io/PAMWeb/>
+
 ---
 
 ## License
