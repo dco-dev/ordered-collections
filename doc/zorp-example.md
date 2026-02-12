@@ -85,7 +85,7 @@ Customer names are spelled differently every time. Zorp builds a fuzzy-map.
 
 ;; Check match confidence
 (oc/fuzzy-nearest customers "Zorp himself")
-;; => [["Mayor Glorbix" {...}] 9]  -- high distance = low confidence
+;; => ["Mayor Glorbix" {...} 9]  -- high distance = low confidence
 ```
 
 The door chimes. Krix Jr.—son of a regular customer, has never purchased anything without first consulting his followers—enters while staring at his device and walks directly into a display.
@@ -321,7 +321,7 @@ Krix Jr. posts a photo. Caption: "no cap this store is unhinged lol. still didn'
 | `nearest` | Find closest | `(nearest s <= 42)` |
 | `fuzzy-set` | Approximate lookup | `(fuzzy-set coll :distance f)` |
 | `fuzzy-map` | Approximate key lookup | `(fuzzy-map pairs :distance f)` |
-| `fuzzy-nearest` | Value + distance | `(fuzzy-nearest fs q)` → `[v d]` |
+| `fuzzy-nearest` | Value + distance | `(fuzzy-nearest fs q)` → `[v d]` or `[k v d]` |
 
 ---
 

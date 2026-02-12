@@ -23,11 +23,11 @@ Practical examples showing where ordered-collections shines.
 (defn make-leaderboard []
   ;; Map from [score player-id] -> player-data
   ;; Using [score id] tuple ensures uniqueness and sorts by score
-  (oc/ordered-map-by (fn [[s1 id1] [s2 id2]]
-                       (let [c (compare s2 s1)]  ; descending by score
-                         (if (zero? c)
-                           (compare id1 id2)     ; then ascending by id
-                           c)))))
+  (oc/ordered-map-with (fn [[s1 id1] [s2 id2]]
+                         (let [c (compare s2 s1)]  ; descending by score
+                           (if (zero? c)
+                             (compare id1 id2)     ; then ascending by id
+                             c)))))
 
 (defn add-score [board player-id score data]
   (assoc board [score player-id] data))
@@ -37,8 +37,13 @@ Practical examples showing where ordered-collections shines.
                              {:id id :score score :data data}))))
 
 (defn rank-of-player [board player-id score]
-  ;; Find position in sorted order
-  (oc/rank-of board [score player-id]))
+  ;; Find position in sorted order via iteration
+  (let [key [score player-id]]
+    (loop [i 0, entries (seq board)]
+      (when entries
+        (if (= (ffirst entries) key)
+          i
+          (recur (inc i) (next entries)))))))
 
 (defn players-around-rank [board rank window]
   ;; Get players from (rank - window) to (rank + window)
@@ -94,7 +99,7 @@ Practical examples showing where ordered-collections shines.
 
 (defn latest-events [log n]
   ;; Last n events (most recent first)
-  (take n (rsubseq log)))
+  (take n (rseq log)))
 
 (defn count-events-in-window [log start-time end-time]
   ;; Efficient: uses reduce, not seq materialization
@@ -396,18 +401,128 @@ Practical examples showing where ordered-collections shines.
 
 ;; Get nearest with distance info
 (oc/fuzzy-nearest calibration 60.0)
-;; => [50.0 1.025 10.0]  ; [key, value, distance]
+;; => [50.0 1.025 10.0]  ; [key value distance]
 
-;; Check if exact value exists (non-fuzzy)
-(oc/fuzzy-exact-contains? calibration 50.0)  ; => true
-(oc/fuzzy-exact-contains? calibration 51.0)  ; => false
-
-;; Get exact value only (no fuzzy matching)
-(oc/fuzzy-exact-get calibration 50.0)        ; => 1.025
-(oc/fuzzy-exact-get calibration 51.0)        ; => nil
+(oc/fuzzy-nearest grid-points 23)
+;; => [20 3.0]  ; [value distance]
 ```
 
 **Why ordered-collections?** O(log n) nearest-neighbor lookup using tree split. Linear scan would be O(n).
+
+---
+
+## 10. Splitting Collections
+
+**Problem:** Partition a collection at a key or index for divide-and-conquer algorithms.
+
+```clojure
+(def prices (oc/ordered-set [100 200 300 400 500 600 700 800 900 1000]))
+
+;; split-key: partition at a key value
+;; Returns [elements-below, exact-match-or-nil, elements-above]
+(let [[below match above] (oc/split-key prices 500)]
+  {:below (vec below)    ;; => [100 200 300 400]
+   :match match          ;; => 500
+   :above (vec above)})  ;; => [600 700 800 900 1000]
+
+;; Key doesn't have to exist
+(let [[below match above] (oc/split-key prices 550)]
+  {:below (vec below)    ;; => [100 200 300 400 500]
+   :match match          ;; => nil
+   :above (vec above)})  ;; => [600 700 800 900 1000]
+
+;; split-at: partition at an index
+;; Returns [left, right]
+(let [[left right] (oc/split-at prices 3)]
+  {:left (vec left)      ;; => [100 200 300]
+   :right (vec right)})  ;; => [400 500 600 700 800 900 1000]
+
+;; Useful for pagination
+(defn paginate [coll page-size page-num]
+  (let [offset (* page-size page-num)
+        [_ remaining] (oc/split-at coll offset)
+        [page _] (oc/split-at remaining page-size)]
+    (vec page)))
+
+(paginate prices 3 1)  ;; => [400 500 600] (page 1, 0-indexed)
+```
+
+**Why ordered-collections?** O(log n) split operations. Essential for parallel algorithms and range partitioning.
+
+---
+
+## 11. Subrange Extraction
+
+**Problem:** Extract a contiguous range of elements by key bounds.
+
+```clojure
+(def inventory
+  (oc/ordered-map
+    [[10 "widget-a"] [20 "widget-b"] [30 "widget-c"]
+     [40 "widget-d"] [50 "widget-e"] [60 "widget-f"]]))
+
+;; Two-sided bounds
+(oc/subrange inventory >= 25 <= 50)
+;; => {30 "widget-c", 40 "widget-d", 50 "widget-e"}
+
+;; One-sided bounds
+(oc/subrange inventory > 40)
+;; => {50 "widget-e", 60 "widget-f"}
+
+(oc/subrange inventory < 30)
+;; => {10 "widget-a", 20 "widget-b"}
+
+;; Works with sets too
+(def ids (oc/ordered-set (range 0 100 5)))  ; 0, 5, 10, ..., 95
+(vec (oc/subrange ids >= 20 < 40))
+;; => [20 25 30 35]
+
+;; Count elements in range without materializing
+(count (oc/subrange ids >= 50 <= 80))  ;; => 7
+```
+
+**Why ordered-collections?** Returns a view backed by the original tree. O(log n) to create, efficient iteration.
+
+---
+
+## 12. Floor/Ceiling Queries
+
+**Problem:** Find the nearest element at or above/below a target.
+
+```clojure
+(def versions (oc/ordered-set [100 200 300 450 500 800]))
+
+;; Find version at or below target
+(oc/nearest versions <= 350)  ;; => 300
+(oc/nearest versions <= 300)  ;; => 300 (exact match)
+(oc/nearest versions <= 50)   ;; => nil (nothing at or below)
+
+;; Find version strictly below target
+(oc/nearest versions < 300)   ;; => 200
+
+;; Find version at or above target
+(oc/nearest versions >= 350)  ;; => 450
+(oc/nearest versions >= 800)  ;; => 800
+
+;; Find version strictly above target
+(oc/nearest versions > 500)   ;; => 800
+
+;; Practical: find applicable config version
+(def config-versions
+  (oc/ordered-map
+    [[100 {:feature-a true}]
+     [200 {:feature-a true :feature-b true}]
+     [350 {:feature-a true :feature-b true :feature-c true}]]))
+
+(defn config-for-version [v]
+  (when-let [k (oc/nearest (keys config-versions) <= v)]
+    (config-versions k)))
+
+(config-for-version 275)
+;; => {:feature-a true, :feature-b true}
+```
+
+**Why ordered-collections?** O(log n) floor/ceiling queries using tree structure.
 
 ---
 
@@ -441,4 +556,32 @@ Practical examples showing where ordered-collections shines.
    ;; For bulk loading, use the constructor (uses parallel fold internally)
    (oc/ordered-set big-data)     ; fast: parallel construction
    (oc/ordered-map key-val-pairs)
+   ```
+
+5. **Use `subrange` instead of filtering**
+   ```clojure
+   ;; Fast: O(log n) bounds, returns a view
+   (oc/subrange my-set >= 100 < 200)
+
+   ;; Slow: creates intermediate seq, tests every element
+   (filter #(<= 100 % 199) my-set)
+   ```
+
+6. **Use `nearest` for floor/ceiling**
+   ```clojure
+   ;; Fast: O(log n)
+   (oc/nearest my-set <= target)
+
+   ;; Slow: O(n) in worst case
+   (last (take-while #(<= % target) my-set))
+   ```
+
+7. **Use specialized constructors for homogeneous keys**
+   ```clojure
+   ;; 20% faster lookup for Long keys
+   (oc/long-ordered-set (range 1000000))
+   (oc/long-ordered-map (map #(vector % %) (range 1000000)))
+
+   ;; 5% faster for String keys
+   (oc/string-ordered-set ["alice" "bob" "carol"])
    ```
