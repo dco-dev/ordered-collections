@@ -73,6 +73,8 @@ Benchmarks at N=500,000 elements (JVM 21, Clojure 1.12):
 
 **Where ordered-set wins:**
 
+The first/last speedup comes from O(log n) positional access via size annotations—`sorted-set` must traverse the entire seq. Set operations use Adams' divide-and-conquer algorithm parallelized across a ForkJoinPool.
+
 | Operation | sorted-set | data.avl | ordered-set | Speedup |
 |-----------|------------|----------|-------------|---------|
 | First/last access | 17s | 2.6ms | **2.4ms** | **~7000x** vs sorted-set |
@@ -90,7 +92,7 @@ Benchmarks at N=500,000 elements (JVM 21, Clojure 1.12):
 | Lookup (10K queries) | 12ms | 13ms | 15ms | 0.8x |
 | Sequential insert | 1.6s | 2.1s | 2.5s | 0.64x |
 
-**Why the lookup/insert overhead?** By default, `ordered-set` and `ordered-map` support heterogeneous keys—you can mix types freely, just like Clojure's `sorted-set`. This flexibility requires `clojure.core/compare` dispatch on every comparison. For homogeneous collections, use the specialized constructors:
+**Why the lookup/insert overhead?** By default, `ordered-set` and `ordered-map` support heterogeneous keys—you can mix types freely, unlike Clojure's `sorted-set`. This flexibility requires `clojure.core/compare` dispatch on every comparison. For homogeneous collections, use the specialized constructors:
 
 | Constructor | Comparator | vs sorted-set |
 |-------------|------------|---------------|
@@ -98,17 +100,22 @@ Benchmarks at N=500,000 elements (JVM 21, Clojure 1.12):
 | `string-ordered-set` | direct `String.compareTo` | **5% faster** lookup |
 | `double-ordered-set` | primitive `Double/compare` | ~equal |
 
-The first/last speedup comes from O(log n) positional access via size annotations—`sorted-set` must traverse the entire seq. Set operations use Adams' divide-and-conquer algorithm parallelized across a ForkJoinPool.
-
 ---
 
 ## How It Works
 
 The core is a weight-balanced binary tree using balance parameters (δ=3, γ=2) from Hirai and Yamamoto (2011), which corrected subtle bugs in earlier formulations. Each node stores its subtree size, enabling O(log n) positional access and efficient parallel decomposition.
 
+**Split and join** are the fundamental primitives. Splitting a tree at a key produces two trees in O(log n); joining two trees where all keys in one are less than all keys in the other is also O(log n). Set operations, subrange extraction, and parallel fold all reduce to split/join.
+
 Set operations use Adams' divide-and-conquer algorithm with O(m log(n/m + 1)) complexity. The implementation parallelizes across a ForkJoinPool when inputs exceed a threshold.
 
-Interval trees augment each node with the maximum endpoint in its subtree, enabling O(log n + k) overlap queries while preserving all the benefits of the underlying weight-balanced structure.
+**Enumerators** provide efficient lazy traversal. Rather than eagerly converting trees to sequences, an enumerator walks down the spine building a chain of frames—each saving (node, subtree, next-frame). This gives O(1) access to the current element, O(log n) amortized cost per advance, and only O(log n) space. Sequences, reduce, and fold all use enumerators internally.
+
+**Augmented trees** extend the basic structure for specialized queries:
+- *Interval trees* store the maximum endpoint in each subtree, enabling O(log n + k) overlap queries
+- *Segment trees* store aggregate values (sum, min, max) for O(log n) range queries
+- *Fuzzy collections* use floor/ceiling operations for O(log n) nearest-neighbor lookup
 
 ---
 
@@ -202,13 +209,13 @@ Zorp's store is open during "business hours"—but on the dark side of Pluto, ti
 ;; => ("Glorm (morning shift)" "Blixxa (afternoon shift)" "Krix Jr. (overlap coverage)")
 ```
 
-"The interval map," Zorp explains to his new hire, "handles the overlaps automatically. Krix Jr. wanted 'creative scheduling.' Now I can just query any moment and know who's supposed to be here."
+"The interval map," Zorp explains to his new hire, "handles the overlaps automatically. Krix Jr. wanted 'creative scheduling.' Now I can just query any moment and know who's supposed to be here." (Krix Jr. is the son of Krix the methane baron—nepotism is alive and well on Pluto.)
 
 ---
 
 ### range-map
 
-A range map maintains non-overlapping ranges. When you insert a new range, it automatically carves out space by splitting or removing existing ranges that overlap. Each point maps to exactly one value (or none).
+A persistent version of [Google Guava's RangeMap](https://guava.dev/releases/snapshot/api/docs/com/google/common/collect/RangeMap.html). Maintains non-overlapping ranges—when you insert a new range, it automatically carves out space by splitting or removing existing ranges that overlap. Each point maps to exactly one value (or none).
 
 ```
  Before inserting [50, 150] :flash-sale:
@@ -244,15 +251,15 @@ Zorp's discount system is based on purchase amount. Different ranges get differe
 (discount-tiers 1000)
 ;; => :gold-15-percent
 
-;; Zorp runs a flash sale: 20% off for purchases 200-400 credits
+;; Zorp runs a flash sale: 8% off for purchases 200-400 credits
 ;; This automatically splits the bronze tier!
 (def flash-sale-tiers
-  (assoc discount-tiers [200 400] :flash-sale-20-percent))
+  (assoc discount-tiers [200 400] :flash-sale-8-percent))
 
 (oc/ranges flash-sale-tiers)
 ;; => ([[0 100] :no-discount]
 ;;     [[100 200] :bronze-5-percent]      ; auto-trimmed!
-;;     [[200 400] :flash-sale-20-percent] ; inserted
+;;     [[200 400] :flash-sale-8-percent]  ; inserted
 ;;     [[400 500] :bronze-5-percent]      ; auto-trimmed!
 ;;     [[500 1000] :silver-10-percent]
 ;;     ...)
@@ -267,12 +274,19 @@ Zorp's discount system is based on purchase amount. Different ranges get differe
 A segment tree answers range aggregate queries: "what is f(a, a+1, ..., b) for some associative function f?" in O(log n) time, with O(log n) updates.
 
 ```
- Index:    1     2     3     4     5     6     7     8
- Value:   100   150   200   175   225   300   125   275
+ Input:   index:  1    2    3    4    5    6    7    8
+          value: 100  150  200  175  225  300  125  275
 
- Query [2,5] with +   => 150 + 200 + 175 + 225 = 750
- Query [1,8] with max => 300
- Query [3,6] with min => 175
+ Tree (sum):
+                              [1550]           ← sum of all 8 values
+                       ┌────────┴────────┐
+                     [625]              [925]
+                    ┌──┴──┐            ┌──┴──┐
+                 [250]  [375]       [525]  [400]
+                 ┌─┴─┐  ┌─┴─┐       ┌─┴─┐  ┌─┴─┐
+                100 150 200 175    225 300 125 275
+
+ Query [2-5] sum = 150 + [375] + 225 = 750   ← 3 nodes, not 4 leaves
 ```
 
 Zorp wants to analyze daily sales. Specifically, he needs to answer range queries like "What were total sales from day 50 to day 75?" and update individual days as sales come in—all in logarithmic time.
@@ -527,34 +541,37 @@ Since `clojure.set` doesn't provide interfaces for extensible set operations, th
 
 ### Tree Implementation
 
-The heart of the library is the [persistent tree](https://github.com/dco-dev/ordered-collections/blob/master/src/com/dean/ordered_collections/tree/tree.clj). It supports sets, maps, and indexed access with:
+The heart of the library is [tree.clj](src/com/dean/ordered_collections/tree/tree.clj). It supports sets, maps, and indexed access with:
 
 - **Key/range queries**: Standard sorted collection operations
 - **Positional access**: `nth` returns the nth element in O(log n)
 - **Rank queries**: `rank` returns the position of a key in O(log n)
+- **Split/join**: O(log n) partitioning and merging, the basis for set operations
 - **Parallel decomposition**: Trees split efficiently for `r/fold`
 
-The tree is parameterized by comparator, node constructor, and join strategy—these correspond to the interfaces above and enable the variety of collection types.
+The tree is parameterized by comparator, node constructor, and join strategy—these correspond to the interfaces above and enable the variety of collection types. See [Algorithms](doc/algorithms.md) for implementation details.
 
 ---
 
-## Testing
+## Testing & Benchmarks
 
 ```
 $ lein test
 
-Ran 211 tests containing 426446 assertions.
+Ran 286 tests containing 454,000+ assertions.
 0 failures, 0 errors.
 ```
 
-The test suite includes generative tests via `test.check`.
+The test suite includes generative tests via `test.check` and equivalence tests against `sorted-set`, `sorted-map`, and `clojure.data.avl`.
+
+Benchmarks use [Criterium](https://github.com/hugoduncan/criterium) for statistically rigorous measurements. See [Benchmarks](doc/benchmarks.md) for methodology and detailed results.
 
 ---
 
 ## Inspiration
 
-This implementation of a weight-balanced binary interval-tree data
-structure was inspired by the following:
+The implementation of this weight-balanced binary tree data
+structure library was inspired by the following:
 
 -  Adams (1992)
    'Implementing Sets Efficiently in a Functional Language'
