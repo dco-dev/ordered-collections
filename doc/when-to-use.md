@@ -7,12 +7,16 @@ A decision guide for choosing between sorted collection implementations.
 | Your Priority | Best Choice |
 |---------------|-------------|
 | Maximum lookup speed | Any (~equal, within 8%) |
-| Need `nth` or `rank` operations | `ordered-map` / `ordered-set` |
+| Need `nth` or `rank` operations | `ordered-map` / `ordered-set` / `ranked-set` |
 | Heavy iteration workloads | `ordered-map` / `ordered-set` |
 | Parallel processing (`r/fold`) | `ordered-map` / `ordered-set` |
 | Set algebra (union, intersection) | `ordered-set` |
-| Interval/range overlap queries | `interval-map` / `interval-set` |
+| Overlapping interval queries | `interval-map` / `interval-set` |
+| Non-overlapping range allocation | `range-map` (Guava TreeRangeMap) |
+| Range aggregate queries (sum/max/min) | `segment-tree` |
 | Nearest-neighbor lookups | `fuzzy-map` / `fuzzy-set` |
+| Priority queue / heap operations | `priority-queue` |
+| Sorted set with duplicates | `ordered-multiset` |
 | Minimal dependencies | `sorted-map` / `sorted-set` |
 | Batch construction | `ordered-map` / `ordered-set` (parallel) |
 | First/last element access | `ordered-set` (7000x faster) |
@@ -65,6 +69,38 @@ A decision guide for choosing between sorted collection implementations.
 - Additional dependency
 
 **Choose when:** You need fast construction, parallel processing, set operations, or interval queries.
+
+## Choosing Between Similar Data Structures
+
+### interval-map vs range-map
+
+Both map ranges to values, but with different semantics:
+
+| Feature | interval-map | range-map |
+|---------|--------------|-----------|
+| Overlapping ranges | ✓ Allowed | ✗ Not allowed |
+| Point query returns | All overlapping values | Single value |
+| Insert behavior | Adds to collection | Carves out overlaps |
+| Coalescing | N/A | Optional via `assoc-coalescing` |
+| Use case | Meeting schedules, event logs | IP allocation, memory regions |
+
+**Use interval-map when:** Ranges can overlap and you want to find ALL ranges containing a point (e.g., "what meetings are happening at 2pm?")
+
+**Use range-map when:** Ranges must not overlap and each point maps to exactly one value (e.g., "which subnet owns this IP?")
+
+### ordered-set vs ranked-set
+
+Both are sorted sets, but ranked-set adds explicit rank operations:
+
+| Feature | ordered-set | ranked-set |
+|---------|-------------|------------|
+| `nth` access | ✓ O(log n) | ✓ O(log n) |
+| `rank-of` element | Via iteration | ✓ O(log n) |
+| Set operations | ✓ Fast | Limited |
+
+**Use ordered-set when:** You need general sorted set operations, set algebra, parallel fold.
+
+**Use ranked-set when:** You specifically need `rank-of` queries ("what position is X in the sorted order?")
 
 ## Workload-Based Recommendations
 
@@ -126,6 +162,47 @@ Recommendation: fuzzy-set / fuzzy-map
 
 Reasoning: Fuzzy collections return the nearest element
 by distance when exact match fails. O(log n) nearest lookup.
+```
+
+### Resource Allocation (IP Blocks, Memory Regions)
+
+```
+Pattern: Non-overlapping ranges, automatic splitting on insert
+Recommendation: range-map
+
+Reasoning: range-map enforces non-overlap—inserting a range
+automatically carves out space from existing ranges. Use
+assoc-coalescing to merge adjacent same-value ranges.
+```
+
+### Range Aggregate Queries
+
+```
+Pattern: "Sum/max/min of values from index A to B" with updates
+Recommendation: segment-tree
+
+Reasoning: O(log n) range queries AND O(log n) updates.
+Linear scan would be O(n) per query.
+```
+
+### Task Scheduling / Priority Processing
+
+```
+Pattern: Always process highest/lowest priority item next
+Recommendation: priority-queue
+
+Reasoning: O(log n) insert, O(1) peek, O(log n) pop.
+Persistent—safe for backtracking or undo.
+```
+
+### Counting with Duplicates
+
+```
+Pattern: Track frequency of sorted elements
+Recommendation: ordered-multiset
+
+Reasoning: Unlike ordered-set, allows duplicate values.
+Maintains sort order with O(log n) operations.
 ```
 
 ### ETL Deduplication
