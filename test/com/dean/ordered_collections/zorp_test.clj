@@ -5,290 +5,434 @@
    Testing the 0.2.0 API features."
   (:refer-clojure :exclude [split-at])
   (:require [clojure.test :refer [deftest testing is are]]
+            [clojure.string :as str]
             [com.dean.ordered-collections.core :as oc]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Chapter 1: The Fuzzy Warehouse (FuzzySet)
+;; Chapter 1: The Subnet Allocation (range-map)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def catalog-prices
-  (oc/fuzzy-set
-    [99.99 149.50 175.00 225.00 299.99 375.00 450.00 599.00 899.00]
-    :distance (fn [a b] (Math/abs (- a b)))))
+(defn ip
+  "Convert IP string to integer."
+  [s]
+  (let [[a b c d] (map parse-long (str/split s #"\."))]
+    (+ (* a 16777216) (* b 65536) (* c 256) d)))
 
-(deftest chapter-1-fuzzy-warehouse-test
-  (testing "Fuzzy lookup finds closest match"
-    (is (= 175.0 (catalog-prices 180)))
-    (is (= 299.99 (catalog-prices 300)))
-    (is (= 99.99 (catalog-prices 100))))
+(defn int->ip
+  "Convert integer to IP string."
+  [n]
+  (format "%d.%d.%d.%d"
+    (bit-and (bit-shift-right n 24) 0xff)
+    (bit-and (bit-shift-right n 16) 0xff)
+    (bit-and (bit-shift-right n 8) 0xff)
+    (bit-and n 0xff)))
 
-  (testing "fuzzy-nearest returns value and distance"
-    (let [[value distance] (oc/fuzzy-nearest catalog-prices 180)]
-      (is (= 175.0 value))
-      (is (= 5.0 distance)))
-    (let [[value distance] (oc/fuzzy-nearest catalog-prices 550)]
-      (is (= 599.0 value))
-      (is (= 49.0 distance))))
+(deftest chapter-1-subnet-allocation-test
+  (testing "IP helper functions"
+    (is (= 167772160 (ip "10.0.0.0")))
+    (is (= 167772161 (ip "10.0.0.1")))
+    (is (= "10.0.0.0" (int->ip 167772160)))
+    (is (= "10.1.0.4" (int->ip (ip "10.1.0.4")))))
 
-  (testing "Tiebreak preference"
-    (let [size-catalog-down (oc/fuzzy-set
-                              [6.0 6.5 7.0 7.5 8.0 8.5 9.0 9.5 10.0]
-                              :distance (fn [a b] (Math/abs (- a b)))
-                              :tiebreak :<)]
-      ;; 9.25 is equidistant from 9.0 and 9.5, tiebreak :< prefers smaller
-      (is (= 9.0 (size-catalog-down 9.25))))))
+  (testing "Range-map creation and basic lookup"
+    (let [network (oc/range-map {[(ip "10.0.0.0") (inc (ip "10.255.255.255"))] :unallocated})]
+      (is (= :unallocated (network (ip "10.5.0.1"))))
+      (is (= :unallocated (network (ip "10.128.0.0"))))))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Chapter 2: The Fuzzy Customer Database (FuzzyMap)
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  (testing "Subnet allocation carves out ranges"
+    (let [network (-> (oc/range-map {[(ip "10.0.0.0") (inc (ip "10.255.255.255"))] :unallocated})
+                      (assoc [(ip "10.1.0.0") (ip "10.2.0.0")] :point-of-sale)
+                      (assoc [(ip "10.2.0.0") (ip "10.3.0.0")] :inventory)
+                      (assoc [(ip "10.10.0.0") (ip "10.11.0.0")] :customer-wifi))]
+      ;; Look up which system owns an IP
+      (is (= :point-of-sale (network (ip "10.1.0.4"))))
+      (is (= :inventory (network (ip "10.2.0.68"))))
+      (is (= :customer-wifi (network (ip "10.10.5.42"))))
+      (is (= :unallocated (network (ip "10.5.0.1"))))))
 
-(defn levenshtein [^String s1 ^String s2]
-  (let [n (count s1) m (count s2)]
-    (cond
-      (zero? n) m
-      (zero? m) n
-      :else
-      (let [d (make-array Long/TYPE (inc n) (inc m))]
-        (doseq [i (range (inc n))] (aset d i 0 (long i)))
-        (doseq [j (range (inc m))] (aset d 0 j (long j)))
-        (doseq [i (range 1 (inc n))
-                j (range 1 (inc m))]
-          (aset d i j
-            (long (min (inc (aget d (dec i) j))
-                       (inc (aget d i (dec j)))
-                       (+ (aget d (dec i) (dec j))
-                          (if (= (.charAt s1 (dec i))
-                                 (.charAt s2 (dec j))) 0 1))))))
-        (aget d n m)))))
+  (testing "Quarantine zone splits existing range"
+    (let [network (-> (oc/range-map {[(ip "10.10.0.0") (ip "10.11.0.0")] :customer-wifi})
+                      (assoc [(ip "10.10.4.0") (ip "10.10.8.0")] :kevin-quarantine))
+          ranges (for [[[lo hi] owner] (oc/ranges network)]
+                   {:lo (int->ip lo) :hi (int->ip hi) :owner owner})]
+      ;; customer-wifi should be split around quarantine
+      (is (= 3 (count ranges)))
+      (is (some #(= {:lo "10.10.0.0" :hi "10.10.4.0" :owner :customer-wifi} %) ranges))
+      (is (some #(= {:lo "10.10.4.0" :hi "10.10.8.0" :owner :kevin-quarantine} %) ranges))
+      (is (some #(= {:lo "10.10.8.0" :hi "10.11.0.0" :owner :customer-wifi} %) ranges))))
 
-(def customers
-  (oc/fuzzy-map
-    [["Krix" {:id "CUST-0042" :tier :gold}]
-     ["Big Toe Tony" {:id "CUST-0007" :tier :diamond}]
-     ["Mayor Glorbix" {:id "CUST-0001" :tier :platinum}]
-     ["Blixxa" {:id "CUST-0117" :tier :silver}]
-     ["Night Bot 3000" {:id "CUST-0099" :tier :bronze}]]
-    :distance levenshtein))
-
-(deftest chapter-2-fuzzy-customer-database-test
-  (testing "Typo tolerance"
-    (is (= {:id "CUST-0042" :tier :gold} (customers "Kricks")))
-    (is (= {:id "CUST-0042" :tier :gold} (customers "Krix"))))
-
-  (testing "Partial name matching"
-    ;; Note: Levenshtein distance doesn't do substring matching.
-    ;; "Tony" has edit distance 4 to "Krix" (all substitutions),
-    ;; but distance 8 to "Big Toe Tony" (8 insertions).
-    ;; Use a typo-like query instead:
-    (is (= {:id "CUST-0007" :tier :diamond} (customers "Big Tow Tony"))))
-
-  (testing "Mangled names"
-    (is (= {:id "CUST-0001" :tier :platinum} (customers "Mayor Glorbox"))))
-
-  (testing "Distance indicates confidence"
-    ;; fuzzy-nearest on fuzzy-map returns [key value distance]
-    (let [[_ _ distance] (oc/fuzzy-nearest customers "Krix")]
-      (is (zero? distance)))  ; exact match
-    (let [[_ _ distance] (oc/fuzzy-nearest customers "Zorp himself")]
-      (is (> distance 5)))))  ; poor match
+  (testing "Adjacent ranges with same value coalesce (using assoc-coalescing)"
+    (let [network (-> (oc/range-map {[(ip "10.10.4.0") (ip "10.10.8.0")] :kevin-iot})
+                      (oc/assoc-coalescing [(ip "10.10.8.0") (ip "10.10.12.0")] :kevin-iot))
+          kevin-ranges (for [[[lo hi] owner] (oc/ranges network)
+                             :when (= owner :kevin-iot)]
+                         {:lo (int->ip lo) :hi (int->ip hi)})]
+      ;; Should coalesce into single range
+      (is (= 1 (count kevin-ranges)))
+      (is (= {:lo "10.10.4.0" :hi "10.10.12.0"} (first kevin-ranges))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Chapter 3: The Split Decision (split-key, split-at)
+;; Chapter 2: Big Toe Tony's Fitting (nearest)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def yearly-transactions
+(def available-sizes
   (oc/ordered-set
-    [150 320 450 890 1200 1850 2400 3100 4500
-     5200 6800 7500 8900 12000 15000 18500 22000]))
+    [6.0 6.5 7.0 7.5 8.0 8.5 9.0 9.5 10.0 10.5
+     11.0 11.5 12.0 12.5 13.0 13.5 14.0 14.5 15.0]))
 
-(deftest chapter-3-split-decision-test
-  (testing "split-key partitions at threshold"
-    (let [[small-biz mid-biz large-biz] (oc/split-key yearly-transactions 5000)]
-      (is (= [150 320 450 890 1200 1850 2400 3100 4500] (vec small-biz)))
-      (is (nil? mid-biz))  ; no transaction exactly at 5000
-      (is (= [5200 6800 7500 8900 12000 15000 18500 22000] (vec large-biz)))))
+(deftest chapter-2-big-toe-tonys-fitting-test
+  (testing "nearest <= finds floor (largest size that fits)"
+    (is (= 11.0 (oc/nearest available-sizes <= 11.3)))
+    (is (= 10.5 (oc/nearest available-sizes <= 10.8)))
+    (is (= 9.0 (oc/nearest available-sizes <= 9.2))))
 
-  (testing "split-key with existing element"
-    (let [[below entry above] (oc/split-key yearly-transactions 1200)]
-      (is (= [150 320 450 890] (vec below)))
-      (is (= 1200 entry))
-      (is (= [1850 2400 3100 4500 5200 6800 7500 8900 12000 15000 18500 22000]
-             (vec above)))))
+  (testing "nearest >= finds ceiling (smallest size with room)"
+    (is (= 11.5 (oc/nearest available-sizes >= 11.3)))
+    (is (= 11.0 (oc/nearest available-sizes >= 10.8)))
+    (is (= 9.5 (oc/nearest available-sizes >= 9.2))))
 
-  (testing "split-at partitions at index"
-    (let [n (count yearly-transactions)
-          q1 (quot n 4)
-          [left right] (oc/split-at yearly-transactions q1)]
-      (is (= q1 (count left)))
-      (is (= (- n q1) (count right)))))
+  (testing "nearest with strict bounds"
+    (is (= 10.5 (oc/nearest available-sizes < 11.0)))
+    (is (= 13.5 (oc/nearest available-sizes > 13.0))))
 
-  (testing "split-at edge cases"
-    (let [[left right] (oc/split-at yearly-transactions 0)]
-      (is (empty? left))
-      (is (= yearly-transactions right)))
-    (let [[left right] (oc/split-at yearly-transactions (count yearly-transactions))]
-      (is (= yearly-transactions left))
-      (is (empty? right)))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Chapter 4: The Subrange Inventory (subrange)
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(def inventory-by-size
-  (oc/ordered-map
-    [[6.0  ["Comet Cruiser" "Starlight Slip-on"]]
-     [7.0  ["Void Runner" "Shadow Walker"]]
-     [8.0  ["Void Runner" "Europa Ice" "Olympus Max"]]
-     [9.0  ["Event Horizon" "Gravity Well"]]
-     [10.0 ["Dark Side Dunk" "Void Runner" "Shadow Walker"]]
-     [11.0 ["Olympus Max" "Event Horizon"]]
-     [12.0 ["Void Runner" "Dark Side Dunk"]]
-     [13.0 ["Shadow Walker"]]
-     [14.0 ["Gravity Well" "Olympus Max"]]
-     [15.0 ["Event Horizon XI"]]]))
-
-(deftest chapter-4-subrange-inventory-test
-  (testing "subrange with >= and <="
-    (let [big-sizes (oc/subrange inventory-by-size >= 11.0 <= 15.0)]
-      (is (= 5 (count big-sizes)))
-      (is (contains? big-sizes 11.0))
-      (is (contains? big-sizes 15.0))))
-
-  (testing "subrange with >= and <"
-    (let [mid-sizes (oc/subrange inventory-by-size >= 7.0 < 11.0)]
-      (is (= 4 (count mid-sizes)))
-      (is (contains? mid-sizes 7.0))
-      (is (contains? mid-sizes 10.0))
-      (is (not (contains? mid-sizes 11.0)))))
-
-  (testing "subrange single-bound"
-    (let [large (oc/subrange inventory-by-size > 10.0)]
-      (is (= 5 (count large)))
-      (is (not (contains? large 10.0))))
-    (let [small (oc/subrange inventory-by-size < 8.0)]
-      (is (= 2 (count small)))
-      (is (contains? small 6.0))
-      (is (contains? small 7.0)))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Chapter 5: The Nearest Competitor (nearest)
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(def our-prices
-  (oc/ordered-set
-    [99.99 149.50 175.00 225.00 275.00 299.99
-     350.00 399.00 450.00 525.00 599.00 750.00 899.00]))
-
-(deftest chapter-5-nearest-competitor-test
-  (testing "nearest <="
-    (is (= 275.0 (oc/nearest our-prices <= 280)))
-    (is (= 399.0 (oc/nearest our-prices <= 400)))
-    (is (= 899.0 (oc/nearest our-prices <= 1000))))
-
-  (testing "nearest >="
-    (is (= 299.99 (oc/nearest our-prices >= 280)))
-    (is (= 450.0 (oc/nearest our-prices >= 400)))
-    (is (= 525.0 (oc/nearest our-prices >= 500))))
-
-  (testing "nearest < (strict)"
-    (is (= 275.0 (oc/nearest our-prices < 280)))
-    (is (= 399.0 (oc/nearest our-prices < 400)))
-    (is (= 350.0 (oc/nearest our-prices < 399))))
-
-  (testing "nearest > (strict)"
-    (is (= 299.99 (oc/nearest our-prices > 280)))
-    (is (= 450.0 (oc/nearest our-prices > 400)))
-    (is (= 450.0 (oc/nearest our-prices > 399))))
+  (testing "fit-foot function finds snug and roomy options"
+    (let [tonys-feet {:reginald 11.3 :gerald 10.8 :margaret 9.2
+                      :humphrey 13.7 :agnes 8.1 :bernard 12.0}
+          fit-foot (fn [[foot-name ideal-size]]
+                     {:foot foot-name
+                      :ideal ideal-size
+                      :snug (oc/nearest available-sizes <= ideal-size)
+                      :roomy (oc/nearest available-sizes >= ideal-size)})
+          fits (into {} (map (fn [f] [(:foot f) f]) (map fit-foot tonys-feet)))]
+      (is (= {:foot :reginald :ideal 11.3 :snug 11.0 :roomy 11.5}
+             (:reginald fits)))
+      (is (= {:foot :gerald :ideal 10.8 :snug 10.5 :roomy 11.0}
+             (:gerald fits)))
+      (is (= {:foot :margaret :ideal 9.2 :snug 9.0 :roomy 9.5}
+             (:margaret fits)))))
 
   (testing "nearest at boundaries"
-    (is (nil? (oc/nearest our-prices < 99.99)))
-    (is (nil? (oc/nearest our-prices > 899.0)))
-    (is (= 99.99 (oc/nearest our-prices <= 99.99)))
-    (is (= 899.0 (oc/nearest our-prices >= 899.0))))
-
-  (testing "nearest on ordered-map"
-    (let [price-map (oc/ordered-map
-                      [[100 :budget]
-                       [250 :mid]
-                       [500 :premium]])]
-      (is (= [250 :mid] (oc/nearest price-map <= 300)))
-      (is (= [500 :premium] (oc/nearest price-map >= 400))))))
+    (is (nil? (oc/nearest available-sizes < 6.0)))
+    (is (nil? (oc/nearest available-sizes > 15.0)))
+    (is (= 6.0 (oc/nearest available-sizes <= 6.0)))
+    (is (= 15.0 (oc/nearest available-sizes >= 15.0)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Chapter 6: Combining Structures
+;; Chapter 3: The Split Decision (split-at, split-key)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def tony-purchases
+(deftest chapter-3-split-decision-test
+  (testing "split-at partitions by position for percentiles"
+    (let [customer-spending (oc/ordered-map
+                              (for [id (range 1000)]
+                                [(+ 100 (* id 50)) {:id id}]))
+          n (count customer-spending)]
+      ;; Top 10%
+      (let [[_ top-10-pct] (oc/split-at customer-spending (- n (quot n 10)))]
+        (is (= 100 (count top-10-pct))))
+      ;; Bottom 20%
+      (let [[bottom-20-pct _] (oc/split-at customer-spending (quot n 5))]
+        (is (= 200 (count bottom-20-pct))))
+      ;; Median
+      (let [[lower upper] (oc/split-at customer-spending (quot n 2))]
+        (is (= 500 (count lower)))
+        (is (= 500 (count upper))))))
+
+  (testing "split-key partitions by value at threshold"
+    (let [customer-spending (oc/ordered-map
+                              [[100 {:id 0}] [500 {:id 1}] [1000 {:id 2}]
+                               [5000 {:id 3}] [10000 {:id 4}] [25000 {:id 5}]])
+          [casual exact vip] (oc/split-key customer-spending 10000)]
+      (is (= 4 (count casual)))       ; 100, 500, 1000, 5000
+      (is (some? exact))              ; exact match at 10000
+      (is (= 1 (count vip)))))        ; 25000
+
+  (testing "split-key with no exact match"
+    (let [spending (oc/ordered-map [[100 :a] [500 :b] [1000 :c]])
+          [below exact above] (oc/split-key spending 750)]
+      (is (= 2 (count below)))        ; 100, 500
+      (is (nil? exact))               ; no 750
+      (is (= 1 (count above)))))      ; 1000
+
+  (testing "Results are full collections - can chain operations"
+    (let [customer-spending (oc/ordered-map
+                              [[100 :a] [500 :b] [1000 :c] [5000 :d]
+                               [10000 :e] [25000 :f] [50000 :g]])
+          [_ _ high-spenders] (oc/split-key customer-spending 25000)]
+      ;; Can get last element of result
+      (is (= [50000 :g] (last high-spenders))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Chapter 4: Fuzzy Lookup (fuzzy-set, fuzzy-map)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def shipping-tiers
+  (oc/fuzzy-set [100 250 500 750 1000 1500 2000]))
+
+(def loyalty-tiers
+  (oc/fuzzy-map
+    {0     {:tier :bronze  :discount 0.05}
+     500   {:tier :silver  :discount 0.10}
+     1000  {:tier :gold    :discount 0.15}
+     2500  {:tier :platinum :discount 0.20}
+     5000  {:tier :diamond :discount 0.25}}))
+
+(deftest chapter-4-fuzzy-lookup-test
+  (testing "fuzzy-set snaps to nearest value"
+    (is (= 250 (shipping-tiers 350)))   ; closer to 250 than 500
+    (is (= 500 (shipping-tiers 450)))   ; closer to 500 than 250
+    (is (= 100 (shipping-tiers 50)))    ; below range, snaps to 100
+    (is (= 2000 (shipping-tiers 3000))) ; above range, snaps to 2000
+    (is (= 750 (shipping-tiers 750))))  ; exact match
+
+  (testing "fuzzy-nearest returns [value distance]"
+    (let [[value distance] (oc/fuzzy-nearest shipping-tiers 350)]
+      (is (= 250 value))
+      (is (= 100.0 distance)))
+    (let [[value distance] (oc/fuzzy-nearest shipping-tiers 750)]
+      (is (= 750 value))
+      (is (= 0.0 distance))))
+
+  (testing "fuzzy-map snaps to nearest key, returns value"
+    (is (= {:tier :silver :discount 0.10} (loyalty-tiers 523)))
+    (is (= {:tier :platinum :discount 0.20} (loyalty-tiers 2100)))
+    (is (= {:tier :bronze :discount 0.05} (loyalty-tiers 0)))
+    (is (= {:tier :diamond :discount 0.25} (loyalty-tiers 5000))))
+
+  (testing "fuzzy-nearest on fuzzy-map returns [key value distance]"
+    (let [[threshold tier distance] (oc/fuzzy-nearest loyalty-tiers 480)]
+      (is (= 500 threshold))
+      (is (= {:tier :silver :discount 0.10} tier))
+      (is (= 20.0 distance))))
+
+  (testing "Upsell pattern - points to next tier"
+    (let [tier-thresholds (oc/ordered-set [0 500 1000 2500 5000])
+          tier-status (fn [points]
+                        (let [[threshold tier _] (oc/fuzzy-nearest loyalty-tiers points)
+                              next-threshold (oc/nearest tier-thresholds > threshold)]
+                          (cond-> tier
+                            next-threshold (assoc :points-to-next (- next-threshold points)))))
+          status (tier-status 480)]
+      (is (= :silver (:tier status)))
+      (is (= 520 (:points-to-next status))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Chapter 5: The Segment Tree (segment-tree, query)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def traffic-data
+  {0 12, 1 8, 2 5, 3 3, 4 2, 5 4,        ;; night (sparse)
+   6 15, 7 28, 8 45, 9 52, 10 48, 11 41, ;; morning rush
+   12 38, 13 42, 14 35, 15 31, 16 29, 17 44, ;; midday
+   18 67, 19 72, 20 58, 21 43, 22 31, 23 19}) ;; evening rush
+
+(def traffic-totals (oc/segment-tree + 0 traffic-data))
+(def traffic-peaks (oc/segment-tree max 0 traffic-data))
+
+(deftest chapter-5-segment-tree-test
+  (testing "Total customers during morning rush (hours 6-11)"
+    (is (= (+ 15 28 45 52 48 41) (oc/query traffic-totals 6 11))))
+
+  (testing "Total for evening rush (hours 18-22)"
+    (is (= (+ 67 72 58 43 31) (oc/query traffic-totals 18 22))))
+
+  (testing "Compare shifts"
+    (let [morning (oc/query traffic-totals 6 12)   ;; Glorm's shift
+          evening (oc/query traffic-totals 18 24)] ;; Zorp's shift
+      (is (= (+ 15 28 45 52 48 41 38) morning))
+      (is (= (+ 67 72 58 43 31 19) evening))
+      (is (> evening morning))))
+
+  (testing "Find peak hours"
+    (is (= 72 (oc/query traffic-peaks 0 24)))   ;; hour 19 was busiest
+    (is (= 52 (oc/query traffic-peaks 6 12))))  ;; morning peak at hour 9
+
+  (testing "Update when new data arrives - O(log n)"
+    (let [updated-totals (assoc traffic-totals 20 85)]  ;; busy night!
+      ;; Original was 58, now 85 - difference of 27
+      (is (= (+ 67 72 85 43 31) (oc/query updated-totals 18 22)))))
+
+  (testing "Sum tree for range aggregation"
+    (let [sum-tree (oc/sum-tree {0 10, 1 20, 2 30, 3 40, 4 50})]
+      (is (= 60 (oc/query sum-tree 0 2)))     ;; 10+20+30
+      (is (= 150 (oc/query sum-tree 0 4)))))) ;; all
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Chapter 6: The Clearance Audit (subrange)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def stale-inventory
   (oc/ordered-map
-    [[1000 2500]  [1500 3200]  [2000 4100]  [2500 1800]
-     [3000 5500]  [3500 2900]  [4000 7200]  [4500 4400]
-     [5000 8100]  [5500 3300]  [6000 6600]]))
+    {12  {:sku "VR-100" :name "Void Runner" :price 299.99 :markdown 0}
+     35  {:sku "SW-200" :name "Shadow Walker" :price 225.00 :markdown 0.10}
+     67  {:sku "EU-300" :name "Europa Ice" :price 175.00 :markdown 0.15}
+     91  {:sku "GW-400" :name "Gravity Well" :price 375.00 :markdown 0.25}
+     120 {:sku "DD-500" :name "Dark Side Dunk" :price 450.00 :markdown 0.30}
+     145 {:sku "OM-600" :name "Olympus Max" :price 599.00 :markdown 0.40}
+     203 {:sku "AG-700" :name "Anti-Gravity 3000" :price 899.00 :markdown 0.50}}))
 
-(deftest chapter-6-combining-structures-test
-  (testing "Segment tree for range sums"
-    (let [tony-spending (oc/sum-tree (into {} tony-purchases))]
-      ;; Q1: timestamps 1000-3000
-      (is (= (+ 2500 3200 4100 1800 5500)
-             (oc/query tony-spending 1000 3000)))
-      ;; Q2: timestamps 3500-6000
-      (is (= (+ 2900 7200 4400 8100 3300 6600)
-             (oc/query tony-spending 3500 6000)))))
+(deftest chapter-6-clearance-audit-test
+  (testing "Find items stale 90+ days - liquidation candidates"
+    (let [liquidation-candidates (oc/subrange stale-inventory >= 90)]
+      (is (= 4 (count liquidation-candidates)))
+      (is (contains? liquidation-candidates 91))
+      (is (contains? liquidation-candidates 120))
+      (is (contains? liquidation-candidates 145))
+      (is (contains? liquidation-candidates 203))))
 
-  (testing "Split purchases by amount"
-    (let [amounts (oc/ordered-set (vals tony-purchases))
-          [small _ medium-up] (oc/split-key amounts 3000)
-          [medium _ large] (oc/split-key medium-up 5000)]
-      (is (= #{1800 2500 2900} (set small)))
-      (is (= #{3200 3300 4100 4400} (set medium)))
-      (is (= #{5500 6600 7200 8100} (set large))))))
+  (testing "Calculate liquidation value"
+    (let [liquidation-candidates (oc/subrange stale-inventory >= 90)
+          value (->> liquidation-candidates
+                     (map (fn [[_ item]]
+                            (* (:price item) (- 1 (:markdown item)))))
+                     (reduce +))]
+      ;; 375*0.75 + 450*0.70 + 599*0.60 + 899*0.50
+      ;; = 281.25 + 315 + 359.4 + 449.5 = 1405.15
+      (is (< (Math/abs (- 1405.15 value)) 0.01))))
+
+  (testing "Warning zone (60-90 days)"
+    (let [warning-zone (oc/subrange stale-inventory >= 60 < 90)]
+      (is (= 1 (count warning-zone)))
+      (let [[days item] (first warning-zone)]
+        (is (= 67 days))
+        (is (= "Europa Ice" (:name item))))))
+
+  (testing "Fresh items (under 30 days)"
+    (is (= 1 (count (oc/subrange stale-inventory < 30)))))
+
+  (testing "Compare full-price vs discounted inventory"
+    (let [full-price (oc/subrange stale-inventory < 60)
+          discounted (oc/subrange stale-inventory >= 60)
+          liquidation (oc/subrange stale-inventory >= 90)]
+      (is (= 2 (count full-price)))
+      (is (= 5 (count discounted)))
+      (is (= 4 (count liquidation))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Chapter 7: The Time-Slice Analysis
+;; Chapter 7: The Promotional Post-Mortem (interval-map + segment-tree)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def inventory-events
-  [[1000 "VR" +100]  [1100 "SW" +50]   [1200 "VR" -20]
-   [1300 "EH" +75]   [1400 "SW" -15]   [1500 "VR" -30]
-   [1600 "DD" +40]   [1700 "EH" -25]   [1800 "VR" +50]
-   [1900 "SW" -10]   [2000 "DD" -5]    [2100 "VR" -40]])
+(def promotions
+  (oc/interval-map
+    {[1 15]   :new-year-clearance      ;; days 1-14
+     [20 35]  :jovian-appreciation     ;; days 20-34
+     [25 28]  :flash-sale              ;; days 25-27 (overlaps jovian)
+     [45 52]  :spring-preview          ;; days 45-51
+     [80 91]  :end-of-quarter-push}))  ;; days 80-90
 
-(defn inventory-at [events timestamp]
-  (let [relevant (filter #(<= (first %) timestamp) events)]
-    (->> relevant
-         (reduce (fn [inv [_ sku delta]]
-                   (update inv sku (fnil + 0) delta))
-                 (oc/ordered-map)))))
+(def daily-revenue
+  (oc/segment-tree + 0
+    {1 2400, 2 2100, 3 2800, 4 3100, 5 2900,    ;; new-year surge
+     6 3400, 7 3200, 8 2800, 9 2600, 10 2500,
+     11 2300, 12 2400, 13 2200, 14 2100, 15 1800,
+     16 1200, 17 1100, 18 1300, 19 1250,         ;; post-promo slump
+     20 2800, 21 3200, 22 3500, 23 3100, 24 2900, ;; jovian starts
+     25 4200, 26 4800, 27 5100,                   ;; flash sale spike!
+     28 3400, 29 3100, 30 2800, 31 2600, 32 2400,
+     33 2300, 34 2200, 35 1900,
+     ;; middle of quarter omitted (baseline)
+     45 2100, 46 2400, 47 2600, 48 2300, 49 2200,
+     50 2100, 51 2000,                            ;; spring preview
+     80 3800, 81 4200, 82 4500, 83 4100, 84 3900,
+     85 4600, 86 5200, 87 4800, 88 4400, 89 4100, 90 3800}))
 
-(deftest chapter-7-time-slice-analysis-test
-  (testing "Inventory state at various times"
-    (is (= {"SW" 50 "VR" 80}
-           (into {} (inventory-at inventory-events 1200))))
-    (is (= {"DD" 40 "EH" 50 "SW" 35 "VR" 50}
-           (into {} (inventory-at inventory-events 1700))))
-    (is (= {"DD" 35 "EH" 50 "SW" 25 "VR" 60}
-           (into {} (inventory-at inventory-events 2100)))))
+(deftest chapter-7-promotional-post-mortem-test
+  (testing "Query promotions active on a given day"
+    (let [active-day-26 (promotions 26)]
+      ;; Both jovian-appreciation and flash-sale active
+      (is (some #{:jovian-appreciation} active-day-26))
+      (is (some #{:flash-sale} active-day-26)))
+    ;; Single promotion day
+    (let [active-day-10 (promotions 10)]
+      (is (some #{:new-year-clearance} active-day-10))
+      (is (not (some #{:flash-sale} active-day-10)))))
 
-  (testing "Inventory is sorted by SKU"
-    (let [inv (inventory-at inventory-events 2100)]
-      (is (= ["DD" "EH" "SW" "VR"] (vec (keys inv)))))))
+  (testing "Query promotions touching a range"
+    (let [active-30-50 (promotions [30 50])]
+      (is (some #{:jovian-appreciation} active-30-50))
+      (is (some #{:spring-preview} active-30-50))
+      (is (not (some #{:flash-sale} active-30-50)))))
+
+  (testing "Revenue during promotional periods"
+    ;; Promo periods are half-open [start, end), but segment-tree query is inclusive
+    ;; So we query [start, end-1] to get the correct range
+    (let [promo-revenue (fn [[start end]]
+                          (oc/query daily-revenue start (dec end)))]
+      ;; New year clearance: days 1-14 (half-open [1,15))
+      (let [revenue (promo-revenue [1 15])]
+        (is (= (+ 2400 2100 2800 3100 2900 3400 3200 2800 2600 2500 2300 2400 2200 2100)
+               revenue)))
+      ;; Flash sale: days 25-27 (half-open [25,28))
+      (let [revenue (promo-revenue [25 28])]
+        (is (= (+ 4200 4800 5100) revenue))
+        (is (= 14100 revenue)))))
+
+  (testing "Per-day revenue analysis"
+    (let [promo-periods {:new-year-clearance [1 15]
+                         :jovian-appreciation [20 35]
+                         :flash-sale [25 28]
+                         :spring-preview [45 52]
+                         :end-of-quarter-push [80 91]}
+          analyze (fn [[name [start end]]]
+                    (let [days (- end start)
+                          ;; Query with (dec end) since segment-tree is inclusive
+                          revenue (oc/query daily-revenue start (dec end))]
+                      {:promo name
+                       :days days
+                       :revenue revenue
+                       :per-day (/ revenue days)}))
+          analysis (into {} (map (fn [r] [(:promo r) r]) (map analyze promo-periods)))]
+      ;; Flash sale has highest per-day
+      (is (= 4700 (:per-day (:flash-sale analysis))))
+      ;; End of quarter also strong
+      (is (> (:per-day (:end-of-quarter-push analysis)) 4000))))
+
+  (testing "Overlap analysis - Jovian with/without Flash Sale"
+    ;; Promo periods are half-open, segment-tree query is inclusive
+    ;; Jovian: [20,35) = days 20-34, Flash: [25,28) = days 25-27
+    (let [jovian-total (oc/query daily-revenue 20 34)
+          flash-overlap (oc/query daily-revenue 25 27)
+          jovian-alone (- jovian-total flash-overlap)]
+      ;; Jovian total includes flash sale days (days 20-34)
+      (is (= (+ 2800 3200 3500 3100 2900 4200 4800 5100 3400 3100 2800 2600 2400 2300 2200)
+             jovian-total))
+      ;; Flash contribution (days 25-27)
+      (is (= 14100 flash-overlap))
+      ;; Jovian baseline without flash
+      (is (= (- jovian-total 14100) jovian-alone))
+      ;; Flash lift percentage
+      (let [lift-pct (int (* 100 (/ flash-overlap jovian-alone)))]
+        (is (> lift-pct 40))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Epilogue: Integration Test
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftest epilogue-integration-test
-  (testing "All new 0.2.0 features work together"
-    ;; Fuzzy lookup
-    (is (= {:id "CUST-0007" :tier :diamond} (customers "Big Tow Tony")))
+  (testing "All chapter features work together"
+    ;; Chapter 1: range-map subnet allocation
+    (let [network (-> (oc/range-map {[(ip "10.0.0.0") (ip "10.1.0.0")] :available})
+                      (assoc [(ip "10.0.0.0") (ip "10.0.128.0")] :allocated))]
+      (is (= :allocated (network (ip "10.0.64.0"))))
+      (is (= :available (network (ip "10.0.200.0")))))
 
-    ;; Split at threshold
-    (let [[small _ large] (oc/split-key yearly-transactions 5000)]
-      (is (= 9 (count small)))
-      (is (= 8 (count large))))
+    ;; Chapter 2: nearest for size fitting
+    (is (= 11.0 (oc/nearest available-sizes <= 11.3)))
 
-    ;; Subrange for filtering
-    (let [mid-tier (oc/subrange our-prices >= 200 < 500)]
-      (is (= 6 (count mid-tier))))  ; 225, 275, 299.99, 350, 399, 450
+    ;; Chapter 3: split-key for segmentation
+    (let [[small _ large] (oc/split-key (oc/ordered-set [100 500 1000 5000 10000]) 1000)]
+      (is (= [100 500] (vec small)))
+      (is (= [5000 10000] (vec large))))
 
-    ;; Nearest for competitive analysis
-    (is (= 275.0 (oc/nearest our-prices <= 280)))))
+    ;; Chapter 4: fuzzy lookup for tier mapping
+    (is (= {:tier :silver :discount 0.10} (loyalty-tiers 600)))
+
+    ;; Chapter 5: segment-tree for range queries
+    (is (= (+ 67 72 58 43 31 19) (oc/query traffic-totals 18 24)))
+
+    ;; Chapter 6: subrange for filtering
+    (is (= 4 (count (oc/subrange stale-inventory >= 90))))
+
+    ;; Chapter 7: interval-map + segment-tree for attribution
+    (is (some #{:flash-sale} (promotions 26)))
+    (is (= 14100 (oc/query daily-revenue 25 27)))))  ; days 25-27 inclusive
