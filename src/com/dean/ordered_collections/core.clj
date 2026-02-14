@@ -813,6 +813,18 @@
 ;; Split and Range Operations (data.avl compatible)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defn- reconstruct-coll
+  "Reconstruct a collection of the same type with a new root node."
+  [coll node]
+  (let [cmp    (.getCmp ^IOrderedCollection coll)
+        stitch (.getStitch ^IBalancedCollection coll)
+        alloc  (.getAllocator ^INodeCollection coll)
+        root   (or node (node/leaf))]
+    (cond
+      (instance? OrderedSet coll) (->OrderedSet root cmp alloc stitch {})
+      (instance? OrderedMap coll) (->OrderedMap root cmp alloc stitch {})
+      :else (throw (ex-info "Operation not supported for this collection type" {:coll coll})))))
+
 (defn split-key
   "Split collection at key k, returning [left entry right].
 
@@ -832,29 +844,15 @@
      (split-key (ordered-map [[1 :a] [2 :b] [3 :c]]) 2)
      ;=> [{1 :a} [2 :b] {3 :c}]"
   [coll k]
-  (let [root   (.getRoot ^INodeCollection coll)
-        cmp    (.getCmp ^IOrderedCollection coll)
-        stitch (.getStitch ^IBalancedCollection coll)
-        alloc  (.getAllocator ^INodeCollection coll)]
+  (let [root (.getRoot ^INodeCollection coll)
+        cmp  (.getCmp ^IOrderedCollection coll)]
     (binding [order/*compare* cmp]
       (let [[l present r] (tree/node-split root k)
-            ;; Reconstruct collections of the same type
-            make-coll (fn [node]
-                        (cond
-                          (instance? OrderedSet coll)
-                          (->OrderedSet (or node (node/leaf)) cmp alloc stitch {})
-
-                          (instance? OrderedMap coll)
-                          (->OrderedMap (or node (node/leaf)) cmp alloc stitch {})
-
-                          :else (throw (ex-info "split-key not supported for this collection type" {:coll coll}))))
             ;; Format entry based on collection type
             entry (when present
                     (let [[k v] present]
-                      (if (instance? OrderedSet coll)
-                        k
-                        [k v])))]
-        [(make-coll l) entry (make-coll r)]))))
+                      (if (instance? OrderedSet coll) k [k v])))]
+        [(reconstruct-coll coll l) entry (reconstruct-coll coll r)]))))
 
 (defn split-at
   "Split collection at index i, returning [left right].
@@ -870,31 +868,17 @@
      (split-at (ordered-set [1 2 3 4 5]) 2)
      ;=> [#{1 2} #{3 4 5}]"
   [coll ^long i]
-  (let [root   (.getRoot ^INodeCollection coll)
-        cmp    (.getCmp ^IOrderedCollection coll)
-        stitch (.getStitch ^IBalancedCollection coll)
-        alloc  (.getAllocator ^INodeCollection coll)
-        n      (tree/node-size root)]
+  (let [root (.getRoot ^INodeCollection coll)
+        cmp  (.getCmp ^IOrderedCollection coll)
+        n    (tree/node-size root)]
     (cond
       (<= i 0) [(empty coll) coll]
       (>= i n) [coll (empty coll)]
       :else
       (binding [order/*compare* cmp]
-        (let [pivot-node (tree/node-nth root i)
-              pivot-k    (node/-k pivot-node)
-              left-root  (tree/node-split-lesser root pivot-k)
-              ;; Reconstruct collections of the same type
-              make-coll  (fn [node]
-                           (cond
-                             (instance? OrderedSet coll)
-                             (->OrderedSet (or node (node/leaf)) cmp alloc stitch {})
-
-                             (instance? OrderedMap coll)
-                             (->OrderedMap (or node (node/leaf)) cmp alloc stitch {})
-
-                             :else (throw (ex-info "split-at not supported for this collection type" {:coll coll}))))
+        (let [left-root  (tree/node-split-lesser root (node/-k (tree/node-nth root i)))
               right-root (tree/node-split-nth root i)]
-          [(make-coll left-root) (make-coll right-root)])))))
+          [(reconstruct-coll coll left-root) (reconstruct-coll coll right-root)])))))
 
 (defn subrange
   "Return a subcollection comprising elements in the given range.
@@ -916,10 +900,8 @@
      (subrange (ordered-set (range 10)) > 5)
      ;=> #{6 7 8 9}"
   ([coll test key]
-   (let [root   (.getRoot ^INodeCollection coll)
-         cmp    (.getCmp ^IOrderedCollection coll)
-         stitch (.getStitch ^IBalancedCollection coll)
-         alloc  (.getAllocator ^INodeCollection coll)]
+   (let [root (.getRoot ^INodeCollection coll)
+         cmp  (.getCmp ^IOrderedCollection coll)]
      (binding [order/*compare* cmp]
        (let [result-root (cond
                            (or (identical? test <) (identical? test <=))
@@ -927,25 +909,13 @@
                            (or (identical? test >) (identical? test >=))
                            (tree/node-split-greater root key)
                            :else (throw (ex-info "subrange test must be <, <=, >, or >=" {:test test})))
-             ;; For <= and >=, we might need to include the key itself
-             result-root (cond
-                           (identical? test <=)
+             ;; For <= and >=, include the key itself if present
+             result-root (if (or (identical? test <=) (identical? test >=))
                            (if-let [n (tree/node-find root key)]
                              (tree/node-add result-root (node/-k n) (node/-v n))
                              result-root)
-                           (identical? test >=)
-                           (if-let [n (tree/node-find root key)]
-                             (tree/node-add result-root (node/-k n) (node/-v n))
-                             result-root)
-                           :else result-root)]
-         (cond
-           (instance? OrderedSet coll)
-           (->OrderedSet result-root cmp alloc stitch {})
-
-           (instance? OrderedMap coll)
-           (->OrderedMap result-root cmp alloc stitch {})
-
-           :else (throw (ex-info "subrange not supported for this collection type" {:coll coll})))))))
+                           result-root)]
+         (reconstruct-coll coll result-root)))))
   ([coll start-test start-key end-test end-key]
    (-> coll
        (subrange start-test start-key)
@@ -984,42 +954,24 @@
                           [(node/-k n) (node/-v n)]))]
     (binding [order/*compare* cmp]
       (cond
-        ;; < : greatest less than k
+        ;; < : greatest less than k (predecessor)
         (identical? test <)
-        (if-let [exact (tree/node-find root k)]
-          ;; k exists in tree, we need its predecessor
-          (let [lesser-tree (tree/node-split-lesser root k)]
-            (when-not (node/leaf? lesser-tree)
-              (let [max-lesser (tree/node-nth lesser-tree (dec (tree/node-size lesser-tree)))]
-                (format-result max-lesser))))
-          ;; k doesn't exist, node-find-nearest :< finds greatest <= k which is < k
-          (when-let [n (tree/node-find-nearest root k :<)]
-            (format-result n)))
+        (when-let [n (tree/node-predecessor root k)]
+          (format-result n))
 
-        ;; <= : greatest less than or equal to k
+        ;; <= : greatest less than or equal to k (floor)
         (identical? test <=)
-        (if-let [exact (tree/node-find root k)]
-          (format-result exact)
-          (when-let [n (tree/node-find-nearest root k :<)]
-            (format-result n)))
+        (when-let [n (tree/node-find-nearest root k :<)]
+          (format-result n))
 
-        ;; > : least greater than k
+        ;; > : least greater than k (successor)
         (identical? test >)
-        (if-let [exact (tree/node-find root k)]
-          ;; k exists in tree, we need its successor
-          (let [greater-tree (tree/node-split-greater root k)]
-            (when-not (node/leaf? greater-tree)
-              (let [min-greater (tree/node-nth greater-tree 0)]
-                (format-result min-greater))))
-          ;; k doesn't exist, node-find-nearest :> finds least >= k which is > k
-          (when-let [n (tree/node-find-nearest root k :>)]
-            (format-result n)))
+        (when-let [n (tree/node-successor root k)]
+          (format-result n))
 
-        ;; >= : least greater than or equal to k
+        ;; >= : least greater than or equal to k (ceiling)
         (identical? test >=)
-        (if-let [exact (tree/node-find root k)]
-          (format-result exact)
-          (when-let [n (tree/node-find-nearest root k :>)]
-            (format-result n)))
+        (when-let [n (tree/node-find-nearest root k :>)]
+          (format-result n))
 
         :else (throw (ex-info "nearest test must be <, <=, >, or >=" {:test test}))))))
