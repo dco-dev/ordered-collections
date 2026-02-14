@@ -101,14 +101,6 @@ Previously experimented with `ArrayLeaf` for cache-friendly leaf storage, but **
 
 Based on benchmarks at N=100,000:
 
-### Where We're Slower
-
-| Operation | vs sorted-* | Root Cause |
-|-----------|-------------|------------|
-| Lookup (get) | ~10% slower | Deeper tree (weight-balanced vs red-black) |
-| Sequential insert | 1.4-2.3× slower | Heavier rebalancing, path-copying |
-| Seq iteration (dorun) | ~17% slower | Enumerator frame allocation |
-
 ### Where We're Faster
 
 | Operation | vs sorted-* | Why |
