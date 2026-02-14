@@ -658,6 +658,7 @@
    Only for fuzzy-map."
   fuzzy-map/exact-get)
 
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Ranked Set
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -728,6 +729,42 @@
 (def spanning-range
   "Return [lo hi] spanning all ranges in a range-map, or nil if empty."
   rmap/spanning-range)
+
+(def gaps
+  "Return a seq of [lo hi) ranges that have no mapping in a range-map."
+  rmap/gaps)
+
+(def assoc-coalescing
+  "Insert range with coalescing. Adjacent ranges with the same value
+   are automatically merged. Equivalent to Guava's putCoalescing.
+
+   Use this instead of assoc when you want adjacent same-value ranges
+   to be merged into a single range.
+
+   Example:
+     (-> (range-map)
+         (assoc-coalescing [0 100] :a)
+         (assoc-coalescing [100 200] :a))
+     ;; => single range [0 200) :a"
+  rmap/assoc-coalescing)
+
+(def get-entry
+  "Return [range value] for the range containing point x, or nil.
+   Equivalent to Guava's getEntry(K).
+
+   Example:
+     (get-entry rm 50) ;; => [[0 100] :a]"
+  rmap/get-entry)
+
+(def range-remove
+  "Remove all mappings in the given range [lo hi).
+   Any overlapping ranges are trimmed; ranges fully contained are removed.
+   Equivalent to Guava's remove(Range).
+
+   Example:
+     (range-remove rm [25 75])
+     ;; [0 100]:a becomes [0 25):a and [75 100):a"
+  rmap/range-remove)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Segment Tree

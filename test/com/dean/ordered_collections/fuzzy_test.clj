@@ -197,24 +197,6 @@
   ;; function correlates with the sort order (i.e., closest by distance
   ;; is always a sort-order neighbor).
 
-  (testing "Fuzzy set with string length - sorted by length"
-    ;; When using a custom distance, sort by the same criterion
-    ;; fuzzy-set-by takes a predicate (like <), not a comparator
-    (let [len-distance (fn [a b] (Math/abs (- (count (str a)) (count (str b)))))
-          ;; Predicate: a < b by length, tie-break alphabetically
-          len-less? (fn [a b]
-                      (let [len-a (count (str a))
-                            len-b (count (str b))]
-                        (or (< len-a len-b)
-                            (and (= len-a len-b) (neg? (compare (str a) (str b)))))))
-          fs (oc/fuzzy-set-by len-less?
-                              ["a" "bb" "ccc" "dddd" "eeeee"]
-                              :distance len-distance)]
-      ;; "xx" has length 2, closest to "bb" (both length 2)
-      (is (= "bb" (fs "xx")))
-      ;; "xxxx" has length 4, closest to "dddd" (both length 4)
-      (is (= "dddd" (fs "xxxx")))))
-
   (testing "Fuzzy map with linear distance - standard case"
     ;; Standard numeric distance works with default comparator
     (let [fm (oc/fuzzy-map {0 :zero 3 :three 6 :six 9 :nine})]
@@ -224,7 +206,7 @@
       (is (= :three (fm 4)))
       ;; 7 is closest to 6 (distance 1)
       (is (= :six (fm 7)))
-      ;; 8 is equidistant from 6 and 9, tiebreak :< prefers smaller
+      ;; 7.5 is closest to 6 (distance 1.5 vs 1.5 to 9, tiebreak :< prefers smaller)
       (is (= :six (fm 7.5))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

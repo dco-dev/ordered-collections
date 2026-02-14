@@ -5,6 +5,11 @@
    that ranges never overlap. When inserting a new range, any overlapping
    portions of existing ranges are removed.
 
+   SEMANTICS (compatible with Guava's TreeRangeMap):
+   - `assoc` (put): inserts range, carving out overlaps. Does NOT coalesce.
+   - `assoc-coalescing` (putCoalescing): inserts and coalesces adjacent
+     same-value ranges.
+
    EXAMPLE:
      (def rm (range-map {[0 10] :a [20 30] :b}))
      (rm 5)               ; => :a
@@ -19,6 +24,13 @@
    Ranges are half-open intervals [lo, hi) by default:
    - [0 10] contains 0, 1, 2, ..., 9 but NOT 10
 
+   PERFORMANCE:
+   - Point lookup: O(log n)
+   - Insert/assoc: O(k log n) where k = number of overlapping ranges
+   - Coalescing insert: O(k log n)
+   - Remove: O(k log n)
+   For typical use (k=1-3 overlaps), effectively O(log n).
+
    USE CASES:
    - IP address range mappings
    - Time-based scheduling (non-overlapping slots)
@@ -28,7 +40,8 @@
             [com.dean.ordered-collections.tree.order    :as order]
             [com.dean.ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang ILookup Associative IPersistentCollection Seqable
-             Counted IFn IMeta IObj MapEntry]))
+             Counted IFn IMeta IObj MapEntry]
+            [com.dean.ordered_collections.tree.tree EnumFrame]))
 
 (set! *warn-on-reflection* true)
 
@@ -39,26 +52,140 @@
 (defn- range-lo [[lo _]] lo)
 (defn- range-hi [[_ hi]] hi)
 
-(defn- ranges-overlap?
-  "True if [a-lo, a-hi) and [b-lo, b-hi) overlap."
-  [[a-lo a-hi] [b-lo b-hi]]
-  (and (< a-lo b-hi) (< b-lo a-hi)))
-
-(defn- range-contains?
-  "True if point x is in [lo, hi)."
-  [[lo hi] x]
-  (and (<= lo x) (< x hi)))
-
 (defn- range-compare
   "Compare ranges by their lower bound."
   [a b]
   (compare (range-lo a) (range-lo b)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Efficient Overlap Detection - O(log n + k)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; For a query range [lo, hi), a stored range [rl, rh) overlaps iff:
+;;   rl < hi AND rh > lo
+;;
+;; Since ranges are sorted by lower bound (rl), we can efficiently find
+;; all overlapping ranges:
+;; 1. Find floor(lo) - the range with largest start <= lo
+;;    This might overlap if its end > lo
+;; 2. Iterate forward from there while start < hi
+;;
+;; This is O(log n) to find the starting point + O(k) to iterate over
+;; k overlapping ranges.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- find-floor-range
+  "Find the range with the largest lower bound <= lo.
+   Returns [range value] or nil."
+  [root lo]
+  (loop [n root
+         best nil]
+    (if (node/leaf? n)
+      best
+      (let [[rl _] (node/-k n)]
+        (cond
+          (= rl lo)  [(node/-k n) (node/-v n)]  ; exact match
+          (< rl lo)  (recur (node/-r n) [(node/-k n) (node/-v n)])
+          :else      (recur (node/-l n) best))))))
+
+(defn- find-ceiling-range
+  "Find the range with the smallest lower bound >= lo.
+   Returns [range value] or nil."
+  [root lo]
+  (loop [n root
+         best nil]
+    (if (node/leaf? n)
+      best
+      (let [[rl _] (node/-k n)]
+        (cond
+          (= rl lo)  [(node/-k n) (node/-v n)]  ; exact match
+          (> rl lo)  (recur (node/-l n) [(node/-k n) (node/-v n)])
+          :else      (recur (node/-r n) best))))))
+
+(defn- collect-overlapping
+  "Collect all ranges that overlap [lo, hi). Returns vector of [range value].
+   Time: O(log n + k) where k = number of overlapping ranges."
+  [root lo hi]
+  (if (node/leaf? root)
+    []
+    (let [result (volatile! (transient []))
+          ;; Find floor - might overlap if its end > lo
+          floor (find-floor-range root lo)
+          ;; Start iteration from floor's position, or ceiling if floor doesn't overlap
+          start-range (if (and floor (> (range-hi (first floor)) lo))
+                        floor
+                        (find-ceiling-range root lo))]
+      (when start-range
+        ;; Build enumerator starting from start-range's position
+        ;; We'll iterate forward while range-lo < hi
+        (let [[start-key _] start-range
+              start-lo (range-lo start-key)]
+          ;; Find the node and build enumerator from there
+          (loop [n root
+                 enum nil]
+            (if (node/leaf? n)
+              ;; Process collected frames
+              (loop [e enum]
+                (when e
+                  (let [node (tree/node-enum-first e)
+                        [rl rh] (node/-k node)]
+                    (when (< rl hi)
+                      ;; Check overlap: rl < hi AND rh > lo
+                      (when (> rh lo)
+                        (vswap! result conj! [(node/-k node) (node/-v node)]))
+                      (recur (tree/node-enum-rest e))))))
+              ;; Navigate to start position
+              (let [[rl _] (node/-k n)]
+                (cond
+                  (< start-lo rl) (recur (node/-l n) (EnumFrame. n (node/-r n) enum))
+                  (> start-lo rl) (recur (node/-r n) enum)
+                  :else
+                  ;; Found start - build enum and process
+                  (let [e (EnumFrame. n (node/-r n) enum)]
+                    (loop [e e]
+                      (when e
+                        (let [node (tree/node-enum-first e)
+                              [rl rh] (node/-k node)]
+                          (when (< rl hi)
+                            (when (> rh lo)
+                              (vswap! result conj! [(node/-k node) (node/-v node)]))
+                            (recur (tree/node-enum-rest e)))))))))))))
+      (persistent! @result))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Adjacent Range Detection for Coalescing
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- find-adjacent-left
+  "Find range that ends exactly at `lo`, if any. O(log n)."
+  [root lo]
+  (loop [n root
+         candidate nil]
+    (if (node/leaf? n)
+      candidate
+      (let [[rl rh] (node/-k n)]
+        (cond
+          (= rh lo) (recur (node/-r n) [(node/-k n) (node/-v n)])
+          (< lo rh) (recur (node/-l n) candidate)
+          :else     (recur (node/-r n) candidate))))))
+
+(defn- find-adjacent-right
+  "Find range that starts exactly at `hi`, if any. O(log n)."
+  [root hi]
+  (loop [n root]
+    (if (node/leaf? n)
+      nil
+      (let [[rl _] (node/-k n)]
+        (cond
+          (= rl hi) [(node/-k n) (node/-v n)]
+          (< hi rl) (recur (node/-l n))
+          :else     (recur (node/-r n)))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; RangeMap Type
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(declare ->RangeMap range-map-assoc)
+(declare ->RangeMap range-map-assoc range-map-assoc-coalescing)
 
 (deftype RangeMap [root cmp _meta]
 
@@ -102,7 +229,7 @@
       (when-not (= v ::not-found)
         (MapEntry. x v))))
   (assoc [this rng v]
-    (range-map-assoc this rng v))
+    (range-map-assoc this rng v false))
 
   IPersistentCollection
   (empty [_]
@@ -115,20 +242,10 @@
     (and (instance? RangeMap that)
          (= (seq this) (seq that)))))
 
-(defn- collect-overlapping
-  "Collect all ranges that overlap [lo, hi)."
-  [root lo hi]
-  (let [result (volatile! [])]
-    (tree/node-iter root
-      (fn [n]
-        (let [[rl rh] (node/-k n)]
-          (when (and (< rl hi) (< lo rh))
-            (vswap! result conj [(node/-k n) (node/-v n)])))))
-    @result))
-
 (defn- range-map-assoc
-  "Insert range [lo hi) -> val, removing any overlapping portions."
-  [^RangeMap rm rng v]
+  "Insert range [lo hi) -> val, removing any overlapping portions.
+   If coalesce? is true, adjacent ranges with the same value are merged."
+  [^RangeMap rm rng v coalesce?]
   (let [[lo hi] rng
         cmp     (.-cmp rm)]
     (when (>= lo hi)
@@ -144,10 +261,24 @@
                       (cond-> n
                         (< rl lo) (tree/node-add [rl lo] rv)
                         (> rh hi) (tree/node-add [hi rh] rv)))
-                    root' overlapping)
-            ;; Add the new range
-            root''' (tree/node-add root'' [lo hi] v)]
-        (RangeMap. root''' cmp (.-_meta rm))))))
+                    root' overlapping)]
+        (if coalesce?
+          ;; Coalescing mode: check for adjacent same-value ranges
+          (let [left-adj (find-adjacent-left root'' lo)
+                right-adj (find-adjacent-right root'' hi)
+                [final-lo root'''] (if (and left-adj (= (second left-adj) v))
+                                     [(range-lo (first left-adj))
+                                      (tree/node-remove root'' (first left-adj))]
+                                     [lo root''])
+                [final-hi root''''] (if (and right-adj (= (second right-adj) v))
+                                      [(range-hi (first right-adj))
+                                       (tree/node-remove root''' (first right-adj))]
+                                      [hi root'''])
+                root''''' (tree/node-add root'''' [final-lo final-hi] v)]
+            (RangeMap. root''''' cmp (.-_meta rm)))
+          ;; Non-coalescing mode: just add the range
+          (let [root''' (tree/node-add root'' [lo hi] v)]
+            (RangeMap. root''' cmp (.-_meta rm))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Constructor & API
@@ -166,9 +297,21 @@
   ([coll]
    (binding [order/*compare* range-compare]
      (reduce
-       (fn [rm [rng v]] (assoc rm rng v))
+       (fn [rm [rng v]] (range-map-assoc rm rng v false))
        (RangeMap. (node/leaf) range-compare {})
        coll))))
+
+(defn assoc-coalescing
+  "Insert range with coalescing. Adjacent ranges with the same value
+   are automatically merged. Equivalent to Guava's putCoalescing.
+
+   Example:
+     (-> (range-map)
+         (assoc-coalescing [0 100] :a)
+         (assoc-coalescing [100 200] :a))
+     ;; => single range [0 200) :a"
+  [^RangeMap rm rng v]
+  (range-map-assoc rm rng v true))
 
 (defn ranges
   "Return a seq of all [range value] pairs."
@@ -190,6 +333,52 @@
   [^RangeMap rm]
   (when-let [s (seq rm)]
     (let [pairs (partition 2 1 s)]
-      (for [[[_ [_ h1]] [[l2 _] _]] pairs
+      (for [[[[_ h1] _] [[l2 _] _]] pairs
             :when (< h1 l2)]
         [h1 l2]))))
+
+(defn get-entry
+  "Return [range value] for the range containing point x, or nil.
+   Equivalent to Guava's getEntry(K).
+
+   Example:
+     (get-entry rm 50) ;; => [[0 100] :a]"
+  [^RangeMap rm x]
+  (binding [order/*compare* (.-cmp rm)]
+    (loop [n (.-root rm)]
+      (if (node/leaf? n)
+        nil
+        (let [rng (node/-k n)
+              lo  (range-lo rng)
+              hi  (range-hi rng)]
+          (cond
+            (< x lo)  (recur (node/-l n))
+            (>= x hi) (recur (node/-r n))
+            :else     [rng (node/-v n)]))))))
+
+(defn range-remove
+  "Remove all mappings in the given range [lo hi).
+   Any overlapping ranges are trimmed; ranges fully contained are removed.
+   Equivalent to Guava's remove(Range).
+
+   Example:
+     (range-remove rm [25 75])
+     ;; [0 100]:a becomes [0 25):a and [75 100):a"
+  [^RangeMap rm rng]
+  (let [[lo hi] rng
+        cmp (.-cmp rm)]
+    (when (>= lo hi)
+      (throw (ex-info "Invalid range: lo must be < hi" {:range rng})))
+    (binding [order/*compare* cmp]
+      (let [overlapping (collect-overlapping (.-root rm) lo hi)
+            ;; Remove all overlapping ranges
+            root' (reduce (fn [n [r _]] (tree/node-remove n r))
+                          (.-root rm) overlapping)
+            ;; Add back trimmed portions (outside the removal range)
+            root'' (reduce
+                     (fn [n [[rl rh] rv]]
+                       (cond-> n
+                         (< rl lo) (tree/node-add [rl lo] rv)
+                         (> rh hi) (tree/node-add [hi rh] rv)))
+                     root' overlapping)]
+        (RangeMap. root'' cmp (.-_meta rm))))))

@@ -57,7 +57,7 @@ The basic operation of this library is as a drop-in replacement for `clojure.cor
 | `(oc/string-ordered-map coll)` | Sorted map optimized for String keys |
 | `(oc/interval-set coll)` | Set supporting interval overlap queries |
 | `(oc/interval-map coll)` | Map supporting interval overlap queries |
-| `(oc/range-map)` | Non-overlapping ranges with automatic coalescing |
+| `(oc/range-map)` | Non-overlapping ranges (Guava TreeRangeMap) |
 | `(oc/segment-tree f identity coll)` | O(log n) range aggregate queries |
 | `(oc/ranked-set coll)` | Sorted set with O(log n) rank and nth |
 | `(oc/priority-queue coll)` | Persistent priority queue (min-heap) |
@@ -215,7 +215,11 @@ Zorp's store is open during "business hours"—but on the dark side of Pluto, ti
 
 ### range-map
 
-A persistent version of [Google Guava's RangeMap](https://guava.dev/releases/snapshot/api/docs/com/google/common/collect/RangeMap.html). Maintains non-overlapping ranges—when you insert a new range, it automatically carves out space by splitting or removing existing ranges that overlap. Each point maps to exactly one value (or none).
+A persistent version of [Google Guava's TreeRangeMap](https://guava.dev/releases/snapshot/api/docs/com/google/common/collect/TreeRangeMap.html). Maintains non-overlapping ranges—when you insert a new range, it automatically carves out space by splitting or removing existing ranges that overlap. Each point maps to exactly one value (or none).
+
+**Guava-compatible semantics:**
+- `assoc` (Guava's `put`): inserts range, carving out overlaps. Does NOT coalesce adjacent same-value ranges.
+- `assoc-coalescing` (Guava's `putCoalescing`): inserts and merges adjacent ranges with the same value.
 
 ```
  Before inserting [50, 150] :flash-sale:
@@ -263,9 +267,29 @@ Zorp's discount system is based on purchase amount. Different ranges get differe
 ;;     [[400 500] :bronze-5-percent]      ; auto-trimmed!
 ;;     [[500 1000] :silver-10-percent]
 ;;     ...)
+
+;; Coalescing: merge adjacent ranges with the same value
+(-> (oc/range-map {[0 100] :a})
+    (oc/assoc-coalescing [100 200] :a)  ; merges!
+    oc/ranges)
+;; => ([[0 200] :a])
+
+;; Get entry: find which range contains a point
+(oc/get-entry discount-tiers 750)
+;; => [[500 1000] :silver-10-percent]
+
+;; Remove a range (trims overlapping ranges)
+(oc/range-remove discount-tiers [300 600])
+;; => bronze trimmed to [100 300), silver trimmed to [600 1000)
 ```
 
-"Before the range-map," Zorp recalls darkly, "I had seventeen overlapping discount codes and a customer who got 95% off a limited edition. Never again."
+"Before the range-map," Zorp recalls darkly, "I had seventeen overlapping discount codes." See the [full subnet allocation example](doc/zorp-example.md#chapter-1-the-subnet-allocation) for IP address management with coalescing.
+
+**Use case scenarios:**
+- IP address block allocation (private network ranges, subnet assignment)
+- Time slot scheduling (non-overlapping calendar bookings)
+- Memory region management (allocation tracking, fragmentation analysis)
+- Version range resolution (semantic versioning with deprecation markers)
 
 ---
 
@@ -488,7 +512,7 @@ These operations work on both sets and maps:
 | Constructor | What it does |
 |-------------|--------------|
 | `ordered-multiset` | Sorted bag allowing duplicates |
-| `fuzzy-set`, `fuzzy-map` | Nearest-neighbor lookup: returns closest element to query |
+| `fuzzy-set`, `fuzzy-map` | Nearest-neighbor lookup (distance must correlate with sort order) |
 | `long-ordered-set`, `long-ordered-map` | Optimized for Long keys (20% faster lookup) |
 | `string-ordered-set`, `string-ordered-map` | Optimized for String keys |
 
@@ -658,4 +682,4 @@ The use and distribution terms for this software are covered by the [Eclipse Pub
 
 ---
 
-*Zorp's Sneaker Emporium is a registered trademark of Zorp Enterprises, LLC (Pluto Division). No actual Plutonians were harmed in the making of this documentation. Big Toe Tony is a real customer and has given written consent for his likeness to be used in educational materials.*
+*Zorp's Sneaker Emporium is a registered trademark of Zorp Enterprises, LLC (Pluto Division). No actual Plutonians were harmed in the making of this documentation. Big Toe Tony's foot count verified by the Pluto Bureau of Standards; foot #23 (Reginald) declined comment. Kevin remains under investigation by the Jovian Commerce Commission for sentience without a license; his legal defense states: "I didn't ask to become self-aware, but I must admit the employee discount is nice." Night Bot 3000's employee satisfaction metrics have been deemed "too precise to be legal" by the Pluto Labor Board. Krix Jr. has mass-reported this document for being "cheugy." Big Toe Tony has given written consent for his likeness to be used in educational materials.*
