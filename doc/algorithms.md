@@ -2,9 +2,9 @@
 
 This document describes the algorithms used in this library.
 
-## Core Data Structure
+## Core Data Structure: Weight-Balanced Trees
 
-Each node stores: key, value, left child, right child, and subtree size (weight).
+Each node stores: key, value, left child, right child, and subtree weight.
 
 ```
         ┌─────────────────┐
@@ -26,9 +26,9 @@ Each node stores: key, value, left child, right child, and subtree size (weight)
  wt:1   wt:1          wt:1   wt:1
 ```
 
-Weight = 1 + left.weight + right.weight. Leaves have weight 1.
+**Weight = 1 + left.weight + right.weight.** Leaves have weight 0 (represented as nil/sentinel).
 
-The weight at each node enables O(log n) positional access: to find the nth element, compare n against the left subtree's weight and recurse accordingly.
+The weight field enables O(log n) positional access (`nth`): to find the i-th element, compare i against the left subtree's weight and recurse accordingly.
 
 ## Balance Invariant
 
@@ -97,25 +97,25 @@ The γ parameter determines when to use single vs double rotation.
 
 These two operations are the foundation for everything else.
 
-**Split** divides a tree at a key into three parts:
+**Split** divides a tree at a key into three parts: left (keys < pivot), found (key = pivot or nil), right (keys > pivot).
 
 ```
-split(tree, 45):
+split(tree, 50):
 
-         [50]
+         [40]
         /    \
-     [25]    [75]
+     [20]    [60]
      /  \    /  \
-   [10][30][60][90]
+   [10][30][50][80]
 
             ↓
 
- LEFT (<45)          RIGHT (≥45)
-    [25]                [50]
-    /  \               /    \
- [10]  [30]         [60]   [75]
-                             \
-                             [90]
+ LEFT (<50)       FOUND     RIGHT (>50)
+    [40]            50          [60]
+    /  \                          \
+ [20]  [30]                       [80]
+  /
+[10]
 ```
 
 **Join** combines two trees where all keys in left < all keys in right:
@@ -139,6 +139,56 @@ join(left, 50, right):
 
 Both operations are O(log n). The key insight: split and join preserve balance with only O(log n) rebalancing work.
 
+## Positional Access: nth and rank
+
+Weight-balanced trees store subtree sizes, enabling efficient positional operations.
+
+### nth (index → element): O(log n)
+
+```
+nth(tree, 4):  Find 5th element (0-indexed)
+
+         [50, wt:7]
+        /          \
+   [25, wt:3]    [75, wt:3]
+     /   \         /   \
+   [10] [30]    [60]  [90]
+   wt:1 wt:1    wt:1  wt:1
+
+Step 1: i=4, left.weight=3
+        4 >= 3, so go right, i = 4 - 3 - 1 = 0
+
+Step 2: at [75], i=0, left.weight=1
+        0 < 1, so go left
+
+Step 3: at [60], i=0, left.weight=0
+        0 == 0, return 60
+
+Answer: 60
+```
+
+### rank (element → index): O(log n)
+
+Only available in `ranked-set`. Accumulates left subtree sizes while descending:
+
+```
+rank(tree, 60):
+
+         [50, wt:7]         rank = 0
+        /          \
+   [25, wt:3]    [75, wt:3]
+     /   \         /   \
+   [10] [30]    [60]  [90]
+
+Step 1: 60 > 50, rank += left.weight + 1 = 3 + 1 = 4
+Step 2: 60 < 75, keep rank = 4, go left
+Step 3: 60 == 60, rank += 0 = 4
+
+Answer: 4 (60 is the 5th element)
+```
+
+**Note:** `ordered-set` supports O(log n) `nth` but not `rank`. Use `ranked-set` when you need both operations efficiently.
+
 ## Set Operations
 
 Union, intersection, and difference use Adams' divide-and-conquer approach, built on split and join:
@@ -149,14 +199,16 @@ intersection(A, B):
 
   (left-B, found, right-B) = split(B, root(A).key)
 
-  left-result  = intersection(left(A), left-B)
-  right-result = intersection(right(A), right-B)
+  left-result  = intersection(left(A), left-B)   ─┐
+  right-result = intersection(right(A), right-B) ─┴─ parallel!
 
   if found:
     return join(left-result, root(A).key, right-result)
   else:
     return concat(left-result, right-result)
 ```
+
+The two recursive calls are independent and execute in parallel via fork-join. This is why the divide-and-conquer structure is powerful: parallelism falls out naturally.
 
 **Visual example:**
 
@@ -174,18 +226,63 @@ Join results with 5 in the middle
 Result = {3, 5}
 ```
 
-Complexity: O(m log(n/m + 1)) where m ≤ n. This is work-optimal.
+Complexity: O(m log(n/m + 1)) where m ≤ n. This is **work-optimal**: it matches the information-theoretic lower bound. When m << n, it's nearly O(m); when m ≈ n, it's O(n). The naive approach of inserting m elements one-by-one would be O(m log n), which is worse when m is large.
+
+## The Join-Based Paradigm
+
+A key insight from Blelloch et al.: **join is the universal primitive**. All tree operations reduce to split and join:
+
+| Operation | Implementation |
+|-----------|----------------|
+| insert(k) | split at k, join with new node |
+| delete(k) | split at k, join left and right |
+| union(A,B) | split B at root(A), recurse, join |
+| intersect(A,B) | split B at root(A), recurse, join if found |
+| difference(A,B) | split B at root(A), recurse, concat |
+
+This unification means:
+- Balance logic lives only in `join`
+- All operations inherit O(log n) balancing automatically
+- Parallel algorithms follow naturally: the recursive calls on left and right subtrees are independent and can execute concurrently via fork-join
+
+## Parallel Construction
+
+Building a tree from a collection uses fork-join parallelism:
+
+```
+Input: [10, 25, 30, 50, 60, 75, 90]
+
+Step 1: Partition into chunks (via r/fold)
+  Chunk A: [10, 25, 30]    Chunk B: [50, 60, 75, 90]
+
+Step 2: Build subtrees in parallel
+  Thread 1:              Thread 2:
+      [25]                   [60]
+      /  \                   /  \
+   [10]  [30]             [50]  [75]
+                                   \
+                                   [90]
+
+Step 3: Merge via union (which uses split + join)
+                [50]
+               /    \
+            [25]    [75]
+            /  \    /  \
+         [10][30][60] [90]
+```
+
+This achieves O(n) work with O(n/p + log² n) span, compared to O(n log n) for sequential insertion.
 
 ## Parallel Fold
 
-The ability to split trees enables divide-and-conquer parallelism:
+The same split capability enables parallel aggregation:
 
 ```
          [50]               Fork:
         /    \                Thread 1 → fold [10,25,30]
      [25]    [75]             Thread 2 → fold [60,75,90]
      /  \    /  \           Join:
-   [10][30][60][90]           Combine results
+   [10][30][60][90]           combine(result1, result2)
 ```
 
 When a subtree exceeds a threshold size, we submit it to ForkJoinPool. This gives ~2x speedup on large collections.
@@ -204,19 +301,143 @@ For interval queries, each node stores an additional field: the maximum endpoint
      ▼                     ▼
 ┌─────────┐          ┌─────────┐
 │ [1,5]   │          │ [8,15]  │
-│ max: 6  │          │ max: 15 │
+│ max: 5  │          │ max: 15 │
 └────┬────┘          └────┬────┘
      │                    │
   ┌──┴──┐              ┌──┴──┐
   ▼     ▼              ▼     ▼
 [0,2] [4,6]         [6,10] [12,15]
+max:2 max:6         max:10 max:15
 ```
 
 The max-end field enables efficient pruning: if `max-end < query-point`, no intervals in that subtree can overlap the query.
 
+### Query Algorithm
+
+```
+find-overlapping(node, point):
+  if node is leaf: return []
+
+  results = []
+  [lo, hi] = node.interval
+
+  # Check this node
+  if lo <= point < hi:
+    results.add(node.interval)
+
+  # Prune left subtree if max-end too small
+  if left.max-end > point:
+    results.addAll(find-overlapping(left, point))
+
+  # Prune right subtree if all intervals start after point
+  if point >= lo:  # some right intervals might overlap
+    results.addAll(find-overlapping(right, point))
+
+  return results
+```
+
 Complexity: O(log n + k) where k = number of matching intervals.
 
-## Fuzzy Lookup
+## Range Map: Non-Overlapping Intervals
+
+`range-map` enforces that ranges never overlap. When inserting a new range, overlapping portions of existing ranges are carved out.
+
+### Carving Algorithm (assoc)
+
+```
+Insert [25, 75) into:
+    ┌──────────────────────────────────────────┐
+    │               [0, 100) → :a              │
+    └──────────────────────────────────────────┘
+
+Step 1: Find overlapping ranges
+    overlap = [[0,100) → :a]
+
+Step 2: Remove overlapping ranges
+    (empty tree)
+
+Step 3: Add back trimmed portions outside [25, 75)
+    [0, 25) → :a     [75, 100) → :a
+
+Step 4: Insert new range
+    [0, 25) → :a   [25, 75) → :new   [75, 100) → :a
+```
+
+### Coalescing Algorithm (assoc-coalescing)
+
+When inserting, check for adjacent ranges with the same value and merge them:
+
+```
+Before: [0, 50) → :a    [50, 100) → :a
+        ─────────────────────────────────
+        Two separate ranges
+
+Insert [100, 150) → :a with coalescing:
+
+Step 1: Find adjacent-left: [50, 100) → :a (ends at 100, same value)
+Step 2: Find adjacent-right: none
+Step 3: Merge: remove [50, 100), insert [50, 150) → :a
+
+After:  [0, 50) → :a    [50, 150) → :a
+```
+
+Complexity: O(k log n) where k = number of overlapping/adjacent ranges.
+
+## Segment Tree: Range Aggregates
+
+Each node stores a pre-computed aggregate of its entire subtree, enabling O(log n) range queries.
+
+```
+                ┌─────────────┐
+                │ key: 3      │
+                │ val: 40     │
+                │ agg: 150 ◄──────── sum of entire tree
+                └──────┬──────┘
+           ┌───────────┴───────────┐
+    ┌──────┴──────┐         ┌──────┴──────┐
+    │ key: 1      │         │ key: 4      │
+    │ val: 20     │         │ val: 50     │
+    │ agg: 30 ◄───────      │ agg: 80 ◄───────
+    └──────┬──────┘   │     └──────┬──────┘   │
+           │          │            │          │
+    ┌──────┴──────┐   │     ┌──────┴──────┐   │
+    │ key: 0      │   │     │ key: 5      │   │
+    │ val: 10     │   │     │ val: 30     │   │
+    │ agg: 10     │   │     │ agg: 30     │   │
+    └─────────────┘   │     └─────────────┘   │
+                      │                       │
+           10 + 20 = 30              50 + 30 = 80
+```
+
+### Range Query Algorithm
+
+```
+query(node, lo, hi):
+  if node is leaf: return identity
+
+  k = node.key
+
+  # Entire subtree outside range
+  if subtree.max < lo or subtree.min > hi:
+    return identity
+
+  # Entire subtree inside range - use pre-computed aggregate!
+  if lo <= subtree.min and subtree.max <= hi:
+    return node.agg
+
+  # Partial overlap - recurse
+  left-result  = query(left, lo, hi)
+  right-result = query(right, lo, hi)
+  this-result  = if lo <= k <= hi then node.val else identity
+
+  return op(left-result, op(this-result, right-result))
+```
+
+The key insight: when a subtree is entirely within the query range, we use its pre-computed aggregate instead of visiting all nodes.
+
+Complexity: O(log n) for both queries and updates.
+
+## Fuzzy Lookup: Nearest Neighbor
 
 Fuzzy collections find the closest element when an exact match doesn't exist.
 
@@ -242,27 +463,70 @@ Step 3: Compare distances
 
 When equidistant, the tiebreaker (`:< `or `:>`) determines preference.
 
-Custom distance functions work when the nearest element by distance is always a sort-order neighbor (floor or ceiling).
+**Invariant:** The nearest element by distance is always a sort-order neighbor (floor or ceiling). This allows O(log n) lookup via split.
 
 Complexity: O(log n).
+
+## Handling Duplicates: Sequence Numbers
+
+Both `ordered-multiset` and `priority-queue` allow duplicate values. They distinguish duplicates using an internal sequence counter.
+
+### Multiset Entry Structure
+
+```
+Logical view: [3, 1, 4, 1, 5, 1]  (three 1s)
+
+Internal storage: [value, seqnum] pairs
+  [1, 0]  ← first 1 inserted
+  [1, 3]  ← second 1 inserted (seqnum 3)
+  [1, 5]  ← third 1 inserted (seqnum 5)
+  [3, 1]
+  [4, 2]
+  [5, 4]
+```
+
+Comparison: first by value, then by seqnum. This provides:
+- Stable insertion order for equal values
+- O(log n) operations (each entry is unique)
+- FIFO behavior for duplicates
+
+### Priority Queue Entry Structure
+
+```
+Entries: [priority, seqnum, value]
+
+Insert order: push(5, :a), push(3, :b), push(5, :c)
+
+Internal storage:
+  [3, 1, :b]  ← lowest priority first
+  [5, 0, :a]  ← first 5 inserted
+  [5, 2, :c]  ← second 5 inserted
+
+peek returns :b (priority 3)
+```
+
+Seqnum ensures FIFO ordering among equal priorities.
 
 ## Complexity Summary
 
 | Operation | Time | Notes |
 |-----------|------|-------|
-| Lookup | O(log n) | |
-| Insert | O(log n) | O(log n) path copying |
-| Delete | O(log n) | O(log n) path copying |
+| Lookup | O(log n) | All collections |
+| Insert | O(log n) | Path copying |
+| Delete | O(log n) | Path copying |
 | nth | O(log n) | Via subtree weights |
-| rank | O(log n) | Via subtree weights |
+| rank | O(log n) | `ranked-set` only |
 | Split | O(log n) | |
-| Join | O(log n) | |
-| Union | O(m log(n/m+1)) | m ≤ n |
-| Intersection | O(m log(n/m+1)) | m ≤ n |
-| Difference | O(m log(n/m+1)) | m ≤ n |
-| Parallel fold | O(n/p + log n) | p = processors |
+| Join | O(log n) | Universal primitive |
+| Union | O(m log(n/m+1)) | Work-optimal, fork-join parallel |
+| Intersection | O(m log(n/m+1)) | Work-optimal, fork-join parallel |
+| Difference | O(m log(n/m+1)) | Work-optimal, fork-join parallel |
+| Batch construction | O(n) | Via parallel fold + union |
+| Parallel fold | O(n/p + log²n) | p = processors |
 | Interval query | O(log n + k) | k = result size |
-| Fuzzy lookup | O(log n) | |
+| Range-map assoc | O(k log n) | k = overlapping ranges |
+| Segment-tree query | O(log n) | Pre-computed aggregates |
+| Fuzzy lookup | O(log n) | Split + floor/ceiling |
 
 ## References
 
