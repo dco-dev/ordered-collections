@@ -18,7 +18,8 @@
             [com.dean.ordered-collections.tree.segment-tree         :as segtree]
             [com.dean.ordered-collections.tree.tree                 :as tree])
   (:import  [com.dean.ordered_collections.tree.ordered_set OrderedSet]
-            [com.dean.ordered_collections.tree.ordered_map OrderedMap]))
+            [com.dean.ordered_collections.tree.ordered_map OrderedMap]
+            [com.dean.ordered_collections.tree.root INodeCollection IOrderedCollection IBalancedCollection]))
 
 (set! *warn-on-reflection* true)
 
@@ -102,18 +103,15 @@
      (superset? (ordered-set [1 2 3]) (ordered-set [1 2]))  ; true"
   proto/superset)
 
-;; Keep old names for backwards compatibility
-(def subset subset?)
-(def superset superset?)
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Ordered Set
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Parallel construction chunk size for batch operations.
-;; Note: Parallel fold construction only works with the default comparator.
-;; Custom comparators use sequential insertion (still O(n log n) but single-threaded).
-;; This is because dynamic bindings don't propagate to ForkJoinPool workers.
+;; Parallel fold requires the collection to implement CollFold (e.g., vectors).
+;; Custom comparator functions (ordered-set-by, etc.) pass (seq coll) to force
+;; sequential construction, because dynamic bindings don't propagate to r/fold
+;; worker threads and the comparator would be lost.
 
 (def ^:private +chunk-size+ 2048)
 
@@ -342,13 +340,13 @@
           (fn [m1 m2]
             (if (and (instance? com.dean.ordered_collections.tree.ordered_map.OrderedMap m1)
                      (instance? com.dean.ordered_collections.tree.ordered_map.OrderedMap m2)
-                     (.isCompatible ^com.dean.ordered_collections.tree.root.IOrderedCollection m1 m2))
+                     (.isCompatible ^IOrderedCollection m1 m2))
               ;; Both are compatible ordered-maps: use fast tree merge
-              (let [^com.dean.ordered_collections.tree.root.INodeCollection m1c m1
-                    ^com.dean.ordered_collections.tree.root.INodeCollection m2c m2
+              (let [^INodeCollection m1c m1
+                    ^INodeCollection m2c m2
                     root1 (.getRoot m1c)
                     root2 (.getRoot m2c)
-                    cmp (.getCmp ^com.dean.ordered_collections.tree.root.IOrderedCollection m1)
+                    cmp (.getCmp ^IOrderedCollection m1)
                     use-parallel? (>= (+ (tree/node-size root1) (tree/node-size root2))
                                       tree/+parallel-threshold+)]
                 (binding [order/*compare* cmp]
@@ -834,10 +832,10 @@
      (split-key (ordered-map [[1 :a] [2 :b] [3 :c]]) 2)
      ;=> [{1 :a} [2 :b] {3 :c}]"
   [coll k]
-  (let [root   (.getRoot ^com.dean.ordered_collections.tree.root.INodeCollection coll)
-        cmp    (.getCmp ^com.dean.ordered_collections.tree.root.IOrderedCollection coll)
-        stitch (.getStitch ^com.dean.ordered_collections.tree.root.IBalancedCollection coll)
-        alloc  (.getAllocator ^com.dean.ordered_collections.tree.root.INodeCollection coll)]
+  (let [root   (.getRoot ^INodeCollection coll)
+        cmp    (.getCmp ^IOrderedCollection coll)
+        stitch (.getStitch ^IBalancedCollection coll)
+        alloc  (.getAllocator ^INodeCollection coll)]
     (binding [order/*compare* cmp]
       (let [[l present r] (tree/node-split root k)
             ;; Reconstruct collections of the same type
@@ -872,10 +870,10 @@
      (split-at (ordered-set [1 2 3 4 5]) 2)
      ;=> [#{1 2} #{3 4 5}]"
   [coll ^long i]
-  (let [root   (.getRoot ^com.dean.ordered_collections.tree.root.INodeCollection coll)
-        cmp    (.getCmp ^com.dean.ordered_collections.tree.root.IOrderedCollection coll)
-        stitch (.getStitch ^com.dean.ordered_collections.tree.root.IBalancedCollection coll)
-        alloc  (.getAllocator ^com.dean.ordered_collections.tree.root.INodeCollection coll)
+  (let [root   (.getRoot ^INodeCollection coll)
+        cmp    (.getCmp ^IOrderedCollection coll)
+        stitch (.getStitch ^IBalancedCollection coll)
+        alloc  (.getAllocator ^INodeCollection coll)
         n      (tree/node-size root)]
     (cond
       (<= i 0) [(empty coll) coll]
@@ -918,10 +916,10 @@
      (subrange (ordered-set (range 10)) > 5)
      ;=> #{6 7 8 9}"
   ([coll test key]
-   (let [root   (.getRoot ^com.dean.ordered_collections.tree.root.INodeCollection coll)
-         cmp    (.getCmp ^com.dean.ordered_collections.tree.root.IOrderedCollection coll)
-         stitch (.getStitch ^com.dean.ordered_collections.tree.root.IBalancedCollection coll)
-         alloc  (.getAllocator ^com.dean.ordered_collections.tree.root.INodeCollection coll)]
+   (let [root   (.getRoot ^INodeCollection coll)
+         cmp    (.getCmp ^IOrderedCollection coll)
+         stitch (.getStitch ^IBalancedCollection coll)
+         alloc  (.getAllocator ^INodeCollection coll)]
      (binding [order/*compare* cmp]
        (let [result-root (cond
                            (or (identical? test <) (identical? test <=))
@@ -978,8 +976,8 @@
      (nearest (ordered-map [[1 :a] [3 :b] [5 :c]]) <= 4)
      ;=> [3 :b]"
   [coll test k]
-  (let [root (.getRoot ^com.dean.ordered_collections.tree.root.INodeCollection coll)
-        ^java.util.Comparator cmp (.getCmp ^com.dean.ordered_collections.tree.root.IOrderedCollection coll)
+  (let [root (.getRoot ^INodeCollection coll)
+        ^java.util.Comparator cmp (.getCmp ^IOrderedCollection coll)
         format-result (fn [n]
                         (if (instance? OrderedSet coll)
                           (node/-k n)

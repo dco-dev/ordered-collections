@@ -285,7 +285,7 @@ The same split capability enables parallel aggregation:
    [10][30][60][90]           combine(result1, result2)
 ```
 
-When a subtree exceeds a threshold size, we submit it to ForkJoinPool. This gives ~2x speedup on large collections.
+When a subtree exceeds a threshold size, `r/fold` submits it to a worker thread. This gives ~2x speedup on large collections.
 
 ## Interval Tree Augmentation
 
