@@ -11,11 +11,11 @@ Added `long-ordered-set` and `long-ordered-map` that use `Long.compare` instead 
 
 **Usage:**
 ```clojure
-(require '[com.dean.ordered-collections.core :as dean])
+(require '[com.dean.ordered-collections.core :as oc])
 
 ;; For Long/Integer keys
-(def s (dean/long-ordered-set (range 100000)))
-(def m (dean/long-ordered-map (map #(vector % %) (range 100000))))
+(def s (oc/long-ordered-set (range 100000)))
+(def m (oc/long-ordered-map (map #(vector % %) (range 100000))))
 ```
 
 ### 2. Efficient Direct Seq Types (DONE)
@@ -33,26 +33,46 @@ Added `KeySeq`, `EntrySeq`, `KeySeqReverse`, `EntrySeqReverse` that implement `I
 - `Iterable` for `RT.toArray` compatibility
 
 ### 3. Parallel Set Operations (DONE)
-Set operations (union, intersection, difference) now use fork-join parallelism for large sets (>10K elements).
+Set operations (union, intersection, difference) use fork-join parallelism via the divide-and-conquer algorithm from Blelloch et al.
 
 **Results:**
 - Union: 7.8x faster than clojure.set
 - Intersection: 9.0x faster
 - Difference: 7.7x faster
 
-### 4. Parallel Map Merge (DONE)
+**Algorithm:** Split B at root(A), recurse on left/right subtrees in parallel, join results. See `algorithms.md` for details.
+
+### 4. Parallel Construction (DONE)
+Batch construction via `r/fold` + `union` achieves O(n) work vs O(n log n) sequential insertion.
+
+**Results:**
+- `ordered-set`: 25% faster than `sorted-set` for batch construction
+- `ordered-map`: matches `sorted-map` (was 2.2x slower before optimization)
+
+### 5. Parallel Map Merge (DONE)
 Added `ordered-merge-with` for fast map merging with conflict resolution.
 
 **Results:**
 - ~5x faster than `clojure.core/merge-with` for large ordered-maps
 
-### 5. Interval Tree Construction Fix (DONE)
+### 6. Interval Tree Construction Fix (DONE)
 Fixed interval-set and interval-map construction to use `reduce` instead of `r/fold`.
 
 **Reason:**
 - `r/fold` runs in parallel worker threads that don't inherit dynamic bindings
 - The `*t-join*` binding (which selects `IntervalNode` vs `SimpleNode`) was lost in workers
 - This caused `ClassCastException: SimpleNode cannot be cast to IAugmentedNode` for collections >2048 elements
+
+### 7. Range Map with Guava Semantics (DONE)
+Implemented `range-map` compatible with Guava's TreeRangeMap:
+- `assoc`: inserts range, carving out overlaps (does NOT coalesce)
+- `assoc-coalescing`: inserts and merges adjacent same-value ranges
+- `get-entry`: returns `[range value]` for point lookup
+- `range-remove`: removes all mappings in a range
+
+**Performance:** O(k log n) where k = overlapping ranges. See `algorithms.md` for carving/coalescing algorithms.
+
+---
 
 ## Removed/Rejected Optimizations
 
@@ -63,6 +83,12 @@ Previously added `transient`/`persistent!` support, but **removed** because:
 - Added API complexity without meaningful performance benefit
 - True transient optimization would require mutable tree nodes with ownership tracking
 
+**Future consideration:** A proper transient implementation would need:
+- Mutable node types with ownership bits
+- Copy-on-write when shared
+- Thread-local ownership tracking
+- Significant implementation complexity
+
 ### ArrayLeaf Optimization (REMOVED)
 Previously experimented with `ArrayLeaf` for cache-friendly leaf storage, but **removed** because:
 - Added code complexity
@@ -71,82 +97,68 @@ Previously experimented with `ArrayLeaf` for cache-friendly leaf storage, but **
 
 ---
 
-## Current Performance Gaps
+## Current Performance Profile
 
-Based on rigorous benchmarks at N=100,000:
+Based on benchmarks at N=100,000:
+
+### Where We're Slower
 
 | Operation | vs sorted-* | Root Cause |
 |-----------|-------------|------------|
-| Lookup (get) | 38% slower | Deeper tree (log₁.₇n vs log₂n) |
-| Lookup (contains?) | 19% slower | Same as above |
-| Lookup (with < comparator) | 17% slower | Comparator overhead similar |
+| Lookup (get) | ~10% slower | Deeper tree (weight-balanced vs red-black) |
 | Sequential insert | 1.4-2.3× slower | Heavier rebalancing, path-copying |
-| Seq iteration (dorun) | 17% slower | Enumerator frame allocation |
+| Seq iteration (dorun) | ~17% slower | Enumerator frame allocation |
 
 ### Where We're Faster
 
 | Operation | vs sorted-* | Why |
 |-----------|-------------|-----|
-| Batch construction | **18% faster** | Parallel fold for construction |
+| Batch construction | **25% faster** (sets) | Parallel fold + union |
 | Direct reduce | **2.1x faster** | IReduceInit with tree traversal |
 | Reduce over seq | **27% faster** | IReduceInit on seq types |
-| First/last | **13,600x faster** | O(log n) vs O(n) |
-| Set operations | **6-7x faster** | Parallel divide-and-conquer |
+| First/last | **~7000x faster** | O(log n) vs O(n) |
+| Set operations | **6-9x faster** | Parallel divide-and-conquer |
 | Count on seq | **O(1) vs O(n)** | Counted seqs track size |
+| nth access | **O(log n) vs O(n)** | Subtree weights |
 
-## Optimization Strategies
+### Unique Capabilities
 
-### Tier 1: High Impact, Low Risk
+Operations not available in sorted-set/sorted-map:
+- `nth` positional access: O(log n)
+- `rank` (ranked-set only): O(log n)
+- Parallel `r/fold`: ~2x speedup on large collections
+- Interval queries: O(log n + k)
+- Fuzzy/nearest lookup: O(log n)
+- Range map with carving/coalescing
+- Segment tree range aggregates
 
-#### 1.1 Specialize Common Comparators (DONE)
-**Impact: 15-25% faster for Long/Integer keys**
-**Effort: Medium**
+---
 
-Avoid virtual dispatch for common types:
+## Future Optimization Strategies
 
-```clojure
-;; Current: always goes through Comparator interface
-(.compare ^Comparator cmp k key)
+### Tier 1: Code Quality (In Progress)
 
-;; Optimized: inline for primitives
-(defmacro fast-compare [cmp k1 k2]
-  `(let [k1# ~k1 k2# ~k2]
-     (cond
-       (and (instance? Long k1#) (instance? Long k2#))
-       (Long/compare (long k1#) (long k2#))
+#### 1.1 Collection Type Consolidation
+**Status:** Planned (see `.claude/plans/squishy-leaping-oasis.md`)
+**Impact:** ~700-800 lines removed, improved maintainability
+**Effort:** Medium
 
-       (and (instance? String k1#) (instance? String k2#))
-       (.compareTo ^String k1# k2#)
+Reduce duplicated code across 6 collection types using compile-time macros:
+- `ordered_set.clj`, `ordered_map.clj`
+- `interval_set.clj`, `interval_map.clj`
+- `fuzzy_set.clj`, `fuzzy_map.clj`
 
-       :else
-       (.compare ~cmp k1# k2#))))
-```
-
-Or use protocol-based dispatch:
-
-```clojure
-(defprotocol FastCompare
-  (fast-cmp [k1 k2]))
-
-(extend-protocol FastCompare
-  Long
-  (fast-cmp [k1 k2] (Long/compare k1 k2))
-  String
-  (fast-cmp [k1 k2] (.compareTo k1 k2))
-  Object
-  (fast-cmp [k1 k2] (compare k1 k2)))
-```
+All share ~80% identical interface implementations. Factor into composable macros.
 
 ### Tier 2: Medium Impact, Medium Risk
 
 #### 2.1 Primitive-Specialized Collections
-**Impact: 30-50% faster for numeric keys/values**
-**Effort: High**
+**Impact:** 30-50% faster for numeric keys/values
+**Effort:** High
 
-Create specialized versions for common primitive types:
+Create specialized versions with unboxed primitives:
 
 ```clojure
-;; Specialized for long keys
 (deftype LongNode [^long k v l r ^long x]
   IBalancedNode (x [_] x)
   INode
@@ -154,10 +166,6 @@ Create specialized versions for common primitive types:
   (v [_] v)
   (l [_] l)
   (r [_] r))
-
-(defn long-ordered-set [coll]
-  ;; Uses LongNode internally, primitive comparison
-  ...)
 ```
 
 Benefits:
@@ -166,38 +174,29 @@ Benefits:
 - Better memory layout
 
 #### 2.2 Lazy/Batched Rebalancing
-**Impact: 20-30% faster sequential insert**
-**Effort: Medium**
+**Impact:** 20-30% faster sequential insert
+**Effort:** Medium
 
 Defer rebalancing for small imbalances:
 
 ```clojure
-;; Current: rebalance on every insert
-(stitch-wb create key val (add l) r)
-
-;; Proposed: skip if imbalance is small
 (defn stitch-wb-lazy [create k v l r]
-  (let [lw (node-weight l)
-        rw (node-weight r)
-        imbalance (/ (max lw rw) (inc (min lw rw)))]
+  (let [imbalance (/ (max lw rw) (inc (min lw rw)))]
     (if (< imbalance +lazy-threshold+)  ;; e.g., 2.5
       (create k v l r)  ;; Skip rotation
       (stitch-wb create k v l r))))  ;; Full rebalance
 ```
 
-Then rebalance on next access or periodically.
+Trade-off: May affect worst-case bounds. Requires analysis.
 
 #### 2.3 Reduce Tree Depth via B-tree Hybrid
-**Impact: 20% faster lookup**
-**Effort: High**
+**Impact:** 20% faster lookup
+**Effort:** High
 
-Instead of binary nodes, use nodes with 4-8 children (B-tree style):
+Use nodes with 4-8 children (B-tree style):
 
 ```clojure
-(deftype BTreeNode [^objects keys ^objects vals ^objects children ^int n]
-  ;; n keys, n+1 children
-  ;; Binary search within node, then descend
-  )
+(deftype BTreeNode [^objects keys ^objects vals ^objects children ^int n])
 ```
 
 Benefits:
@@ -207,66 +206,44 @@ Benefits:
 Trade-offs:
 - More complex implementation
 - May hurt insert/delete performance
+- Harder to maintain weight-balance invariant
 
 ### Tier 3: Lower Impact or Experimental
 
-#### 3.1 SIMD-Friendly Binary Search
-**Impact: 5-10% faster ArrayLeaf lookup**
-**Effort: Low**
+#### 3.1 Path Compression
+**Impact:** 10% faster for sparse trees
+**Effort:** Medium
 
-Use Java's Arrays.binarySearch which may use SIMD:
+Collapse chains of single-child nodes.
 
-```clojure
-;; Current custom binary search
-(loop [lo 0 hi (dec n)] ...)
+#### 3.2 SIMD-Friendly Binary Search
+**Impact:** 5-10% faster internal search
+**Effort:** Low
 
-;; Proposed: leverage JVM optimizations
-(java.util.Arrays/binarySearch ks 0 n k cmp)
-```
+Use `java.util.Arrays/binarySearch` which may leverage JVM optimizations.
 
-#### 3.2 Path Compression
-**Impact: 10% faster for sparse trees**
-**Effort: Medium**
-
-Collapse chains of single-child nodes:
-
-```clojure
-;; Before: A -> B -> C (each with one child)
-;; After: A[B,C] -> leaf (compressed path)
-```
-
-#### 3.3 Interned Small Values
-**Impact: 5% memory reduction**
-**Effort: Low**
-
-Intern common small integer keys to reduce allocations:
-
-```clojure
-(def ^:private small-ints (mapv identity (range -128 128)))
-(defn intern-key [k]
-  (if (and (int? k) (<= -128 k 127))
-    (nth small-ints (+ k 128))
-    k))
-```
+---
 
 ## Implementation Priority
 
-### Phase 1: Quick Wins (1-2 weeks)
-1. Enable ArrayLeaf by default (measure first)
-2. Specialize Long/Integer comparators
-3. Add SIMD-friendly binary search
+### Phase 1: Code Quality
+1. Collection type consolidation (macros)
+2. Remove dead code paths
+3. Improve test coverage
 
-### Phase 2: Transient Mode (2-3 weeks)
-1. Implement `TransientOrderedSet`
-2. Implement `TransientOrderedMap`
-3. Add `transient`/`persistent!` to public API
+### Phase 2: Performance (If Needed)
+1. Primitive-specialized `long-ordered-set` improvements
+2. Lazy rebalancing experiments
+3. Profile-guided optimization for hot paths
 
-### Phase 3: Advanced Optimizations (4-6 weeks)
-1. Primitive-specialized collections (`long-ordered-set`, etc.)
-2. Lazy rebalancing mode
-3. B-tree hybrid for ultra-fast lookup
+### Phase 3: Advanced (Research)
+1. B-tree hybrid experiments
+2. True transient implementation with mutable nodes
+3. SIMD exploration
 
-## Benchmarking Plan
+---
+
+## Benchmarking
 
 For each optimization:
 
@@ -275,7 +252,7 @@ For each optimization:
 3. **Memory profile** to catch regressions
 4. **Compare against** sorted-set, data.avl, Scala TreeSet
 
-Key benchmarks to run:
+Key benchmarks:
 ```clojure
 (require '[criterium.core :as crit])
 
@@ -295,23 +272,29 @@ Key benchmarks to run:
 (crit/bench (reduce + my-set))
 ```
 
+---
+
 ## Risk Assessment
 
 | Optimization | Risk | Mitigation |
 |--------------|------|------------|
-| ArrayLeaf default | Low | Extensive benchmarks first |
-| Transients | Medium | Follow Clojure's proven design |
-| Lazy rebalancing | Medium | May affect worst-case bounds |
+| Collection consolidation | Low | Macro-only, tests verify equivalence |
 | Primitive specialization | Low | Additive, doesn't change core |
+| Lazy rebalancing | Medium | May affect worst-case bounds |
 | B-tree hybrid | High | Major architecture change |
+| True transients | High | Complex ownership tracking |
 
-## Expected Outcomes
+---
 
-After Phase 1+2:
-- Sequential insert: **1.2-1.5× sorted-set** (from 2.3× slower)
-- Lookup: **within 3%** of sorted-set (from 7% slower)
-- Delete: **within 15%** of sorted-set (from 38% slower)
+## Documentation Status
 
-After Phase 3:
-- Primitive keys: **faster than sorted-set** for long/int
-- Lookup-heavy: **competitive with HashMap** for small N
+Documentation has been significantly improved:
+
+| Document | Status |
+|----------|--------|
+| `README.md` | Updated with performance claims, examples |
+| `algorithms.md` | Comprehensive coverage of all algorithms |
+| `when-to-use.md` | Decision matrix, workload recommendations |
+| `cookbook.md` | Practical examples combining data structures |
+| `zorp-example.md` | Extended case study |
+| API docstrings | Updated in `core.clj` |
