@@ -812,6 +812,48 @@
         (cmp k (-k this)) (recur (fwd this) best)
         true              (recur (rev this) this)))))
 
+(defn node-predecessor
+  "Find the predecessor of key k (greatest element strictly less than k).
+   Returns the node, or nil if no predecessor exists.
+   O(log n) - single traversal that tracks the last right turn."
+  [n k]
+  (let [^Comparator cmp order/*compare*]
+    (loop [n n
+           predecessor nil]
+      (if (leaf? n)
+        predecessor
+        (let [c (.compare cmp k (-k n))]
+          (cond
+            ;; k < current: go left, predecessor unchanged
+            (neg? c) (recur (-l n) predecessor)
+            ;; k > current: current is potential predecessor, go right
+            (pos? c) (recur (-r n) n)
+            ;; k = current: predecessor is max of left subtree, if any
+            :else (if (leaf? (-l n))
+                    predecessor
+                    (node-greatest (-l n)))))))))
+
+(defn node-successor
+  "Find the successor of key k (least element strictly greater than k).
+   Returns the node, or nil if no successor exists.
+   O(log n) - single traversal that tracks the last left turn."
+  [n k]
+  (let [^Comparator cmp order/*compare*]
+    (loop [n n
+           successor nil]
+      (if (leaf? n)
+        successor
+        (let [c (.compare cmp k (-k n))]
+          (cond
+            ;; k > current: go right, successor unchanged
+            (pos? c) (recur (-r n) successor)
+            ;; k < current: current is potential successor, go left
+            (neg? c) (recur (-l n) n)
+            ;; k = current: successor is min of right subtree, if any
+            :else (if (leaf? (-r n))
+                    successor
+                    (node-least (-r n)))))))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interval Tree Augmentation and Search
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
