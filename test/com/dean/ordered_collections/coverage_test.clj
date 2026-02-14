@@ -336,5 +336,5 @@
     (is (= #{1 2} (intersection os (ordered-set [1 2 4]))))
     (is (= #{1 2 3 4} (union os (ordered-set [2 3 4]))))
     (is (= #{3} (difference os (ordered-set [1 2]))))
-    (is (subset os (ordered-set [1 2 3 4 5])))
-    (is (superset (ordered-set [1 2 3 4 5]) os))))
+    (is (subset? os (ordered-set [1 2 3 4 5])))
+    (is (superset? (ordered-set [1 2 3 4 5]) os))))

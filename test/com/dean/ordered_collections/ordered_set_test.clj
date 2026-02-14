@@ -48,8 +48,8 @@
                 (doseq [[theirs ours] [[set/intersection intersection]
                                        [set/union        union]
                                        [set/difference   difference]
-                                       [set/subset?      subset]
-                                       [set/superset?    superset]]]
+                                       [set/subset?      subset?]
+                                       [set/superset?    superset?]]]
                   (is (= (theirs (set x) (set y)) (ours x y)))
                   (is (= (theirs (set y) (set x)) (ours y x)))
                   (is (= (theirs (set x) (set y)) (ours x (set y))))
@@ -202,6 +202,9 @@
       (is (= 5 (nearest s < 6)))
       (is (= 5 (nearest s < 5.5)))
       (is (nil? (nearest s < 1)))
+      ;; < when key exists (predecessor test)
+      (is (= 3 (nearest s < 5)))   ; predecessor of 5 is 3
+      (is (= 7 (nearest s < 9)))   ; predecessor of 9 is 7
       ;; <= - greatest less than or equal
       (is (= 5 (nearest s <= 5)))
       (is (= 5 (nearest s <= 6)))
@@ -209,6 +212,9 @@
       ;; > - least greater than
       (is (= 7 (nearest s > 6)))
       (is (nil? (nearest s > 9)))
+      ;; > when key exists (successor test)
+      (is (= 7 (nearest s > 5)))   ; successor of 5 is 7
+      (is (= 3 (nearest s > 1)))   ; successor of 1 is 3
       ;; >= - least greater than or equal
       (is (= 5 (nearest s >= 5)))
       (is (= 7 (nearest s >= 6)))
@@ -217,6 +223,8 @@
   (testing "nearest on ordered-map"
     (let [m (ordered-map [[1 :a] [3 :b] [5 :c] [7 :d] [9 :e]])]
       (is (= [5 :c] (nearest m < 6)))
+      (is (= [3 :b] (nearest m < 5)))   ; predecessor test
       (is (= [5 :c] (nearest m <= 5)))
       (is (= [7 :d] (nearest m > 6)))
+      (is (= [7 :d] (nearest m > 5)))   ; successor test
       (is (= [5 :c] (nearest m >= 5))))))
