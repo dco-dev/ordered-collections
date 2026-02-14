@@ -160,43 +160,61 @@
       (is (not (empty? (conflicts-during room-a 1430 1530)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; 4. IP Address Range Lookup
+;; 4. Rate Limiter with Tiered Limits
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn ip->long [ip-str]
-  (let [parts (map #(Long/parseLong %) (str/split ip-str #"\."))]
-    (reduce (fn [acc part] (+ (bit-shift-left acc 8) part)) 0 parts)))
+(def tier-limits
+  (oc/fuzzy-map {0    10      ; bronze: 10 req/min
+                 100  50      ; silver: 50 req/min
+                 500  200     ; gold: 200 req/min
+                 2000 1000})) ; platinum: 1000 req/min
 
-(defn make-ip-database []
-  (oc/interval-map))
+(defn make-rate-limiter []
+  {:request-log (oc/ordered-map)})
 
-(defn add-range [db start-ip end-ip info]
-  (assoc db [(ip->long start-ip) (ip->long end-ip)] info))
+(defn get-limit [user-points]
+  (tier-limits user-points))
 
-(defn lookup-ip [db ip]
-  (first (db (ip->long ip))))
+(defn requests-in-window [limiter user-id now window-ms]
+  (let [cutoff (- now window-ms)
+        recent (subseq (:request-log limiter) >= cutoff)]
+    (count (filter #(= user-id (val %)) recent))))
 
-(deftest ip-address-range-lookup-test
-  (let [geo-db (-> (make-ip-database)
-                   (add-range "10.0.0.0" "10.255.255.255"
-                              {:type :private :name "Private Class A"})
-                   (add-range "192.168.0.0" "192.168.255.255"
-                              {:type :private :name "Private Class C"})
-                   (add-range "8.8.0.0" "8.8.255.255"
-                              {:type :public :name "Google DNS" :country "US"}))]
+(defn allow-request? [limiter user-id user-points now]
+  (let [limit (get-limit user-points)
+        recent-count (requests-in-window limiter user-id now 60000)]
+    (< recent-count limit)))
 
-    (testing "lookup private ranges"
-      (is (= {:type :private :name "Private Class C"}
-             (lookup-ip geo-db "192.168.1.100")))
-      (is (= {:type :private :name "Private Class A"}
-             (lookup-ip geo-db "10.0.0.1"))))
+(defn record-request [limiter user-id now]
+  (update limiter :request-log assoc now user-id))
 
-    (testing "lookup public ranges"
-      (is (= {:type :public :name "Google DNS" :country "US"}
-             (lookup-ip geo-db "8.8.8.8"))))
+(deftest rate-limiter-test
+  (testing "tier limits via fuzzy-map"
+    (is (= 10 (get-limit 50)))     ; bronze
+    (is (= 50 (get-limit 100)))    ; silver exact
+    (is (= 50 (get-limit 150)))    ; silver (closer to 100 than 500)
+    (is (= 200 (get-limit 750)))   ; gold
+    (is (= 1000 (get-limit 2000)))) ; platinum
 
-    (testing "lookup unknown IP"
-      (is (nil? (lookup-ip geo-db "1.2.3.4"))))))
+  (testing "request tracking"
+    (let [limiter (-> (make-rate-limiter)
+                      (record-request "user-1" 1000)
+                      (record-request "user-1" 2000)
+                      (record-request "user-2" 3000))]
+      (is (= 2 (requests-in-window limiter "user-1" 60000 60000)))
+      (is (= 1 (requests-in-window limiter "user-2" 60000 60000)))))
+
+  (testing "allow-request? respects limits"
+    (let [limiter (make-rate-limiter)
+          ;; Add 9 requests for bronze user (limit 10)
+          limiter (reduce (fn [l i] (record-request l "bronze-user" (* i 1000)))
+                          limiter (range 9))]
+      ;; 9 requests, limit 10 -> allowed
+      (is (allow-request? limiter "bronze-user" 50 60000))
+      ;; Add one more
+      (let [limiter (record-request limiter "bronze-user" 9000)]
+        ;; 10 requests, limit 10 -> not allowed
+        (is (not (allow-request? limiter "bronze-user" 50 60000)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 5. Parallel Aggregation
@@ -303,7 +321,33 @@
       (is (= 60 (:sum (window-stats w)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; 8. Database Index Simulation
+;; 8. Range Aggregate Queries (Segment Tree)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest segment-tree-test
+  (let [sales (oc/segment-tree + 0
+                {0 1200, 1 1500, 2 1100, 3 1800, 4 2200, 5 1900, 6 1600})]
+
+    (testing "range sum queries"
+      (is (= (+ 1100 1800 2200 1900) (oc/query sales 2 5)))  ; days 2-5
+      (is (= (+ 1200 1500 1100 1800 2200 1900 1600) (oc/query sales 0 6))))  ; all
+
+    (testing "update preserves structure"
+      (let [updated (assoc sales 3 2500)]
+        (is (= (+ 1100 2500 2200 1900) (oc/query updated 2 5)))))
+
+    (testing "max tree"
+      (let [peaks (oc/segment-tree max 0
+                    {0 1200, 1 1500, 2 1100, 3 1800, 4 2200, 5 1900, 6 1600})]
+        (is (= 2200 (oc/query peaks 0 6)))    ; max across all
+        (is (= 1500 (oc/query peaks 0 2)))))  ; max for days 0-2
+
+    (testing "sum-tree shorthand"
+      (let [st (oc/sum-tree {0 100, 1 200, 2 300, 3 400})]
+        (is (= 900 (oc/query st 1 3)))))))    ; 200 + 300 + 400
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 9. Database Index Simulation
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn make-index []
@@ -348,7 +392,7 @@
         (is (= #{"user-3"} (index-lookup idx' 25)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; 9. Fuzzy Lookup / Nearest Neighbor
+;; 10. Fuzzy Lookup / Nearest Neighbor
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftest fuzzy-lookup-test
@@ -390,7 +434,7 @@
       (is (== 3 dist)))))  ; use == for numeric equality
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; 10. Splitting Collections
+;; 11. Splitting Collections
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftest splitting-collections-test
@@ -425,7 +469,7 @@
         (is (= [1000] (paginate prices 3 3)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; 11. Subrange Extraction
+;; 12. Subrange Extraction
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftest subrange-extraction-test
@@ -458,7 +502,7 @@
       (is (= 7 (count (oc/subrange ids >= 50 <= 80)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; 12. Floor/Ceiling Queries
+;; 13. Floor/Ceiling Queries
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftest floor-ceiling-queries-test

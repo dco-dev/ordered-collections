@@ -169,42 +169,56 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 4. IP Address Range Lookup
+## 4. Rate Limiter with Tiered Limits
 
-**Problem:** Map IP ranges to metadata (geolocation, ASN, rate limits).
+**Problem:** Implement a rate limiter where different user tiers have different limits, and track request counts in sliding time windows.
+
+**Combines:** `fuzzy-map` (tier lookup) + `ordered-map` (time-windowed request log) + `segment-tree` (fast count queries)
 
 ```clojure
-(defn ip->long [ip-str]
-  ;; "192.168.1.1" -> long
-  (let [parts (map #(Long/parseLong %) (clojure.string/split ip-str #"\."))]
-    (reduce (fn [acc part] (+ (bit-shift-left acc 8) part)) 0 parts)))
+;; Tier thresholds: points -> requests per minute
+(def tier-limits
+  (oc/fuzzy-map {0    10      ; bronze: 10 req/min
+                 100  50      ; silver: 50 req/min
+                 500  200     ; gold: 200 req/min
+                 2000 1000})) ; platinum: 1000 req/min
 
-(defn make-ip-database []
-  (oc/interval-map))
+(defn make-rate-limiter []
+  {:request-log (oc/ordered-map)   ; timestamp -> user-id
+   :user-counts (oc/segment-tree + 0 {})})  ; for range counting
 
-(defn add-range [db start-ip end-ip info]
-  (assoc db [(ip->long start-ip) (ip->long end-ip)] info))
+(defn get-limit [user-points]
+  (tier-limits user-points))
 
-(defn lookup-ip [db ip]
-  (first (db (ip->long ip))))
+(defn requests-in-window [limiter user-id now window-ms]
+  ;; Count requests in [now - window, now] using ordered-map range
+  (let [cutoff (- now window-ms)
+        recent (subseq (:request-log limiter) >= cutoff)]
+    (count (filter #(= user-id (val %)) recent))))
+
+(defn allow-request? [limiter user-id user-points now]
+  (let [limit (get-limit user-points)
+        recent-count (requests-in-window limiter user-id now 60000)]
+    (< recent-count limit)))
+
+(defn record-request [limiter user-id now]
+  (update limiter :request-log assoc now user-id))
 
 ;; Usage
-(def geo-db (-> (make-ip-database)
-                (add-range "10.0.0.0" "10.255.255.255"
-                           {:type :private :name "Private Class A"})
-                (add-range "192.168.0.0" "192.168.255.255"
-                           {:type :private :name "Private Class C"})
-                (add-range "8.8.0.0" "8.8.255.255"
-                           {:type :public :name "Google DNS" :country "US"})))
+(def limiter (make-rate-limiter))
 
-(lookup-ip geo-db "192.168.1.100")
-;; => {:type :private, :name "Private Class C"}
+;; Bronze user (50 points) gets 10 req/min
+(get-limit 50)   ;; => 10
 
-(lookup-ip geo-db "8.8.8.8")
-;; => {:type :public, :name "Google DNS", :country "US"}
+;; Gold user (750 points) gets 200 req/min
+(get-limit 750)  ;; => 200
+
+;; Check and record
+(allow-request? limiter "user-123" 750 1000000)  ;; => true
+(def limiter (record-request limiter "user-123" 1000000))
 ```
 
-**Why ordered-collections?** Interval-map handles the range lookup naturally.
+**Why this combination?** Fuzzy-map gives O(log n) tier lookup without exact key match. Ordered-map enables O(log n) time-window queries via `subseq`. Could add segment-tree for O(log n) count queries if needed.
 
 ---
 
@@ -326,7 +340,48 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 8. Database Index Simulation
+## 8. Range Aggregate Queries (Segment Tree)
+
+**Problem:** Answer "what is the sum/max/min of values from index a to b?" with efficient updates.
+
+```clojure
+;; Daily sales data
+(def sales
+  (oc/segment-tree + 0  ; operation and identity
+    {0 1200, 1 1500, 2 1100, 3 1800, 4 2200, 5 1900, 6 1600}))
+
+;; Query: total sales for days 2-5
+(oc/query sales 2 5)
+;; => 7000 (1100 + 1800 + 2200 + 1900)
+
+;; Query: total for entire week
+(oc/query sales 0 6)
+;; => 11300
+
+;; Update day 3's sales (O(log n) update, not rebuild)
+(def sales-updated (assoc sales 3 2500))
+(oc/query sales-updated 2 5)
+;; => 7700 (1100 + 2500 + 2200 + 1900)
+
+;; Track peak daily sales
+(def peaks (oc/segment-tree max 0 {0 1200, 1 1500, 2 1100, 3 1800, 4 2200, 5 1900, 6 1600}))
+(oc/query peaks 0 6)
+;; => 2200 (max across all days)
+
+(oc/query peaks 0 2)
+;; => 1500 (max for days 0-2)
+
+;; Shorthand for sum trees
+(def sum-tree (oc/sum-tree {0 100, 1 200, 2 300, 3 400}))
+(oc/query sum-tree 1 3)
+;; => 900 (200 + 300 + 400)
+```
+
+**Why ordered-collections?** O(log n) range queries and O(log n) updates. Linear scan would be O(n) per query.
+
+---
+
+## 9. Database Index Simulation
 
 **Problem:** Build a secondary index supporting range queries.
 
@@ -372,7 +427,7 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 9. Fuzzy Lookup / Nearest Neighbor
+## 10. Fuzzy Lookup / Nearest Neighbor
 
 **Problem:** Find the closest matching value when exact match doesn't exist.
 
@@ -411,7 +466,7 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 10. Splitting Collections
+## 11. Splitting Collections
 
 **Problem:** Partition a collection at a key or index for divide-and-conquer algorithms.
 
@@ -451,7 +506,7 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 11. Subrange Extraction
+## 12. Subrange Extraction
 
 **Problem:** Extract a contiguous range of elements by key bounds.
 
@@ -485,7 +540,7 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 12. Floor/Ceiling Queries
+## 13. Floor/Ceiling Queries
 
 **Problem:** Find the nearest element at or above/below a target.
 
