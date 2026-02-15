@@ -247,16 +247,16 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftest priority-queue-basic-coverage
-  (let [pq (priority-queue [5 3 8 1 9 2 7])]
-    (is (= 1 (peek pq)))
-    (is (= 2 (peek (pop pq))))
+  (let [pq (priority-queue [[5 :e] [3 :c] [8 :h] [1 :a] [9 :i] [2 :b] [7 :g]])]
+    (is (= [1 :a] (peek pq)))
+    (is (= [2 :b] (peek (pop pq))))
     (is (= 7 (count pq)))))
 
 (deftest priority-queue-push
-  (let [pq (priority-queue [5 3 8])]
+  (let [pq (priority-queue [[5 :e] [3 :c] [8 :h]])]
     ;; push adds value with given priority
     (let [pq2 (push pq 0 :zero)]
-      (is (= :zero (peek pq2)))
+      (is (= [0 :zero] (peek pq2)))
       (is (= 4 (count pq2))))))
 
 (deftest priority-queue-empty
@@ -266,13 +266,16 @@
     (is (= 0 (count pq)))))
 
 (deftest priority-queue-reduce
-  (let [pq (priority-queue [1 2 3 4 5])]
-    (is (= 15 (reduce + pq)))
-    (is (= 115 (reduce + 100 pq)))))
+  (let [pq (priority-queue [[1 10] [2 20] [3 30] [4 40] [5 50]])]
+    ;; reduce over [priority value] pairs
+    (is (= 15 (reduce (fn [acc [p _]] (+ acc p)) 0 pq)))
+    (is (= 150 (reduce (fn [acc [_ v]] (+ acc v)) 0 pq)))))
 
 (deftest priority-queue-fold
-  (let [pq (priority-queue (range 1000))]
-    (is (= (reduce + (range 1000)) (r/fold + pq)))))
+  (let [pairs (vec (for [i (range 1000)] [i i]))
+        pq (priority-queue pairs)]
+    (is (= (reduce + (range 1000))
+           (r/fold + (fn [acc [p _]] (+ acc p)) pq)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; OrderedMultiset Coverage Tests
@@ -323,7 +326,7 @@
   (is (some? (interval-set)))
   (is (some? (interval-map)))
   (is (some? (priority-queue [])))
-  (is (some? (priority-queue-by < [])))
+  (is (some? (priority-queue [] :comparator >)))
   (is (some? (ordered-multiset [])))
   (is (some? (ordered-multiset-by < [])))
   (is (some? (fuzzy-set [])))
