@@ -28,7 +28,29 @@ A collection of persistent sorted data structures for Clojure, built on weight-b
 (require '[com.dean.ordered-collections.core :as oc])
 ```
 
-The basic operation of this library is as a drop-in replacement for `clojure.core/sorted-set` and `clojure.core/sorted-map`.
+## Quick Start
+
+Use `ordered-set` and `ordered-map` exactly like `sorted-set` and `sorted-map`:
+
+```clojure
+;; Sets
+(def s (oc/ordered-set [3 1 4 1 5 9 2 6]))
+(s 4)           ;=> 4
+(s 7)           ;=> nil
+(conj s 0)      ;=> #{0 1 2 3 4 5 6 9}
+(disj s 4)      ;=> #{1 2 3 5 6 9}
+(first s)       ;=> 1
+(last s)        ;=> 9
+(subseq s > 3)  ;=> (4 5 6 9)
+
+;; Maps
+(def m (oc/ordered-map {:b 2 :a 1 :c 3}))
+(m :b)                  ;=> 2
+(assoc m :d 4)          ;=> {:a 1, :b 2, :c 3, :d 4}
+(subseq m >= :b <= :c)  ;=> ([:b 2] [:c 3])
+```
+
+That's it. All the functions you know work the same way. The difference is under the hood: faster set operations, O(log n) positional access, and parallel fold support.
 
 ### Key Features
 
