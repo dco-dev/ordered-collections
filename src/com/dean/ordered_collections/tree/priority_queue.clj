@@ -8,9 +8,10 @@
   Unlike ordered-map, allows duplicate priorities (elements are distinguished
   by insertion order via an internal sequence counter for stability)."
   (:require [clojure.core.reducers :as r :refer [coll-fold]]
-            [com.dean.ordered-collections.tree.node  :as node]
-            [com.dean.ordered-collections.tree.order :as order]
-            [com.dean.ordered-collections.tree.tree  :as tree])
+            [com.dean.ordered-collections.tree.node     :as node]
+            [com.dean.ordered-collections.tree.order    :as order]
+            [com.dean.ordered-collections.tree.protocol :as proto]
+            [com.dean.ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang RT]
             [java.util Comparator]))
 
@@ -147,10 +148,36 @@
     (.hashCode ^Object (vec (seq this))))
   (equals [this o]
     (and (instance? PriorityQueue o)
-         (.equiv this o))))
+         (.equiv this o)))
+
+  proto/PPriorityQueue
+  (pq-push [_ priority value]
+    (let [entry [priority seqnum value]
+          new-root (tree/node-add root entry entry cmp tree/node-create-weight-balanced)]
+      (PriorityQueue. new-root cmp (unchecked-inc seqnum) _meta)))
+  (pq-push-all [this pairs]
+    (reduce (fn [q [p v]] (proto/pq-push q p v)) this pairs))
+  (pq-peek-val [_]
+    (when-not (node/leaf? root)
+      (let [[_ _ v] (node/-k (tree/node-least root))]
+        v)))
+  (pq-peek-max [_]
+    (when-not (node/leaf? root)
+      (let [[p _ v] (node/-k (tree/node-greatest root))]
+        [p v])))
+  (pq-peek-max-val [_]
+    (when-not (node/leaf? root)
+      (let [[_ _ v] (node/-k (tree/node-greatest root))]
+        v)))
+  (pq-pop-max [_]
+    (if (node/leaf? root)
+      (throw (IllegalStateException. "Can't pop-max empty queue"))
+      (let [greatest (tree/node-greatest root)
+            new-root (tree/node-remove root (node/-k greatest) cmp tree/node-create-weight-balanced)]
+        (PriorityQueue. new-root cmp seqnum _meta)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Extended API
+;; Extended API (delegate to protocol)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn push
@@ -159,48 +186,36 @@
 
   Example:
     (push pq 1 :urgent)  ; priority 1, value :urgent"
-  [^PriorityQueue pq priority value]
-  (let [entry [priority (.-seqnum pq) value]
-        new-root (tree/node-add (.-root pq) entry entry (.-cmp pq) tree/node-create-weight-balanced)]
-    (PriorityQueue. new-root (.-cmp pq) (unchecked-inc (.-seqnum pq)) (.-_meta pq))))
+  [pq priority value]
+  (proto/pq-push pq priority value))
 
 (defn push-all
   "Add multiple [priority value] pairs to the queue. O(k log n).
 
   Example:
     (push-all pq [[1 :urgent] [5 :low] [2 :medium]])"
-  [^PriorityQueue pq pairs]
-  (reduce (fn [q [p v]] (push q p v)) pq pairs))
+  [pq pairs]
+  (proto/pq-push-all pq pairs))
 
 (defn peek-val
   "Return just the value of the minimum element, or nil if empty. O(log n)."
-  [^PriorityQueue pq]
-  (when-not (node/leaf? (.-root pq))
-    (let [[_ _ v] (node/-k (tree/node-least (.-root pq)))]
-      v)))
+  [pq]
+  (proto/pq-peek-val pq))
 
 (defn peek-max
   "Return [priority value] of the maximum element, or nil if empty. O(log n)."
-  [^PriorityQueue pq]
-  (when-not (node/leaf? (.-root pq))
-    (let [[p _ v] (node/-k (tree/node-greatest (.-root pq)))]
-      [p v])))
+  [pq]
+  (proto/pq-peek-max pq))
 
 (defn peek-max-val
   "Return just the value of the maximum element, or nil if empty. O(log n)."
-  [^PriorityQueue pq]
-  (when-not (node/leaf? (.-root pq))
-    (let [[_ _ v] (node/-k (tree/node-greatest (.-root pq)))]
-      v)))
+  [pq]
+  (proto/pq-peek-max-val pq))
 
 (defn pop-max
   "Remove and return a new queue without the maximum-priority element. O(log n)."
-  [^PriorityQueue pq]
-  (if (node/leaf? (.-root pq))
-    (throw (IllegalStateException. "Can't pop-max empty queue"))
-    (let [greatest (tree/node-greatest (.-root pq))
-          new-root (tree/node-remove (.-root pq) (node/-k greatest) (.-cmp pq) tree/node-create-weight-balanced)]
-      (PriorityQueue. new-root (.-cmp pq) (.-seqnum pq) (.-_meta pq)))))
+  [pq]
+  (proto/pq-pop-max pq))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Constructors
