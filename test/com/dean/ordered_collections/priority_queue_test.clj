@@ -11,21 +11,24 @@
       (is (thrown? IllegalStateException (pop pq)))))
 
   (testing "Single element"
-    (let [pq (oc/priority-queue [42])]
+    (let [pq (oc/priority-queue [[42 :val]])]
       (is (= 1 (count pq)))
-      (is (= 42 (peek pq)))
+      (is (= [42 :val] (peek pq)))
+      (is (= :val (oc/peek-val pq)))
       (is (= 0 (count (pop pq))))))
 
   (testing "Multiple elements - min heap"
-    (let [pq (oc/priority-queue [3 1 4 1 5 9 2 6])]
-      (is (= 8 (count pq)))
-      (is (= 1 (peek pq)))
-      (is (= [1 1 2 3 4 5 6 9] (seq pq)))))
+    (let [pq (oc/priority-queue [[3 :c] [1 :a] [4 :d] [1 :a2] [5 :e]])]
+      (is (= 5 (count pq)))
+      (is (= [1 :a] (peek pq)))
+      (is (= :a (oc/peek-val pq)))
+      ;; seq returns [priority value] pairs in order
+      (is (= [[1 :a] [1 :a2] [3 :c] [4 :d] [5 :e]] (vec (seq pq))))))
 
   (testing "Multiple elements - max heap"
-    (let [pq (oc/priority-queue [3 1 4 1 5] :comparator >)]
-      (is (= 5 (peek pq)))
-      (is (= [5 4 3 1 1] (seq pq))))))
+    (let [pq (oc/priority-queue [[3 :c] [1 :a] [5 :e]] :comparator >)]
+      (is (= [5 :e] (peek pq)))
+      (is (= [[5 :e] [3 :c] [1 :a]] (vec (seq pq)))))))
 
 (deftest priority-queue-push-pop
   (testing "Push with priority"
@@ -35,61 +38,72 @@
                  (oc/push 8 :eight)
                  (oc/push 1 :one))]
       (is (= 4 (count pq)))
-      (is (= :one (peek pq)))
-      (is (= [1 :one] (oc/peek-with-priority pq)))))
+      (is (= [1 :one] (peek pq)))
+      (is (= :one (oc/peek-val pq)))))
 
   (testing "Pop sequence"
-    (let [pq (oc/priority-queue [5 2 8 1 3])]
-      (is (= 1 (peek pq)))
+    (let [pq (oc/priority-queue [[5 :e] [2 :b] [8 :h] [1 :a] [3 :c]])]
+      (is (= [1 :a] (peek pq)))
       (let [pq2 (pop pq)]
-        (is (= 2 (peek pq2)))
+        (is (= [2 :b] (peek pq2)))
         (let [pq3 (pop pq2)]
-          (is (= 3 (peek pq3)))))))
+          (is (= [3 :c] (peek pq3)))))))
 
   (testing "Push-all"
     (let [pq (oc/push-all (oc/priority-queue [])
                           [[3 :c] [1 :a] [2 :b]])]
       (is (= 3 (count pq)))
-      (is (= :a (peek pq))))))
+      (is (= [1 :a] (peek pq)))
+      (is (= :a (oc/peek-val pq))))))
 
 (deftest priority-queue-max-operations
   (testing "peek-max and pop-max"
-    (let [pq (oc/priority-queue [3 1 4 1 5 9 2 6])]
-      (is (= 9 (oc/peek-max pq)))
+    (let [pq (oc/priority-queue [[3 :c] [1 :a] [9 :i] [6 :f]])]
+      (is (= [9 :i] (oc/peek-max pq)))
+      (is (= :i (oc/peek-max-val pq)))
       (let [pq2 (oc/pop-max pq)]
-        (is (= 7 (count pq2)))
-        (is (= 6 (oc/peek-max pq2)))))))
+        (is (= 3 (count pq2)))
+        (is (= [6 :f] (oc/peek-max pq2)))))))
 
 (deftest priority-queue-reduce
-  (testing "reduce"
-    (let [pq (oc/priority-queue [1 2 3 4 5])]
-      (is (= 15 (reduce + pq)))
-      (is (= 120 (reduce * pq)))))
+  (testing "reduce over [priority value] pairs"
+    (let [pq (oc/priority-queue [[1 10] [2 20] [3 30]])]
+      ;; reduce receives [priority value] pairs
+      (is (= 60 (reduce (fn [acc [_ v]] (+ acc v)) 0 pq)))
+      (is (= 6 (reduce (fn [acc [p _]] (+ acc p)) 0 pq)))))
 
   (testing "reduce with r/fold"
-    (let [pq (oc/priority-queue (range 1000))]
-      (is (= (reduce + (range 1000)) (r/fold + pq))))))
+    (let [pairs (vec (for [i (range 100)] [i (* i 10)]))
+          pq (oc/priority-queue pairs)]
+      (is (= (reduce + (map second pairs))
+             (r/fold + (fn [acc [_ v]] (+ acc v)) pq))))))
 
 (deftest priority-queue-nth
-  (testing "nth access"
-    (let [pq (oc/priority-queue [5 2 8 1 3])]
-      (is (= 1 (nth pq 0)))
-      (is (= 2 (nth pq 1)))
-      (is (= 3 (nth pq 2)))
-      (is (= 5 (nth pq 3)))
-      (is (= 8 (nth pq 4))))))
+  (testing "nth access returns [priority value]"
+    (let [pq (oc/priority-queue [[5 :e] [2 :b] [8 :h] [1 :a] [3 :c]])]
+      (is (= [1 :a] (nth pq 0)))
+      (is (= [2 :b] (nth pq 1)))
+      (is (= [3 :c] (nth pq 2)))
+      (is (= [5 :e] (nth pq 3)))
+      (is (= [8 :h] (nth pq 4))))))
 
 (deftest priority-queue-conj
-  (testing "conj (uses value as priority)"
+  (testing "conj takes [priority value] pair"
     (let [pq (-> (oc/priority-queue [])
-                 (conj 3)
-                 (conj 1)
-                 (conj 4))]
+                 (conj [3 :c])
+                 (conj [1 :a])
+                 (conj [4 :d]))]
       (is (= 3 (count pq)))
-      (is (= 1 (peek pq))))))
+      (is (= [1 :a] (peek pq))))))
 
 (deftest priority-queue-equality
   (testing "equality"
-    (let [pq1 (oc/priority-queue [1 2 3])
-          pq2 (oc/priority-queue [3 1 2])]
+    (let [pq1 (oc/priority-queue [[1 :a] [2 :b] [3 :c]])
+          pq2 (oc/priority-queue [[3 :c] [1 :a] [2 :b]])]
       (is (= pq1 pq2)))))
+
+(deftest priority-queue-stability
+  (testing "stable ordering for equal priorities"
+    (let [pq (oc/priority-queue [[1 :first] [1 :second] [1 :third]])]
+      ;; Elements with same priority should maintain insertion order
+      (is (= [[1 :first] [1 :second] [1 :third]] (vec (seq pq)))))))

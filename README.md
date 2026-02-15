@@ -82,7 +82,7 @@ That's it. All the functions you know work the same way. The difference is under
 | `(oc/range-map)` | Non-overlapping ranges (Guava TreeRangeMap) |
 | `(oc/segment-tree f identity coll)` | O(log n) range aggregate queries |
 | `(oc/ranked-set coll)` | Sorted set with O(log n) rank and nth |
-| `(oc/priority-queue coll)` | Persistent priority queue (min-heap) |
+| `(oc/priority-queue pairs)` | Priority queue from `[[priority value] ...]` pairs |
 | `(oc/ordered-multiset coll)` | Sorted multiset (allows duplicates) |
 | `(oc/fuzzy-set coll)` | Returns closest element to query |
 | `(oc/fuzzy-map coll)` | Returns value for closest key to query |
@@ -416,7 +416,7 @@ Zorp's loyalty program tracks customer spending. He needs to answer questions li
 
 ### priority-queue
 
-A persistent priority queue (min-heap) with O(log n) push/peek/pop.
+A persistent priority queue with O(log n) push/peek/pop. Elements are `[priority value]` pairs, ordered by priority (min-heap by default).
 
 Shoes break. It happens. Zorp offers repair services, but some repairs are more urgent than others. A customer's only pair? Rush job. Seventh pair of limited editions? They can wait.
 

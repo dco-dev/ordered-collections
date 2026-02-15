@@ -1,11 +1,12 @@
 (ns com.dean.ordered-collections.tree.priority-queue
   "Persistent priority queue implemented using weight-balanced trees.
 
-  Provides O(log n) push, peek, and pop operations with efficient
-  iteration and parallel fold support.
+  A priority queue maps priorities to values. Each element is a [priority value]
+  pair. The queue maintains elements ordered by priority, with O(log n) push,
+  peek, and pop operations.
 
-  Unlike ordered-set, allows duplicate priorities (elements are
-  distinguished by insertion order via an internal sequence counter)."
+  Unlike ordered-map, allows duplicate priorities (elements are distinguished
+  by insertion order via an internal sequence counter for stability)."
   (:require [clojure.core.reducers :as r :refer [coll-fold]]
             [com.dean.ordered-collections.tree.node  :as node]
             [com.dean.ordered-collections.tree.order :as order]
@@ -62,10 +63,10 @@
 
   clojure.lang.IPersistentStack
   (peek [_]
-    ;; Return the minimum element (by priority)
+    ;; Return the minimum element (by priority) as [priority value]
     (when-not (node/leaf? root)
-      (let [[_ _ v] (node/-k (tree/node-least root))]
-        v)))
+      (let [[p _ v] (node/-k (tree/node-least root))]
+        [p v])))
   (pop [this]
     (if (node/leaf? root)
       (throw (IllegalStateException. "Can't pop empty queue"))
@@ -73,21 +74,22 @@
             new-root (tree/node-remove root (node/-k least) cmp tree/node-create-weight-balanced)]
         (PriorityQueue. new-root cmp seqnum _meta))))
   (cons [this x]
-    ;; Default: use x as both priority and value
-    (let [entry [x seqnum x]
+    ;; x must be [priority value] pair
+    (let [[p v] x
+          entry [p seqnum v]
           new-root (tree/node-add root entry entry cmp tree/node-create-weight-balanced)]
       (PriorityQueue. new-root cmp (unchecked-inc seqnum) _meta)))
 
   clojure.lang.Seqable
   (seq [_]
     (when-not (node/leaf? root)
-      (map (fn [n] (let [[_ _ v] (node/-k n)] v))
+      (map (fn [n] (let [[p _ v] (node/-k n)] [p v]))
            (tree/node-seq root))))
 
   clojure.lang.Reversible
   (rseq [_]
     (when-not (node/leaf? root)
-      (map (fn [n] (let [[_ _ v] (node/-k n)] v))
+      (map (fn [n] (let [[p _ v] (node/-k n)] [p v]))
            (tree/node-seq-reverse root))))
 
   clojure.lang.Counted
@@ -106,8 +108,8 @@
   (reduce [_ f init]
     (tree/node-reduce
       (fn [acc n]
-        (let [[_ _ v] (node/-k n)]
-          (f acc v)))
+        (let [[p _ v] (node/-k n)]
+          (f acc [p v])))
       init root))
 
   clojure.lang.IReduce
@@ -115,10 +117,10 @@
     (let [sentinel (Object.)
           result (tree/node-reduce
                    (fn [acc n]
-                     (let [[_ _ v] (node/-k n)]
+                     (let [[p _ v] (node/-k n)]
                        (if (identical? acc sentinel)
-                         v
-                         (f acc v))))
+                         [p v]
+                         (f acc [p v]))))
                    sentinel root)]
       (if (identical? result sentinel) (f) result)))
 
@@ -126,13 +128,13 @@
   (coll-fold [_ chunk-size combinef reducef]
     (tree/node-chunked-fold chunk-size root combinef
       (fn [acc n]
-        (let [[_ _ v] (node/-k n)]
-          (reducef acc v)))))
+        (let [[p _ v] (node/-k n)]
+          (reducef acc [p v])))))
 
   clojure.lang.Indexed
   (nth [_ i]
-    (let [[_ _ v] (node/-k (tree/node-nth root i))]
-      v))
+    (let [[p _ v] (node/-k (tree/node-nth root i))]
+      [p v]))
 
   java.lang.Iterable
   (iterator [this]
@@ -153,37 +155,43 @@
 
 (defn push
   "Add an element to the priority queue with the given priority.
-  Returns a new queue. O(log n)."
+  Returns a new queue. O(log n).
+
+  Example:
+    (push pq 1 :urgent)  ; priority 1, value :urgent"
   [^PriorityQueue pq priority value]
   (let [entry [priority (.-seqnum pq) value]
         new-root (tree/node-add (.-root pq) entry entry (.-cmp pq) tree/node-create-weight-balanced)]
     (PriorityQueue. new-root (.-cmp pq) (unchecked-inc (.-seqnum pq)) (.-_meta pq))))
 
 (defn push-all
-  "Add multiple [priority value] pairs to the queue. O(k log n)."
+  "Add multiple [priority value] pairs to the queue. O(k log n).
+
+  Example:
+    (push-all pq [[1 :urgent] [5 :low] [2 :medium]])"
   [^PriorityQueue pq pairs]
   (reduce (fn [q [p v]] (push q p v)) pq pairs))
 
-(defn peek-with-priority
-  "Return [priority value] of the minimum element, or nil if empty. O(log n)."
+(defn peek-val
+  "Return just the value of the minimum element, or nil if empty. O(log n)."
   [^PriorityQueue pq]
   (when-not (node/leaf? (.-root pq))
-    (let [[p _ v] (node/-k (tree/node-least (.-root pq)))]
-      [p v])))
-
-(defn peek-max
-  "Return the maximum-priority element (value only), or nil if empty. O(log n)."
-  [^PriorityQueue pq]
-  (when-not (node/leaf? (.-root pq))
-    (let [[_ _ v] (node/-k (tree/node-greatest (.-root pq)))]
+    (let [[_ _ v] (node/-k (tree/node-least (.-root pq)))]
       v)))
 
-(defn peek-max-with-priority
+(defn peek-max
   "Return [priority value] of the maximum element, or nil if empty. O(log n)."
   [^PriorityQueue pq]
   (when-not (node/leaf? (.-root pq))
     (let [[p _ v] (node/-k (tree/node-greatest (.-root pq)))]
       [p v])))
+
+(defn peek-max-val
+  "Return just the value of the maximum element, or nil if empty. O(log n)."
+  [^PriorityQueue pq]
+  (when-not (node/leaf? (.-root pq))
+    (let [[_ _ v] (node/-k (tree/node-greatest (.-root pq)))]
+      v)))
 
 (defn pop-max
   "Remove and return a new queue without the maximum-priority element. O(log n)."
@@ -199,30 +207,15 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn priority-queue
-  "Create a priority queue from a collection of values.
-  Values are used as their own priority (must be Comparable).
+  "Create a priority queue from [priority value] pairs.
 
   Options:
-    :comparator - custom priority comparator (default: clojure.core/compare)
+    :comparator - priority comparator (default: < for min-heap)
 
   Examples:
-    (priority-queue [3 1 4 1 5])           ; min-heap by value
-    (priority-queue [3 1 4] :comparator >) ; max-heap by value"
-  [coll & {:keys [comparator] :or {comparator clojure.core/compare}}]
-  (let [base-cmp (if (instance? Comparator comparator)
-                   comparator
-                   (order/compare-by comparator))
-        pq-cmp (make-pq-comparator base-cmp)
-        empty-pq (PriorityQueue. (node/leaf) pq-cmp 0 {})]
-    (reduce (fn [q v] (push q v v)) empty-pq coll)))
-
-(defn priority-queue-by
-  "Create a priority queue with a custom priority comparator.
-  Elements are [priority value] pairs.
-
-  Examples:
-    (priority-queue-by < [[3 :c] [1 :a] [2 :b]])  ; min by priority"
-  [comparator pairs]
+    (priority-queue [[1 :a] [3 :c] [2 :b]])           ; min-heap
+    (priority-queue [[1 :a] [3 :c]] :comparator >)    ; max-heap"
+  [pairs & {:keys [comparator] :or {comparator clojure.core/compare}}]
   (let [base-cmp (if (instance? Comparator comparator)
                    comparator
                    (order/compare-by comparator))

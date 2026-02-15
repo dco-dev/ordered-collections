@@ -404,8 +404,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn priority-queue
-  "Create a persistent priority queue from a collection.
-  Elements are used as their own priority.
+  "Create a persistent priority queue from [priority value] pairs.
 
   Supports O(log n) push/peek/pop operations, plus parallel fold.
 
@@ -413,25 +412,19 @@
     :comparator - priority comparator (default: < for min-heap)
 
   Examples:
-    (priority-queue [3 1 4 1 5])           ; min-heap
-    (priority-queue [3 1 4] :comparator >) ; max-heap
+    (priority-queue [[1 :urgent] [5 :low] [3 :medium]])
+    (priority-queue [[1 :a] [2 :b]] :comparator >) ; max-heap
 
   Use (peek pq) for min element, (pop pq) to remove it."
-  [coll & opts]
-  (apply pq/priority-queue coll opts))
-
-(defn priority-queue-by
-  "Create a priority queue with [priority value] pairs.
-
-  Example:
-    (priority-queue-by < [[3 :c] [1 :a] [2 :b]])
-    (peek pq) ; => :a"
-  [comparator pairs]
-  (pq/priority-queue-by comparator pairs))
+  [pairs & opts]
+  (apply pq/priority-queue pairs opts))
 
 (def push
-  "Add an element to a priority queue with given priority.
-  (push pq priority value) => new-pq"
+  "Add an element to a priority queue with the given priority.
+  (push pq priority value) => new-pq
+
+  Example:
+    (push pq 1 :urgent)"
   pq/push)
 
 (def push-all
@@ -439,15 +432,22 @@
   (push-all pq [[p1 v1] [p2 v2]]) => new-pq"
   pq/push-all)
 
-(def peek-with-priority
-  "Return [priority value] of the minimum element.
-  (peek-with-priority pq) => [priority value] or nil"
-  pq/peek-with-priority)
+(def peek-val
+  "Return just the value (not priority) of the minimum element.
+  (peek-val pq) => value or nil
+
+  Note: (peek pq) returns [priority value]."
+  pq/peek-val)
 
 (def peek-max
-  "Return the maximum-priority element (value only).
-  (peek-max pq) => value or nil"
+  "Return [priority value] of the maximum element.
+  (peek-max pq) => [priority value] or nil"
   pq/peek-max)
+
+(def peek-max-val
+  "Return just the value of the maximum element.
+  (peek-max-val pq) => value or nil"
+  pq/peek-max-val)
 
 (def pop-max
   "Remove the maximum-priority element.
