@@ -399,6 +399,19 @@
                  coll))
        cmp alloc nil {}))))
 
+(def overlapping
+  "Return all intervals overlapping the given point or interval.
+   Works with interval-set and interval-map.
+
+   For interval-set: returns seq of intervals
+   For interval-map: returns seq of [interval value] entries
+
+   Example:
+     (overlapping iset 5)           ; intervals containing point 5
+     (overlapping iset [3 7])       ; intervals overlapping range [3,7]
+     (overlapping imap 5)           ; entries for intervals containing 5"
+  proto/overlapping)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Priority Queue
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

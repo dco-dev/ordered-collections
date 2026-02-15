@@ -151,25 +151,25 @@
          (.equiv this o)))
 
   proto/PPriorityQueue
-  (pq-push [_ priority value]
+  (push [_ priority value]
     (let [entry [priority seqnum value]
           new-root (tree/node-add root entry entry cmp tree/node-create-weight-balanced)]
       (PriorityQueue. new-root cmp (unchecked-inc seqnum) _meta)))
-  (pq-push-all [this pairs]
-    (reduce (fn [q [p v]] (proto/pq-push q p v)) this pairs))
-  (pq-peek-val [_]
+  (push-all [this pairs]
+    (reduce (fn [q [p v]] (proto/push q p v)) this pairs))
+  (peek-val [_]
     (when-not (node/leaf? root)
       (let [[_ _ v] (node/-k (tree/node-least root))]
         v)))
-  (pq-peek-max [_]
+  (peek-max [_]
     (when-not (node/leaf? root)
       (let [[p _ v] (node/-k (tree/node-greatest root))]
         [p v])))
-  (pq-peek-max-val [_]
+  (peek-max-val [_]
     (when-not (node/leaf? root)
       (let [[_ _ v] (node/-k (tree/node-greatest root))]
         v)))
-  (pq-pop-max [_]
+  (pop-max [_]
     (if (node/leaf? root)
       (throw (IllegalStateException. "Can't pop-max empty queue"))
       (let [greatest (tree/node-greatest root)
@@ -187,7 +187,7 @@
   Example:
     (push pq 1 :urgent)  ; priority 1, value :urgent"
   [pq priority value]
-  (proto/pq-push pq priority value))
+  (proto/push pq priority value))
 
 (defn push-all
   "Add multiple [priority value] pairs to the queue. O(k log n).
@@ -195,27 +195,27 @@
   Example:
     (push-all pq [[1 :urgent] [5 :low] [2 :medium]])"
   [pq pairs]
-  (proto/pq-push-all pq pairs))
+  (proto/push-all pq pairs))
 
 (defn peek-val
   "Return just the value of the minimum element, or nil if empty. O(log n)."
   [pq]
-  (proto/pq-peek-val pq))
+  (proto/peek-val pq))
 
 (defn peek-max
   "Return [priority value] of the maximum element, or nil if empty. O(log n)."
   [pq]
-  (proto/pq-peek-max pq))
+  (proto/peek-max pq))
 
 (defn peek-max-val
   "Return just the value of the maximum element, or nil if empty. O(log n)."
   [pq]
-  (proto/pq-peek-max-val pq))
+  (proto/peek-max-val pq))
 
 (defn pop-max
   "Remove and return a new queue without the maximum-priority element. O(log n)."
   [pq]
-  (proto/pq-pop-max pq))
+  (proto/pop-max pq))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Constructors

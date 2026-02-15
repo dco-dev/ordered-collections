@@ -9,9 +9,10 @@
   - O(log n + k) range queries
   - Parallel fold"
   (:require [clojure.core.reducers :as r :refer [coll-fold]]
-            [com.dean.ordered-collections.tree.node  :as node]
-            [com.dean.ordered-collections.tree.order :as order]
-            [com.dean.ordered-collections.tree.tree  :as tree])
+            [com.dean.ordered-collections.tree.node     :as node]
+            [com.dean.ordered-collections.tree.order    :as order]
+            [com.dean.ordered-collections.tree.protocol :as proto]
+            [com.dean.ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang RT Murmur3]
             [java.util Comparator]))
 
@@ -46,6 +47,24 @@
   then by seqnum (for distinguishing duplicates)."
   ^Comparator [^Comparator value-cmp]
   (->MultisetComparator value-cmp))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Helper Functions (needed by protocol impl)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- count-matching
+  "Count all occurrences of x in subtree n using base comparator bc."
+  [^Comparator bc n x]
+  (if (node/leaf? n)
+    0
+    (let [[v _] (node/-k n)
+          c (.compare bc x v)]
+      (cond
+        (neg? c) (count-matching bc (node/-l n) x)
+        (pos? c) (count-matching bc (node/-r n) x)
+        :else (+ 1
+                (count-matching bc (node/-l n) x)
+                (count-matching bc (node/-r n) x))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Ordered Multiset
@@ -201,69 +220,64 @@
   (hashCode [this]
     (.hasheq this))
   (equals [this o]
-    (.equiv this o)))
+    (.equiv this o))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Extended API
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn- count-matching
-  "Count all occurrences of x in subtree n using base comparator bc."
-  [^Comparator bc n x]
-  (if (node/leaf? n)
-    0
-    (let [[v _] (node/-k n)
-          c (.compare bc x v)]
-      (cond
-        (neg? c) (count-matching bc (node/-l n) x)
-        (pos? c) (count-matching bc (node/-r n) x)
-        :else (+ 1
-                (count-matching bc (node/-l n) x)
-                (count-matching bc (node/-r n) x))))))
-
-(defn multiplicity
-  "Return the number of occurrences of x in the multiset. O(log n + k)."
-  [^OrderedMultiset ms x]
-  (count-matching (.-base-cmp ms) (.-root ms) x))
-
-(defn disj-one
-  "Remove one occurrence of x from the multiset. O(log n).
-  Returns the same multiset if x is not present."
-  [^OrderedMultiset ms x]
-  (let [^Comparator bc (.-base-cmp ms)
-        ^Comparator cmp (.-cmp ms)]
+  proto/PMultiset
+  (multiplicity [_ x]
+    (count-matching base-cmp root x))
+  (disj-one [this x]
     ;; Find first occurrence and remove it
-    (loop [n (.-root ms)]
+    (loop [n root]
       (if (node/leaf? n)
-        ms  ; not found
-        (let [[v s :as entry] (node/-k n)
-              c (.compare bc x v)]
+        this  ; not found
+        (let [[v _ :as entry] (node/-k n)
+              c (.compare base-cmp x v)]
           (cond
             (neg? c) (recur (node/-l n))
             (pos? c) (recur (node/-r n))
             :else    ;; Found, remove this entry
-            (let [new-root (tree/node-remove (.-root ms) entry cmp tree/node-create-weight-balanced)]
-              (OrderedMultiset. new-root cmp bc (.-seqnum ms) (.-_meta ms)))))))))
+            (let [new-root (tree/node-remove root entry cmp tree/node-create-weight-balanced)]
+              (OrderedMultiset. new-root cmp base-cmp seqnum _meta)))))))
+  (disj-all [this x]
+    (loop [m this]
+      (if (.contains ^java.util.Collection m x)
+        (recur (proto/disj-one m x))
+        m)))
+  (distinct-elements [_]
+    (when-not (node/leaf? root)
+      (distinct (map (fn [n] (first (node/-k n))) (tree/node-seq root)))))
+  (element-frequencies [this]
+    (frequencies (seq this))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Extended API (delegate to protocol)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn multiplicity
+  "Return the number of occurrences of x in the multiset. O(log n + k)."
+  [ms x]
+  (proto/multiplicity ms x))
+
+(defn disj-one
+  "Remove one occurrence of x from the multiset. O(log n).
+  Returns the same multiset if x is not present."
+  [ms x]
+  (proto/disj-one ms x))
 
 (defn disj-all
   "Remove all occurrences of x from the multiset. O(k log n) where k is multiplicity."
-  [^OrderedMultiset ms x]
-  (loop [m ms]
-    (if (.contains ^java.util.Collection m x)
-      (recur (disj-one m x))
-      m)))
+  [ms x]
+  (proto/disj-all ms x))
 
 (defn distinct-elements
   "Return a lazy seq of distinct elements in the multiset, in sorted order."
-  [^OrderedMultiset ms]
-  (let [^Comparator bc (.-base-cmp ms)]
-    (when-not (node/leaf? (.-root ms))
-      (distinct (seq ms)))))
+  [ms]
+  (proto/distinct-elements ms))
 
 (defn element-frequencies
   "Return a map of {element -> count} for all elements. O(n)."
-  [^OrderedMultiset ms]
-  (frequencies (seq ms)))
+  [ms]
+  (proto/element-frequencies ms))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Constructors

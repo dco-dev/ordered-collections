@@ -38,9 +38,11 @@
    - Version ranges in dependency resolution"
   (:require [com.dean.ordered-collections.tree.node     :as node]
             [com.dean.ordered-collections.tree.order    :as order]
+            [com.dean.ordered-collections.tree.protocol :as proto]
             [com.dean.ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang ILookup Associative IPersistentCollection Seqable
              Counted IFn IMeta IObj MapEntry]
+            [com.dean.ordered_collections.tree.protocol PRangeMap]
             [com.dean.ordered_collections.tree.tree EnumFrame]))
 
 (set! *warn-on-reflection* true)
@@ -185,7 +187,7 @@
 ;; RangeMap Type
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(declare ->RangeMap range-map-assoc range-map-assoc-coalescing)
+(declare ->RangeMap range-map-assoc rm-ranges rm-get-entry rm-spanning-range rm-gaps rm-range-remove)
 
 (deftype RangeMap [root cmp _meta]
 
@@ -240,7 +242,21 @@
       (.assoc this (first x) (second x))))
   (equiv [this that]
     (and (instance? RangeMap that)
-         (= (seq this) (seq that)))))
+         (= (seq this) (seq that))))
+
+  PRangeMap
+  (ranges [this]
+    (rm-ranges this))
+  (get-entry [this point]
+    (rm-get-entry this point))
+  (assoc-coalescing [this rng val]
+    (range-map-assoc this rng val true))
+  (range-remove [this rng]
+    (rm-range-remove this rng))
+  (spanning-range [this]
+    (rm-spanning-range this))
+  (gaps [this]
+    (rm-gaps this)))
 
 (defn- range-map-assoc
   "Insert range [lo hi) -> val, removing any overlapping portions.
@@ -301,25 +317,15 @@
        (RangeMap. (node/leaf) range-compare {})
        coll))))
 
-(defn assoc-coalescing
-  "Insert range with coalescing. Adjacent ranges with the same value
-   are automatically merged. Equivalent to Guava's putCoalescing.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Protocol Implementation Helpers (called from deftype)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-   Example:
-     (-> (range-map)
-         (assoc-coalescing [0 100] :a)
-         (assoc-coalescing [100 200] :a))
-     ;; => single range [0 200) :a"
-  [^RangeMap rm rng v]
-  (range-map-assoc rm rng v true))
-
-(defn ranges
-  "Return a seq of all [range value] pairs."
+(defn- rm-ranges
   [^RangeMap rm]
   (seq rm))
 
-(defn spanning-range
-  "Return [lo hi] spanning all ranges, or nil if empty."
+(defn- rm-spanning-range
   [^RangeMap rm]
   (when-not (node/leaf? (.-root rm))
     (binding [order/*compare* (.-cmp rm)]
@@ -328,8 +334,7 @@
         [(range-lo (node/-k least))
          (range-hi (node/-k greatest))]))))
 
-(defn gaps
-  "Return a seq of [lo hi) ranges that have no mapping."
+(defn- rm-gaps
   [^RangeMap rm]
   (when-let [s (seq rm)]
     (let [pairs (partition 2 1 s)]
@@ -337,12 +342,7 @@
             :when (< h1 l2)]
         [h1 l2]))))
 
-(defn get-entry
-  "Return [range value] for the range containing point x, or nil.
-   Equivalent to Guava's getEntry(K).
-
-   Example:
-     (get-entry rm 50) ;; => [[0 100] :a]"
+(defn- rm-get-entry
   [^RangeMap rm x]
   (binding [order/*compare* (.-cmp rm)]
     (loop [n (.-root rm)]
@@ -356,14 +356,7 @@
             (>= x hi) (recur (node/-r n))
             :else     [rng (node/-v n)]))))))
 
-(defn range-remove
-  "Remove all mappings in the given range [lo hi).
-   Any overlapping ranges are trimmed; ranges fully contained are removed.
-   Equivalent to Guava's remove(Range).
-
-   Example:
-     (range-remove rm [25 75])
-     ;; [0 100]:a becomes [0 25):a and [75 100):a"
+(defn- rm-range-remove
   [^RangeMap rm rng]
   (let [[lo hi] rng
         cmp (.-cmp rm)]
@@ -382,3 +375,54 @@
                          (> rh hi) (tree/node-add [hi rh] rv)))
                      root' overlapping)]
         (RangeMap. root'' cmp (.-_meta rm))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Public API (delegates to protocol)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn assoc-coalescing
+  "Insert range with coalescing. Adjacent ranges with the same value
+   are automatically merged. Equivalent to Guava's putCoalescing.
+
+   Example:
+     (-> (range-map)
+         (assoc-coalescing [0 100] :a)
+         (assoc-coalescing [100 200] :a))
+     ;; => single range [0 200) :a"
+  [rm rng v]
+  (proto/assoc-coalescing rm rng v))
+
+(defn ranges
+  "Return a seq of all [range value] pairs."
+  [rm]
+  (proto/ranges rm))
+
+(defn spanning-range
+  "Return [lo hi] spanning all ranges, or nil if empty."
+  [rm]
+  (proto/spanning-range rm))
+
+(defn gaps
+  "Return a seq of [lo hi) ranges that have no mapping."
+  [rm]
+  (proto/gaps rm))
+
+(defn get-entry
+  "Return [range value] for the range containing point x, or nil.
+   Equivalent to Guava's getEntry(K).
+
+   Example:
+     (get-entry rm 50) ;; => [[0 100] :a]"
+  [rm x]
+  (proto/get-entry rm x))
+
+(defn range-remove
+  "Remove all mappings in the given range [lo hi).
+   Any overlapping ranges are trimmed; ranges fully contained are removed.
+   Equivalent to Guava's remove(Range).
+
+   Example:
+     (range-remove rm [25 75])
+     ;; [0 100]:a becomes [0 25):a and [75 100):a"
+  [rm rng]
+  (proto/range-remove rm rng))

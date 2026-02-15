@@ -8,7 +8,7 @@
             [com.dean.ordered-collections.tree.root]
             [com.dean.ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang                RT]
-            [com.dean.ordered_collections.tree.protocol PExtensibleSet]
+            [com.dean.ordered_collections.tree.protocol PExtensibleSet PIntervalCollection]
             [com.dean.ordered_collections.tree.root     INodeCollection
                                          IBalancedCollection
                                          IOrderedCollection
@@ -50,6 +50,12 @@
     stitch)
 
   IIntervalCollection
+
+  PIntervalCollection
+  (overlapping [this interval]
+    (with-interval-set this
+      (when-let [found (seq (tree/node-find-intervals root interval))]
+        (map node/-k found))))
 
   PExtensibleSet
   (intersection [this that]
