@@ -125,9 +125,9 @@
     (new FuzzyMap root cmp distance-fn tiebreak m))
 
   clojure.lang.Indexed
-  (nth [this i]
-    (with-fuzzy-map this
-      (node/-kv (tree/node-nth root i))))
+  (nth [_ i]
+    ;; nth doesn't need comparator - only uses subtree sizes
+    (node/-kv (tree/node-nth root i)))
 
   clojure.lang.MapEquivalence
 

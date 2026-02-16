@@ -220,11 +220,9 @@ These benchmarks compare `dean/union`, `dean/intersection`, and `dean/difference
 
 | N | data.avl | ordered-set |
 |---|----------|-------------|
-| 10,000 | 3.3 ms | 18 ms |
-| 100,000 | 4.3 ms | 18 ms |
-| 500,000 | 5.5 ms | 21 ms |
+| 500,000 | 2.48 ms | 2.64 ms |
 
-data.avl has O(1) rank access via cached ranks; ordered-set uses O(log n) tree descent.
+**Verdict:** Both use O(log n) tree descent with subtree sizes. Performance is now essentially equal (within 6%).
 
 ### Rank Lookup: rank-of element (10,000 lookups)
 

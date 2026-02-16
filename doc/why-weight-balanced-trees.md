@@ -26,13 +26,15 @@ AVL trees maintain strict height balance: the heights of left and right subtrees
 
 **Strengths:**
 - Slightly faster lookup (shorter average path)
-- O(1) rank access via cached sizes
+- O(log n) rank access via cached sizes (same as weight-balanced)
 - Efficient nth operation
+- Transient support for batch mutations
 
 **Weaknesses:**
 - More rotations on insert/delete
 - Split/join still O(log n) but with higher constants
 - Height tracking adds complexity
+- No parallel fold support
 
 ### Weight-Balanced Trees (this library)
 

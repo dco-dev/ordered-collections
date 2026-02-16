@@ -42,16 +42,17 @@ A decision guide for choosing between sorted collection implementations.
 ### data.avl
 
 **Best for:**
-- O(1) rank access via `nth`
-- Slightly faster lookup than ordered-collections
-- Well-tested, mature library
+- O(log n) rank access via `nth` (same as ordered-collections)
+- Transient support for batch mutations
+- Fastest pure iteration
+- Well-tested, mature library (Clojure contrib)
 
 **Limitations:**
 - No parallel fold
 - Split operations slower than ordered-collections
 - No interval tree support
 
-**Choose when:** You need fast `nth` access and don't need parallel processing or interval queries.
+**Choose when:** You need transient support or fastest pure iteration.
 
 ### ordered-collections (this library)
 
@@ -407,4 +408,4 @@ ordered-map and ordered-set support:
 
 **Consider data.avl when:**
 1. Pure iteration performance is paramount (data.avl is fastest at iteration)
-2. You need O(1) rank access via nth
+2. You need transient support for batch mutations
