@@ -9,10 +9,11 @@
   (:require [clojure.core.reducers       :as r :refer [coll-fold]]
             [com.dean.ordered-collections.tree.node     :as node]
             [com.dean.ordered-collections.tree.order    :as order]
-            [com.dean.ordered-collections.tree.protocol :refer [PRanked]]
+            [com.dean.ordered-collections.tree.protocol :as proto :refer [PRanked]]
             [com.dean.ordered-collections.tree.root]
             [com.dean.ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang                RT Murmur3]
+            [com.dean.ordered_collections.tree.protocol PFuzzy]
             [com.dean.ordered_collections.tree.root     INodeCollection
                                          IBalancedCollection
                                          IOrderedCollection]))
@@ -312,7 +313,20 @@
     (let [n (tree/node-size root)]
       (when (pos? n)
         (let [idx (min (dec n) (long (* (/ (double pct) 100.0) n)))]
-          (node/-k (tree/node-nth root idx)))))))
+          (node/-k (tree/node-nth root idx))))))
+
+  PFuzzy
+  (nearest-with-distance [this query]
+    (when-not (node/leaf? root)
+      (let [nearest-elem (.valAt this query)]
+        (when nearest-elem
+          [nearest-elem (distance-fn query nearest-elem)]))))
+  (exact-contains? [_ k]
+    (if (tree/node-find root k cmp) true false))
+  (exact-get [_ k]
+    (throw (UnsupportedOperationException. "exact-get not supported for FuzzySet")))
+  (exact-get [_ k not-found]
+    (throw (UnsupportedOperationException. "exact-get not supported for FuzzySet"))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Additional Methods

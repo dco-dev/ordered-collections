@@ -55,6 +55,11 @@
     (with-interval-set this
       (when-let [found (seq (tree/node-find-intervals root interval))]
         (map node/-k found))))
+  (span [this]
+    (when-not (node/leaf? root)
+      (let [first-interval (node/-k (tree/node-least root))
+            last-interval (node/-k (tree/node-greatest root))]
+        [(first first-interval) (second last-interval)])))
 
   PExtensibleSet
   (intersection [this that]
@@ -99,13 +104,13 @@
              (tree/node-set-difference root that-root))
            cmp alloc stitch {}))
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
-  (subset [this that]
+  (subset? [this that]
     (with-interval-set this
       (cond
         (identical? this that)    true
         (.isCompatible this that) (tree/node-subset? (.getRoot ^INodeCollection that) root) ;; Grr. reverse args of tree/subset
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
-  (superset [this that]
+  (superset? [this that]
     (with-interval-set this
       (cond
         (identical? this that)    true

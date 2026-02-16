@@ -96,14 +96,14 @@
                cmp alloc stitch {}))
         (.isSimilar this that)    (clojure.set/difference (into #{} this) that)
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
-  (subset [this that]
+  (subset? [this that]
     (with-ordered-set this
       (cond
         (identical? this that)    true
         (.isCompatible this that) (tree/node-subset? (.getRoot ^OrderedSet that) root) ;; Grr. reverse args of tree/subset
         (.isSimilar this that)    (clojure.set/subset? (into #{} this) that)
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
-  (superset [this that]
+  (superset? [this that]
     (with-ordered-set this
       (cond
         (identical? this that)    true
@@ -345,6 +345,19 @@
         :>= (when-let [n (tree/node-find-nearest root k :>)]
               (node/-k n))
         (throw (ex-info "nearest test must be :<, :<=, :>, or :>=" {:test test})))))
+  (subrange [this test k]
+    (with-ordered-set this
+      (let [result-root (case test
+                          (:< :<=) (tree/node-split-lesser root k)
+                          (:> :>=) (tree/node-split-greater root k)
+                          (throw (ex-info "subrange test must be :<, :<=, :>, or :>=" {:test test})))
+            ;; For <= and >=, include the key itself if present
+            result-root (case test
+                          (:<= :>=) (if-let [n (tree/node-find root k)]
+                                      (tree/node-add result-root (node/-k n) (node/-v n))
+                                      result-root)
+                          result-root)]
+        (new OrderedSet result-root cmp alloc stitch {}))))
 
   PRanked
   (rank-of [_ x]
@@ -386,20 +399,7 @@
           (let [left-root  (tree/node-split-lesser root (node/-k (tree/node-nth root i)))
                 right-root (tree/node-split-nth root i)]
             [(new OrderedSet left-root cmp alloc stitch {})
-             (new OrderedSet right-root cmp alloc stitch {})])))))
-  (subrange [this test k]
-    (with-ordered-set this
-      (let [result-root (case test
-                          (:< :<=) (tree/node-split-lesser root k)
-                          (:> :>=) (tree/node-split-greater root k)
-                          (throw (ex-info "subrange test must be :<, :<=, :>, or :>=" {:test test})))
-            ;; For <= and >=, include the key itself if present
-            result-root (case test
-                          (:<= :>=) (if-let [n (tree/node-find root k)]
-                                      (tree/node-add result-root (node/-k n) (node/-v n))
-                                      result-root)
-                          result-root)]
-        (new OrderedSet result-root cmp alloc stitch {})))))
+             (new OrderedSet right-root cmp alloc stitch {})]))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Literal Representation

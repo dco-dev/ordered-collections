@@ -245,9 +245,9 @@
             half (take (quot medium 2) xs)
             ss-full (->ss xs), ss-half (->ss half)
             os-full (->os xs), os-half (->os half)]
-        (assert-eq "subset?" (cset/subset? ss-half ss-full) (proto/subset os-half os-full))
-        (assert-eq "superset?" (cset/superset? ss-full ss-half) (proto/superset os-full os-half))
-        (assert-eq "subset? self" (cset/subset? ss-full ss-full) (proto/subset os-full os-full))))))
+        (assert-eq "subset?" (cset/subset? ss-half ss-full) (proto/subset? os-half os-full))
+        (assert-eq "superset?" (cset/superset? ss-full ss-half) (proto/superset? os-full os-half))
+        (assert-eq "subset? self" (cset/subset? ss-full ss-full) (proto/subset? os-full os-full))))))
 
 (deftest set-sorted-interface
   (testing "subseq/rsubseq match"

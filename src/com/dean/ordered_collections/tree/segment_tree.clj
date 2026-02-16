@@ -36,11 +36,13 @@
      (query st 1 3)     ; => 90 (20 + 30 + 40)
      (update st 2 100)  ; => new tree with index 2 = 100
      (query st 1 3)     ; => 160 (20 + 100 + 40)"
-  (:require [com.dean.ordered-collections.tree.node  :as node]
-            [com.dean.ordered-collections.tree.order :as order]
-            [com.dean.ordered-collections.tree.tree  :as tree])
+  (:require [com.dean.ordered-collections.tree.node     :as node]
+            [com.dean.ordered-collections.tree.order    :as order]
+            [com.dean.ordered-collections.tree.protocol :as proto]
+            [com.dean.ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang ILookup Associative IPersistentCollection Seqable
-             Counted IFn IMeta IObj MapEntry]))
+             Counted IFn IMeta IObj MapEntry]
+            [com.dean.ordered_collections.tree.protocol PRangeAggregate]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -198,7 +200,16 @@
       (.assoc this (first x) (second x))))
   (equiv [this that]
     (and (instance? SegmentTree that)
-         (= (seq this) (seq that)))))
+         (= (seq this) (seq that))))
+
+  PRangeAggregate
+  (aggregate-range [this lo hi]
+    (binding [order/*compare* cmp]
+      (query-range-fast root lo hi op identity cmp)))
+  (aggregate [this]
+    (if (node/leaf? root)
+      identity
+      (.-agg ^AggregateNode root))))
 
 (defn- seg-assoc [^SegmentTree st k v]
   (binding [order/*compare* (.-cmp st)
@@ -251,9 +262,8 @@
      (def st (segment-tree + 0 {0 10, 1 20, 2 30, 3 40}))
      (query st 0 3)  ; => 100
      (query st 1 2)  ; => 50"
-  [^SegmentTree st ^long lo ^long hi]
-  (binding [order/*compare* (.-cmp st)]
-    (query-range-fast (.-root st) lo hi (.-op st) (.-identity st) (.-cmp st))))
+  [st lo hi]
+  (proto/aggregate-range st lo hi))
 
 (defn update-val
   "Update the value at index k. O(log n) time.
@@ -262,7 +272,7 @@
      (def st (segment-tree + 0 {0 10, 1 20, 2 30}))
      (def st' (update-val st 1 100))
      (query st' 0 2)  ; => 140"
-  [^SegmentTree st k v]
+  [st k v]
   (assoc st k v))
 
 (defn update-fn
@@ -279,10 +289,8 @@
 
 (defn aggregate
   "Return the aggregate over the entire tree. O(1) time."
-  [^SegmentTree st]
-  (if (node/leaf? (.-root st))
-    (.-identity st)
-    (.-agg ^AggregateNode (.-root st))))
+  [st]
+  (proto/aggregate st))
 
 ;; Convenience constructors for common operations
 

@@ -156,10 +156,20 @@
       (PriorityQueue. new-root cmp (unchecked-inc seqnum) _meta)))
   (push-all [this pairs]
     (reduce (fn [q [p v]] (proto/push q p v)) this pairs))
+  (peek-min [_]
+    (when-not (node/leaf? root)
+      (let [[p _ v] (node/-k (tree/node-least root))]
+        [p v])))
   (peek-val [_]
     (when-not (node/leaf? root)
       (let [[_ _ v] (node/-k (tree/node-least root))]
         v)))
+  (pop-min [this]
+    (if (node/leaf? root)
+      this
+      (let [least (tree/node-least root)
+            new-root (tree/node-remove root (node/-k least) cmp tree/node-create-weight-balanced)]
+        (PriorityQueue. new-root cmp seqnum _meta))))
   (peek-max [_]
     (when-not (node/leaf? root)
       (let [[p _ v] (node/-k (tree/node-greatest root))]
@@ -168,9 +178,9 @@
     (when-not (node/leaf? root)
       (let [[_ _ v] (node/-k (tree/node-greatest root))]
         v)))
-  (pop-max [_]
+  (pop-max [this]
     (if (node/leaf? root)
-      (throw (IllegalStateException. "Can't pop-max empty queue"))
+      this
       (let [greatest (tree/node-greatest root)
             new-root (tree/node-remove root (node/-k greatest) cmp tree/node-create-weight-balanced)]
         (PriorityQueue. new-root cmp seqnum _meta)))))
@@ -196,10 +206,21 @@
   [pq pairs]
   (proto/push-all pq pairs))
 
+(defn peek-min
+  "Return [priority value] of the minimum element, or nil if empty. O(log n)."
+  [pq]
+  (proto/peek-min pq))
+
 (defn peek-val
   "Return just the value of the minimum element, or nil if empty. O(log n)."
   [pq]
   (proto/peek-val pq))
+
+(defn pop-min
+  "Remove and return a new queue without the minimum-priority element. O(log n).
+  Returns the queue unchanged if empty."
+  [pq]
+  (proto/pop-min pq))
 
 (defn peek-max
   "Return [priority value] of the maximum element, or nil if empty. O(log n)."
@@ -212,7 +233,8 @@
   (proto/peek-max-val pq))
 
 (defn pop-max
-  "Remove and return a new queue without the maximum-priority element. O(log n)."
+  "Remove and return a new queue without the maximum-priority element. O(log n).
+  Returns the queue unchanged if empty."
   [pq]
   (proto/pop-max pq))
 

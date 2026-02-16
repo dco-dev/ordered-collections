@@ -54,6 +54,11 @@
     (with-interval-map this
       (when-let [found (seq (tree/node-find-intervals root interval))]
         (map node/-kv found))))
+  (span [this]
+    (when-not (node/leaf? root)
+      (let [first-interval (node/-k (tree/node-least root))
+            last-interval (node/-k (tree/node-greatest root))]
+        [(first first-interval) (second last-interval)])))
 
   clojure.lang.IMeta
   (meta [_]

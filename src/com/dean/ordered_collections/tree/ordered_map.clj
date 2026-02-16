@@ -248,6 +248,19 @@
         :>= (when-let [n (tree/node-find-nearest root k :>)]
               [(node/-k n) (node/-v n)])
         (throw (ex-info "nearest test must be :<, :<=, :>, or :>=" {:test test})))))
+  (subrange [this test k]
+    (with-ordered-map this
+      (let [result-root (case test
+                          (:< :<=) (tree/node-split-lesser root k)
+                          (:> :>=) (tree/node-split-greater root k)
+                          (throw (ex-info "subrange test must be :<, :<=, :>, or :>=" {:test test})))
+            ;; For <= and >=, include the key itself if present
+            result-root (case test
+                          (:<= :>=) (if-let [n (tree/node-find root k)]
+                                      (tree/node-add result-root (node/-k n) (node/-v n))
+                                      result-root)
+                          result-root)]
+        (OrderedMap. result-root cmp alloc stitch {}))))
 
   PRanked
   (rank-of [_ k]
@@ -292,20 +305,7 @@
           (let [left-root  (tree/node-split-lesser root (node/-k (tree/node-nth root i)))
                 right-root (tree/node-split-nth root i)]
             [(OrderedMap. left-root cmp alloc stitch {})
-             (OrderedMap. right-root cmp alloc stitch {})])))))
-  (subrange [this test k]
-    (with-ordered-map this
-      (let [result-root (case test
-                          (:< :<=) (tree/node-split-lesser root k)
-                          (:> :>=) (tree/node-split-greater root k)
-                          (throw (ex-info "subrange test must be :<, :<=, :>, or :>=" {:test test})))
-            ;; For <= and >=, include the key itself if present
-            result-root (case test
-                          (:<= :>=) (if-let [n (tree/node-find root k)]
-                                      (tree/node-add result-root (node/-k n) (node/-v n))
-                                      result-root)
-                          result-root)]
-        (OrderedMap. result-root cmp alloc stitch {})))))
+             (OrderedMap. right-root cmp alloc stitch {})]))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Literal Representation

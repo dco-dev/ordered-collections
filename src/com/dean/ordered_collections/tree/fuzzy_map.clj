@@ -10,10 +10,11 @@
             [com.dean.ordered-collections.tree.fuzzy-set :as fuzzy]
             [com.dean.ordered-collections.tree.node     :as node]
             [com.dean.ordered-collections.tree.order    :as order]
-            [com.dean.ordered-collections.tree.protocol :refer [PRanked]]
+            [com.dean.ordered-collections.tree.protocol :as proto :refer [PRanked]]
             [com.dean.ordered-collections.tree.root]
             [com.dean.ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang                RT Murmur3 MapEntry]
+            [com.dean.ordered_collections.tree.protocol PFuzzy]
             [com.dean.ordered_collections.tree.root     INodeCollection
                                          IBalancedCollection
                                          IOrderedCollection]))
@@ -334,7 +335,23 @@
       (when (pos? n)
         (let [idx (min (dec n) (long (* (/ (double pct) 100.0) n)))
               node (tree/node-nth root idx)]
-          (MapEntry. (node/-k node) (node/-v node)))))))
+          (MapEntry. (node/-k node) (node/-v node))))))
+
+  PFuzzy
+  (nearest-with-distance [this query]
+    (when-not (node/leaf? root)
+      (when-let [[k v] (find-nearest-entry root query cmp distance-fn tiebreak)]
+        [k v (distance-fn query k)])))
+  (exact-contains? [_ k]
+    (if (tree/node-find root k cmp) true false))
+  (exact-get [_ k]
+    (if-let [n (tree/node-find root k cmp)]
+      (node/-v n)
+      nil))
+  (exact-get [_ k not-found]
+    (if-let [n (tree/node-find root k cmp)]
+      (node/-v n)
+      not-found)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Additional Methods

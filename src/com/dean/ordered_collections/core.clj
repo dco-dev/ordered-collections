@@ -3,6 +3,7 @@
   (:require [clojure.core.reducers                            :as r]
             [com.dean.ordered-collections.tree.fuzzy-map            :as fuzzy-map]
             [com.dean.ordered-collections.tree.fuzzy-set            :as fuzzy-set]
+            [com.dean.ordered-collections.tree.interop]
             [com.dean.ordered-collections.tree.interval             :as interval]
             [com.dean.ordered-collections.tree.interval-map         :refer [->IntervalMap]]
             [com.dean.ordered-collections.tree.interval-set         :refer [->IntervalSet]]
@@ -92,14 +93,14 @@
    Examples:
      (subset? (ordered-set [1 2]) (ordered-set [1 2 3]))  ; true
      (subset? (ordered-set [1 4]) (ordered-set [1 2 3]))  ; false"
-  proto/subset)
+  proto/subset?)
 
 (def superset?
   "True if s1 is a superset of s2 (s1 contains every element of s2).
 
    Examples:
      (superset? (ordered-set [1 2 3]) (ordered-set [1 2]))  ; true"
-  proto/superset)
+  proto/superset?)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Ordered Set
@@ -410,6 +411,14 @@
      (overlapping imap 5)           ; entries for intervals containing 5"
   proto/overlapping)
 
+(def span
+  "Return [min-start max-end] covering all intervals, or nil if empty.
+   Works with interval-set and interval-map.
+
+   Example:
+     (span (interval-set [[1 5] [3 8] [10 15]]))  ; => [1 15]"
+  proto/span)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Priority Queue
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -426,7 +435,7 @@
     (priority-queue [[1 :urgent] [5 :low] [3 :medium]])
     (priority-queue [[1 :a] [2 :b]] :comparator >) ; max-heap
 
-  Use (peek pq) for min element, (pop pq) to remove it."
+  Use (peek-min pq) for min element, (pop-min pq) to remove it."
   [pairs & opts]
   (apply pq/priority-queue pairs opts))
 
@@ -443,12 +452,23 @@
   (push-all pq [[p1 v1] [p2 v2]]) => new-pq"
   pq/push-all)
 
+(def peek-min
+  "Return [priority value] of the minimum element.
+  (peek-min pq) => [priority value] or nil"
+  pq/peek-min)
+
 (def peek-val
   "Return just the value (not priority) of the minimum element.
   (peek-val pq) => value or nil
 
-  Note: (peek pq) returns [priority value]."
+  Note: (peek-min pq) returns [priority value]."
   pq/peek-val)
+
+(def pop-min
+  "Remove the minimum-priority element.
+  Returns the queue unchanged if empty.
+  (pop-min pq) => new-pq"
+  pq/pop-min)
 
 (def peek-max
   "Return [priority value] of the maximum element.
@@ -462,6 +482,7 @@
 
 (def pop-max
   "Remove the maximum-priority element.
+  Returns the queue unchanged if empty.
   (pop-max pq) => new-pq"
   pq/pop-max)
 
@@ -638,34 +659,22 @@
         tiebreak
         {}))))
 
-;; Re-export fuzzy-specific functions
+;; Re-export fuzzy-specific functions via protocol
 (def fuzzy-nearest
   "Find the nearest element/entry and its distance.
    For fuzzy-set: (fuzzy-nearest fs query) => [element distance]
    For fuzzy-map: (fuzzy-nearest fm query) => [key value distance]"
-  (fn [coll query]
-    (cond
-      (instance? com.dean.ordered_collections.tree.fuzzy_set.FuzzySet coll)
-      (fuzzy-set/nearest coll query)
-      (instance? com.dean.ordered_collections.tree.fuzzy_map.FuzzyMap coll)
-      (fuzzy-map/nearest coll query)
-      :else (throw (ex-info "fuzzy-nearest requires a FuzzySet or FuzzyMap" {:coll coll})))))
+  proto/nearest-with-distance)
 
 (def fuzzy-exact-contains?
   "Check if the fuzzy collection contains exactly the given element/key.
    Unlike regular lookup, this does not do fuzzy matching."
-  (fn [coll k]
-    (cond
-      (instance? com.dean.ordered_collections.tree.fuzzy_set.FuzzySet coll)
-      (fuzzy-set/exact-contains? coll k)
-      (instance? com.dean.ordered_collections.tree.fuzzy_map.FuzzyMap coll)
-      (fuzzy-map/exact-contains? coll k)
-      :else (throw (ex-info "fuzzy-exact-contains? requires a FuzzySet or FuzzyMap" {:coll coll})))))
+  proto/exact-contains?)
 
 (def fuzzy-exact-get
   "Get the value for exactly the given key (no fuzzy matching).
    Only for fuzzy-map."
-  fuzzy-map/exact-get)
+  proto/exact-get)
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
