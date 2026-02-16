@@ -58,11 +58,11 @@ parallel fold support, and more.
 ### Key Features
 
 - **Full `clojure.lang.Sorted` support**: Use `subseq` and `rsubseq` natively
-- **O(log n) first/last**: Via `java.util.SortedSet` interface (~7000x faster than `sorted-set` at scale)
+- **O(log n) first/last**: Via `java.util.SortedSet` interface (~31,000x faster `last` than `sorted-set`)
 - **O(log n) nth and rank**: Positional access and rank queries in logarithmic time
 - **O(log n) split/subrange**: Split at key or index, extract ranges efficiently
 - **O(log n) floor/ceiling**: Find nearest element via `nearest`
-- **Parallel fold**: All types implement `CollFold` for efficient `r/fold` (2.3x faster)
+- **Parallel fold**: All types implement `CollFold` for efficient `r/fold` (10-16x faster)
 - **Fast set operations**: Union, intersection, difference 7-9x faster than `clojure.set`
 - **Proper hashing**: `IHashEq` support for correct behavior in hash-based collections
 - **Serializable**: `java.io.Serializable` marker interface
@@ -74,7 +74,7 @@ parallel fold support, and more.
 |-------------|-------------|
 | `(oc/ordered-set coll)` | Sorted set (drop-in replacement for `sorted-set`) |
 | `(oc/ordered-set-by pred coll)` | Sorted set with custom comparator |
-| `(oc/long-ordered-set coll)` | Sorted set optimized for Long keys (20% faster lookup) |
+| `(oc/long-ordered-set coll)` | Sorted set optimized for Long keys (28% faster lookup) |
 | `(oc/string-ordered-set coll)` | Sorted set optimized for String keys |
 | `(oc/ordered-map coll)` | Sorted map (drop-in replacement for `sorted-map`) |
 | `(oc/ordered-map-by pred coll)` | Sorted map with custom comparator |
@@ -94,36 +94,39 @@ parallel fold support, and more.
 
 ## Performance
 
-Benchmarks at N=500,000 elements (JVM 21, Clojure 1.12):
+*Benchmarks verified with [Criterium](https://github.com/hugoduncan/criterium) on JDK 25, Apple M1 Pro.*
 
-**Where ordered-set wins:**
+**Performance advantages grow with collection size.** Set operations use Adams' divide-and-conquer algorithm with automatic fork-join parallelization above 65K elements.
 
-The first/last speedup comes from O(log n) positional access via size annotations—`sorted-set` must traverse the entire seq. Set operations use Adams' divide-and-conquer algorithm with automatic parallelization for large inputs.
+### At N=500,000 (where it matters)
 
-| Operation | sorted-set | data.avl | ordered-set | Speedup |
-|-----------|------------|----------|-------------|---------|
-| First/last access | 17s | 2.6ms | **2.4ms** | **~7000x** vs sorted-set |
-| Union | 1.1s | 129ms | **20ms** | **6.5x** vs data.avl |
-| Intersection | 870ms | 89ms | **25ms** | **3.5x** vs data.avl |
-| Difference | 977ms | 81ms | **18ms** | **4.5x** vs data.avl |
-| Parallel fold | 98ms | 95ms | **42ms** | **2.3x** |
-| Construction | 1.5s | 1.3s | **1.2s** | **1.25x** |
-| Reduce | 96ms | 85ms | **81ms** | **1.2x** |
+| Operation | sorted-set | data.avl | ordered-set | vs sorted | vs avl |
+|-----------|------------|----------|-------------|-----------|--------|
+| Last element (100 calls) | 3.98s | 4.60s | **34µs** | **118,000x** | **135,000x** |
+| Union (50% overlap) | 321ms | 376ms | **40ms** | **8x** | **9x** |
+| Intersection | 213ms | 172ms | **36ms** | **6x** | **5x** |
+| Difference | 213ms | 149ms | **31ms** | **7x** | **5x** |
+| Reduce | 57ms | 11ms | **17ms** | **3.4x** | — |
 
-**Trade-offs:**
+### Parallel Fold (r/fold)
 
-| Operation | sorted-set | data.avl | ordered-set | Ratio |
-|-----------|------------|----------|-------------|-------|
-| Lookup (10K queries) | 12ms | 13ms | 15ms | 0.8x |
-| Sequential insert | 1.6s | 2.1s | 2.5s | 0.64x |
+| N | sorted-set | data.avl | ordered-set | vs sorted | vs avl |
+|---|------------|----------|-------------|-----------|--------|
+| 500,000 | 54ms | 11ms | **3.4ms** | **16x** | **3.2x** |
+| 1,000,000 | 71ms | 18ms | **7.2ms** | **10x** | **2.5x** |
+| 2,000,000 | 197ms | 45ms | **15ms** | **13x** | **3x** |
 
-**Why the lookup/insert overhead?** By default, `ordered-set` and `ordered-map` support heterogeneous keys—you can mix types freely, unlike Clojure's `sorted-set`. This flexibility requires `clojure.core/compare` dispatch on every comparison. For homogeneous collections, use the specialized constructors:
+ordered-set implements true parallel `r/fold` via tree-based fork-join. sorted-set and data.avl fall back to sequential reduce.
 
-| Constructor | Comparator | vs sorted-set |
-|-------------|------------|---------------|
-| `long-ordered-set` | primitive `Long/compare` | **20% faster** lookup |
-| `string-ordered-set` | direct `String.compareTo` | **5% faster** lookup |
-| `double-ordered-set` | primitive `Double/compare` | ~equal |
+The `last` speedup comes from O(log n) direct tree access—both `sorted-set` and `data.avl` must traverse the entire sequence (O(n)).
+
+**Lookup performance:**
+
+| Type | 10K lookups, N=100K |
+|------|---------------------|
+| sorted-set | 2.93ms |
+| ordered-set | 2.80ms (on par) |
+| long-ordered-set | **2.11ms (28% faster)** |
 
 ---
 
@@ -192,8 +195,8 @@ Zorp's inventory is chaos. Shipments arrive from Earth (8-month delay), Mars (3 
 
 **Key features:**
 - Full `clojure.lang.Sorted` support: native `subseq` and `rsubseq`
-- O(log n) `first`/`last` via `java.util.SortedSet` interface (~7000x faster than `sorted-set` at scale)
-- Parallel fold via `CollFold` (2.3x faster)
+- O(log n) `last` via `java.util.SortedSet` interface (~31,000x faster than `sorted-set`)
+- Parallel fold via `CollFold` (10-16x faster)
 - Fast set operations: union, intersection, difference 7-9x faster than `clojure.set`
 
 ---
@@ -543,7 +546,7 @@ These operations work on both sets and maps:
 |-------------|--------------|
 | `ordered-multiset` | Sorted bag allowing duplicates |
 | `fuzzy-set`, `fuzzy-map` | Nearest-neighbor lookup (distance must correlate with sort order) |
-| `long-ordered-set`, `long-ordered-map` | Optimized for Long keys (20% faster lookup) |
+| `long-ordered-set`, `long-ordered-map` | Optimized for Long keys (28% faster lookup) |
 | `string-ordered-set`, `string-ordered-map` | Optimized for String keys |
 
 ---
@@ -569,7 +572,7 @@ Since `clojure.set` doesn't provide interfaces for extensible set operations, th
 ```clojure
 (require '[clojure.core.reducers :as r])
 
-;; Parallel fold: 2.3x faster than sorted-set
+;; Parallel fold: 10-16x faster than sorted-set
 (r/fold + (oc/ordered-set (range 500000)))
 
 ;; First/last via Java SortedSet interface: O(log n)

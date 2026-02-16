@@ -19,7 +19,7 @@ A decision guide for choosing between sorted collection implementations.
 | Sorted set with duplicates | `ordered-multiset` |
 | Minimal dependencies | `sorted-map` / `sorted-set` |
 | Batch construction | `ordered-map` / `ordered-set` (parallel) |
-| First/last element access | `ordered-set` (7000x faster) |
+| First/last element access | `ordered-set` (118,000x faster at N=500K) |
 
 ## Detailed Comparison
 
@@ -57,8 +57,8 @@ A decision guide for choosing between sorted collection implementations.
 
 **Best for:**
 - Fast construction via parallel fold (matches or beats sorted-map/sorted-set)
-- First/last element access (~7000x faster than sorted-set at scale)
-- Parallel aggregation via `r/fold` (2.3x faster)
+- First/last element access (~118,000x faster at N=500K than sorted-set at scale)
+- Parallel aggregation via `r/fold` (10-16x faster than sorted-set, 2.5-3x faster than data.avl)
 - Efficient set algebra (union, intersection, difference) — 5-9x faster
 - Split operations (4.5x faster than data.avl)
 - Interval/range overlap queries
@@ -248,10 +248,10 @@ ordered-map:   1.08x            ████▎
 ### First/Last Access (smaller is better)
 
 ```
-1,000 first/last calls on N = 100,000
+1,000 last calls on N = 100,000
 
 sorted-set:    1.0x (baseline)  ████████████████████████████████████████
-ordered-set:   0.00014x         ▏  ← ~7000x FASTER (O(log n) vs O(n))
+ordered-set:   0.00003x         ▏  ← ~31,000x FASTER (O(log n) vs O(n))
 ```
 
 **Verdict:** ordered-set provides O(log n) endpoint access via SortedSet interface.
@@ -392,9 +392,9 @@ ordered-map and ordered-set support:
 
 **Use ordered-collections when:**
 1. You need fast batch construction (parallel fold — 25% faster for sets, equal for maps)
-2. You need first/last element access (7000x faster than sorted-set)
+2. You need first/last element access (118,000x faster at N=500K than sorted-set)
 3. You need `nth` or `rank` operations
-4. You need parallel fold (`r/fold`) — 2.3x faster
+4. You need parallel fold (`r/fold`) — 10-16x faster than sorted-set, 2.5-3x faster than data.avl
 5. You perform set algebra (union, intersection, difference) — 5-9x faster
 6. You need interval/overlap queries
 7. You need efficient split operations — 4.5x faster

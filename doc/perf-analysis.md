@@ -4,26 +4,44 @@ This document provides a detailed analysis of the performance characteristics of
 
 ## Executive Summary
 
-| Feature | ordered-set | long-ordered-set | string-ordered-set |
-|---------|-------------|------------------|-------------------|
-| Construction (batch) | **18% faster** | **18% faster** | **18% faster** |
-| Lookup (contains?) | 14-21% slower | **3% faster** | **5% faster** |
-| First/Last | **13,000x faster** | **13,000x faster** | **13,000x faster** |
-| Reduce (direct) | **3x faster** | **3x faster** | **3x faster** |
-| Reduce over seq | **27% faster** | **27% faster** | **27% faster** |
-| Seq count | **O(1)** vs O(n) | **O(1)** vs O(n) | **O(1)** vs O(n) |
-| Parallel fold | **2.3x faster** | **2.3x faster** | **2.3x faster** |
-| Set operations | **6x faster** | **6x faster** | **6x faster** |
-| nth/rank | **O(log n)** | **O(log n)** | **O(log n)** |
-| Sequential insert | 1.4x slower | 1.4x slower | 1.4x slower |
+*All benchmarks performed using [Criterium](https://github.com/hugoduncan/criterium) on JDK 25, Apple M1 Pro.*
 
-**Bottom line**: Use specialized constructors for competitive lookup performance:
-- `long-ordered-set`/`long-ordered-map` for Long keys (3% faster than sorted-set)
-- `string-ordered-set`/`string-ordered-map` for String keys (5% faster than sorted-set)
-- `double-ordered-set`/`double-ordered-map` for Double keys
-- `ordered-set-with`/`ordered-map-with` for custom comparators
+### Performance at Scale (N=500,000)
 
-The library excels at bulk operations (reduce 3x faster, set ops 6x faster) and O(log n) first/last/nth access.
+The library's advantages grow with collection size. At N=500,000:
+
+| Operation | sorted-set | data.avl | ordered-set | vs sorted | vs avl |
+|-----------|------------|----------|-------------|-----------|--------|
+| Last element (100 calls) | 3.98s | 4.60s | **34µs** | **118,000x** | **135,000x** |
+| Union (50% overlap) | 321ms | 376ms | **40ms** | **8x** | **9x** |
+| Intersection | 213ms | 172ms | **36ms** | **6x** | **5x** |
+| Difference | 213ms | 149ms | **31ms** | **7x** | **5x** |
+| Reduce | 57ms | 11ms | **17ms** | **3.4x** | — |
+
+### Parallel Fold (r/fold)
+
+| N | sorted-set | data.avl | ordered-set | vs sorted | vs avl |
+|---|------------|----------|-------------|-----------|--------|
+| 500,000 | 54ms | 11ms | **3.4ms** | **16x** | **3.2x** |
+| 1,000,000 | 71ms | 18ms | **7.2ms** | **10x** | **2.5x** |
+| 2,000,000 | 197ms | 45ms | **15ms** | **13x** | **3x** |
+
+ordered-set implements true parallel `r/fold` via tree-based fork-join. sorted-set and data.avl fall back to sequential reduce.
+
+### Lookup Performance (N=100,000)
+
+| Type | Time (10K lookups) | vs sorted-set |
+|------|-------------------|---------------|
+| sorted-set | 2.93ms | baseline |
+| data.avl | ~3ms | on par |
+| `ordered-set` | 2.80ms | on par |
+| `long-ordered-set` | 2.11ms | **28% faster** |
+
+**Bottom line**:
+- For large-scale set operations, ordered-collections is **5-9x faster** than both sorted-set and data.avl
+- For `last` element access, it's **100,000x+ faster** at scale (O(log n) vs O(n))
+- For parallel fold, ordered-collections is **10-16x faster** than sorted-set and **2.5-3x faster** than data.avl
+- For lookup-intensive workloads with Long keys, use `long-ordered-set`
 
 ## Construction Performance
 
@@ -70,38 +88,39 @@ This divides the input collection into chunks, builds subtrees in parallel, and 
 
 ## Lookup Performance
 
-Lookup performance depends on the comparator used:
+Lookup performance depends on the comparator used.
+
+### Benchmark Results (10,000 lookups, N=100,000)
 
 | Type | Time | vs sorted-set |
 |------|------|---------------|
-| `long-ordered-set` | 8.98ms | **3% faster** |
-| `string-ordered-set` | 10.28ms | **5% faster** |
-| `sorted-set` | 9.24-10.89ms | baseline |
-| `ordered-set` | 10.51-13.17ms | 14-21% slower |
+| `sorted-set` | 2.93ms | baseline |
+| `ordered-set` | 2.80ms | on par |
+| `long-ordered-set` | 2.11ms | **28% faster** |
 
 ### Why the Difference?
 
-1. **Comparator dispatch**: `clojure.core/compare` has type dispatch overhead
-2. **Solution**: Use specialized constructors to eliminate comparator overhead
+1. **Specialized comparators**: `long-ordered-set` uses primitive `Long/compare` directly
+2. **Generic comparator**: `ordered-set` uses flexible `clojure.core/compare` (handles mixed types)
 
 ### Specialized Constructors
 
 | Key Type | Constructor | Performance |
 |----------|-------------|-------------|
-| Long | `long-ordered-set` / `long-ordered-map` | **3% faster** than sorted-set |
-| Double | `double-ordered-set` / `double-ordered-map` | Matches sorted-set |
-| String | `string-ordered-set` / `string-ordered-map` | **5% faster** than sorted-set |
+| Long | `long-ordered-set` / `long-ordered-map` | **28% faster** than sorted-set |
+| Double | `double-ordered-set` / `double-ordered-map` | On par with sorted-set |
+| String | `string-ordered-set` / `string-ordered-map` | On par with sorted-set |
 | Custom | `ordered-set-with` / `ordered-map-with` | Pass your own Comparator |
 
 ### Recommendation
 
-Always use specialized constructors when your key type is known:
+Use specialized constructors when your key type is known:
 
 ```clojure
-;; For Long keys - 3% faster than sorted-set
+;; For Long keys - 28% faster than sorted-set
 (def s (long-ordered-set data))
 
-;; For String keys - 5% faster than sorted-set
+;; For String keys
 (def s (string-ordered-set data))
 
 ;; For Double keys
@@ -110,32 +129,41 @@ Always use specialized constructors when your key type is known:
 ;; For custom comparators (pass java.util.Comparator directly)
 (def s (ordered-set-with my-comparator data))
 
-;; Generic ordered-set is 14-21% slower (uses clojure.core/compare)
+;; Generic ordered-set is on par with sorted-set
 (def s (ordered-set data))
 ```
 
 ## First/Last Element Access
 
-The most dramatic performance difference: **~13,600x faster at scale**.
+The most dramatic performance difference—grows with collection size due to O(log n) vs O(n) complexity.
+
+### Benchmark Results (last element)
+
+| N | sorted-set | data.avl | ordered-set | vs sorted | vs avl |
+|---|------------|----------|-------------|-----------|--------|
+| 100,000 (1K calls) | 7.98s | 9.11s | **256µs** | **31,000x** | **36,000x** |
+| 500,000 (100 calls) | 3.98s | 4.60s | **34µs** | **118,000x** | **135,000x** |
 
 ### Why the Difference?
 
 | Collection | first | last | Complexity |
 |------------|-------|------|------------|
 | sorted-set | O(1) via seq | O(n) via seq | Must traverse entire sequence |
+| data.avl | O(1) via seq | O(n) via seq | Must traverse entire sequence |
 | ordered-set | O(log n) | O(log n) | Direct tree navigation |
 
 ```clojure
-;; sorted-set: (last s) must realize entire lazy sequence
-(last sorted-set-with-100k-elements)  ;; 17 seconds for 1000 calls
+;; sorted-set & data.avl: (last s) must realize entire lazy sequence
+(last sorted-set-with-500k-elements)  ;; 39.8ms per call
+(last avl-set-with-500k-elements)     ;; 46.0ms per call
 
 ;; ordered-set: Direct tree descent
-(.last ^java.util.SortedSet ordered-set-with-100k-elements)  ;; 2.4ms for 1000 calls
+(.last ^java.util.SortedSet ordered-set-with-500k-elements)  ;; 0.34µs per call
 ```
 
 ### Implementation
 
-ordered-set implements `java.util.SortedSet`, providing O(log n) `.first` and `.last` methods that directly navigate to the leftmost/rightmost nodes.
+ordered-set implements `java.util.SortedSet`, providing O(log n) `.first` and `.last` methods that directly navigate to the leftmost/rightmost nodes. Neither sorted-set nor data.avl provide this optimization.
 
 ## Parallel Fold Performance
 
@@ -163,19 +191,29 @@ The tree is split into chunks of size n, each chunk is reduced in parallel, and 
 
 ## Set Operations
 
-Divide-and-conquer algorithms with parallel execution provide 7-9x speedups over `clojure.set`.
+Divide-and-conquer algorithms with parallel execution provide **5-9x speedups** at scale.
 
-### Benchmark Results (Two sets of 500,000 elements, 50% overlap)
+### Benchmark Results at N=500,000 (two sets with 50% overlap)
 
-| Operation | clojure.set | ordered-set | Speedup |
-|-----------|-------------|-------------|---------|
-| union | 1.1s | **129ms** | 7.8x |
-| intersection | 870ms | **91ms** | 9.0x |
-| difference | 977ms | **102ms** | 7.7x |
+| Operation | sorted-set | data.avl | ordered-set | vs sorted | vs avl |
+|-----------|------------|----------|-------------|-----------|--------|
+| Union | 321ms | 376ms | **40ms** | **8x** | **9x** |
+| Intersection | 213ms | 172ms | **36ms** | **6x** | **5x** |
+| Difference | 213ms | 149ms | **31ms** | **7x** | **5x** |
+
+### At N=100,000
+
+| Operation | sorted-set | data.avl | ordered-set | vs sorted | vs avl |
+|-----------|------------|----------|-------------|-----------|--------|
+| Union | 60ms | 60ms | **13ms** | 4.6x | 4.6x |
+| Intersection | 46ms | 31ms | **13ms** | 3.5x | 2.4x |
+| Difference | 55ms | 31ms | **10ms** | 5.5x | 3.1x |
+
+**Performance advantages grow with collection size** because the parallel threshold (65,536 combined elements) enables fork-join parallelism. At N=500K, the speedup is roughly double that of N=100K.
 
 ### Why It's Faster
 
-**clojure.set approach** (linear):
+Both `sorted-set` and `data.avl` fall back to `clojure.set` which uses linear reduce:
 ```clojure
 (reduce conj s1 s2)  ;; O(m * log(n+m))
 ```
@@ -232,30 +270,38 @@ Weight-balanced trees maintain subtree sizes, enabling O(log n) split without re
 
 ## Iteration Performance
 
-All collection types now have three optimized iteration paths:
+All collection types have optimized iteration paths via IReduceInit.
 
-1. **reduce/IReduceInit** (on collection): Direct tree traversal, **2x faster** than sorted-set
-2. **reduce/IReduceInit** (on seq): Seq types implement IReduceInit, **30% faster** than sorted-set seq
-3. **seq/ISeq** (first/next): Efficient direct seq implementations, within 7% of sorted-set
+### Benchmark Results (reduce)
 
-### Benchmark Results (reduce on collection, N = 100,000)
+| N | sorted-set | data.avl | ordered-set | vs sorted |
+|---|------------|----------|-------------|-----------|
+| 100,000 | 6.5ms | 1.3ms | **1.5ms** | **4.3x** |
+| 500,000 | 57ms | 11ms | **17ms** | **3.4x** |
 
-| Type | sorted-* | ordered-* | Speedup |
-|------|----------|-----------|---------|
-| Set | 15.2ms | **7.1ms** | **2.1x faster** |
+ordered-set is **3-4x faster** than sorted-set due to direct tree traversal. data.avl has a slight edge due to simpler node structure, but ordered-set provides additional features (parallel fold, O(log n) nth, set operations).
 
-### Benchmark Results (reduce over seq, N = 100,000)
+## Parallel Fold (r/fold)
 
-| Type | sorted-* | ordered-* | Speedup |
-|------|----------|-----------|---------|
-| Set | 15.5ms | **10.9ms** | **1.4x faster** |
-| Map | 23.3ms | **16.7ms** | **1.4x faster** |
+ordered-set implements `clojure.core.reducers/CollFold` using a tree-based fork-join algorithm. sorted-set and data.avl fall back to sequential reduce.
 
-### Benchmark Results (seq iteration via dorun, N = 100,000)
+### Benchmark Results
 
-| Type | sorted-* | ordered-* | Ratio |
-|------|----------|-----------|-------|
-| Set | 10.5ms | 11.3ms | 0.93x (7% slower) |
+| N | sorted-set | data.avl | ordered-set | vs sorted | vs avl |
+|---|------------|----------|-------------|-----------|--------|
+| 500,000 | 54ms | 11ms | **3.4ms** | **16x** | **3.2x** |
+| 1,000,000 | 71ms | 18ms | **7.2ms** | **10x** | **2.5x** |
+| 2,000,000 | 197ms | 45ms | **15ms** | **13x** | **3x** |
+
+ordered-set's parallel fold is **10-16x faster** than sorted-set and **2.5-3x faster** than data.avl.
+
+### Implementation
+
+The tree-based fold uses natural parallelism from the tree structure:
+1. Below threshold (8K elements): sequential in-order traversal
+2. Above threshold: fork left subtree, compute right inline, combine results
+
+This avoids the overhead of creating intermediate sequences or offset vectors.
 
 ### Why It's Fast
 
@@ -296,45 +342,55 @@ The ~8 byte overhead stores subtree weights for O(log n) nth/rank operations.
 
 ## Recommendations
 
-### Use ordered-set when:
-- Building from collections (25% faster construction)
-- Need first/last access (7000x faster)
-- Performing set algebra (5-9x faster)
-- Using parallel fold (2.3x faster)
-- Need split operations (4.5x faster)
+### Use ordered-set when working at scale (N > 100K):
+- Need `last` element access (**118,000x faster** at N=500K)
+- Performing set algebra (**6-8x faster** at N=500K)
+- Need reduce over large collections (**3.4x faster** at N=500K)
+- Need nth/rank access (O(log n) vs O(n))
+
+### Use long-ordered-set/long-ordered-map when:
+- Working with Long keys (**28% faster** lookups than sorted-set)
+- Need both fast lookup and ordered operations
 
 ### Use ordered-map when:
-- Building from collections (matches sorted-map)
 - Need nth/rank access (O(log n) vs O(n))
-- Using parallel fold (2.3x faster)
 - Need consistent API with ordered-set
 
 ### Avoid ordered-* when:
 - Exclusively doing sequential inserts (use batch construction instead)
-- Zero dependencies required
-- Lookup-only workload with no other features needed
+- Working only with small collections (N < 1000) where overhead dominates
 
 ## Profiling Tips
 
-To profile your specific workload:
+For accurate benchmarking, use the Criterium-based test suite:
 
 ```clojure
-(require '[com.dean.ordered-collections.bench :as bench])
+(require '[com.dean.ordered-collections.criterium-bench :as cb])
 
-;; Quick benchmark
-(bench/run-quick)
+;; Quick benchmark suite (~10 minutes)
+(cb/run-quick)
 
-;; Specific sizes
-(bench/run-map-benchmarks [10000 100000])
-(bench/run-set-benchmarks [10000 100000])
-(bench/run-set-operations-benchmarks [10000 100000])
+;; Medium suite (~20-30 minutes)
+(cb/run-medium)
+
+;; Full statistical analysis (~45-60 minutes)
+(cb/run-full)
+
+;; Individual benchmarks
+(cb/bench-set-union 100000)
+(cb/bench-set-iteration 100000)
+(cb/compare-set-operations 500000)
+
+;; Quick mode for development
+(cb/with-quick-bench
+  (cb/bench-map-lookup 10000))
 ```
 
-For production profiling, use Criterium:
+For custom benchmarks, use Criterium directly:
 
 ```clojure
 (require '[criterium.core :as crit])
 
 (crit/bench (ordered-set my-data))
-(crit/bench (get my-ordered-map some-key))
+(crit/quick-bench (get my-ordered-map some-key))
 ```

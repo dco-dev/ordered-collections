@@ -52,7 +52,7 @@ Both libraries provide drop-in replacements for Clojure's sorted collections wit
 
 ## Performance Comparison
 
-Based on benchmarks run on JDK 21, Apple M1 Pro.
+*Benchmarks run using [Criterium](https://github.com/hugoduncan/criterium) on JDK 25, Apple M1 Pro.*
 
 ### Construction (build from N elements)
 
@@ -76,39 +76,35 @@ Based on benchmarks run on JDK 21, Apple M1 Pro.
 
 ### Lookup (10,000 random lookups)
 
-| N | sorted-map | data.avl | ordered-map |
-|---|------------|----------|-------------|
-| 10,000 | ~3 ms | ~2.5 ms | ~2.5 ms |
-| 100,000 | ~4 ms | ~3 ms | ~3 ms |
+| N | sorted-set | ordered-set | long-ordered-set |
+|---|------------|-------------|------------------|
+| 100,000 | 2.93ms | 2.80ms | **2.11ms** |
 
-**Verdict**: data.avl and ordered-collections are both faster than sorted-map. Roughly equivalent to each other.
+**Verdict**: Generic `ordered-set` is on par with `sorted-set`. `long-ordered-set` is **28% faster** due to primitive comparator.
 
 ### Set Operations (union/intersection/difference)
 
 Comparing ordered-collections to data.avl (which falls back to clojure.set):
 
-| N | Operation | data.avl | ordered-set | Speedup |
-|---|-----------|----------|-------------|---------|
-| 10,000 | Union | ~2.6 ms | ~0.4 ms | 6x |
-| 10,000 | Intersection | ~1.3 ms | ~0.4 ms | 3x |
-| 50,000 | Union | ~14 ms | ~2.3 ms | 6x |
-| 50,000 | Intersection | ~7.6 ms | ~2.4 ms | 3x |
-| 100,000 | Union | ~26 ms | ~16 ms | 1.6x |
-| 100,000 | Intersection | ~17 ms | ~7.7 ms | 2.2x |
-| 500,000 | Union | ~129 ms | ~20 ms | 6.5x |
-| 500,000 | Intersection | ~89 ms | ~25 ms | 3.5x |
-| 500,000 | Difference | ~81 ms | ~18 ms | 4.5x |
+**At N=500,000 (two sets with 50% overlap):**
 
-**Verdict**: **ordered-collections is 2-6x faster** for set operations due to Adams' divide-and-conquer algorithm with fork-join parallelism (for collections above 65,536 combined elements).
+| Operation | sorted-set | data.avl | ordered-set | Speedup |
+|-----------|------------|----------|-------------|---------|
+| Union | 321ms | 376ms | **40ms** | **8x** |
+| Intersection | 213ms | 172ms | **36ms** | **5-6x** |
+| Difference | 213ms | 149ms | **31ms** | **5-7x** |
+
+**Verdict**: **ordered-collections is 5-8x faster** at scale due to Adams' divide-and-conquer algorithm with fork-join parallelism (for collections above 65,536 combined elements).
 
 ### Parallel Fold (r/fold)
 
-| N | sorted-set | data.avl | ordered-set | Speedup |
-|---|------------|----------|-------------|---------|
-| 100,000 | ~5 ms | ~5 ms | ~2 ms | 2.5x |
-| 1,000,000 | ~50 ms | ~50 ms | ~20 ms | 2.5x |
+| N | sorted-set | data.avl | ordered-set | vs sorted | vs avl |
+|---|------------|----------|-------------|-----------|--------|
+| 500,000 | 54ms | 11ms | **3.4ms** | **16x** | **3.2x** |
+| 1,000,000 | 71ms | 18ms | **7.2ms** | **10x** | **2.5x** |
+| 2,000,000 | 197ms | 45ms | **15ms** | **13x** | **3x** |
 
-**Verdict**: **ordered-collections implements CollFold** for efficient parallel reduction. data.avl falls back to sequential reduction.
+**Verdict**: **ordered-collections is 2.5-3x faster than data.avl** for parallel fold using tree-based fork-join. data.avl falls back to sequential reduction.
 
 ### Transient Batch Operations
 
@@ -171,7 +167,7 @@ Measured with clj-memory-meter at N=100,000:
 ### Primitive Specialization (ordered-collections only)
 
 ```clojure
-;; 15-25% faster for numeric workloads
+;; 28% faster lookups for Long keys
 (long-ordered-set [1 2 3])    ; primitive long keys
 (double-ordered-map {1.0 :a}) ; primitive double keys
 (string-ordered-set ["a" "b"]) ; optimized string comparison
@@ -278,12 +274,18 @@ For most applications, the performance differences are negligible. Choose based 
 ## Appendix: Benchmark Reproduction
 
 ```clojure
-;; Run the benchmark suite
-(require '[com.dean.ordered-collections.bench :as bench])
-(bench/run-all [1000 10000 100000])
+;; Run the Criterium benchmark suite (statistically valid results)
+(require '[com.dean.ordered-collections.criterium-bench :as cb])
 
-;; Quick comparison
-(bench/run-quick)
+;; Quick suite (~10 minutes)
+(cb/run-quick)
+
+;; Full suite with statistical analysis (~45-60 minutes)
+(cb/run-full)
+
+;; Individual comparisons
+(cb/with-quick-bench
+  (cb/compare-set-operations 100000))
 ```
 
 Memory measurement requires `clj-memory-meter`:

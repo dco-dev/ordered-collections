@@ -173,19 +173,31 @@ All notable changes to this project will be documented in this file.
 - Previously, parallel workers lost dynamic binding for node allocator, causing `ClassCastException` for collections >2048 elements
 - Interval trees now construct correctly at all sizes
 
-### Performance Summary (vs sorted-map/sorted-set at N=100K)
+### Performance Summary (N=500K, verified with Criterium)
 
-| Operation | ordered-* | long-ordered-* | string-ordered-* |
-|-----------|-----------|----------------|------------------|
-| Construction (batch) | **14% faster** | **7% faster** | **14% faster** |
-| Sequential insert | 1.4-2.3x slower | 1.4-2.3x slower | 1.4-2.3x slower |
-| Lookup | 58% slower | **20% faster** | **5% faster** |
-| Direct reduce | **2.4x faster** | **2.4x faster** | **2.4x faster** |
-| Reduce over seq | **27% faster** | **27% faster** | **27% faster** |
-| First/last | **13,000x faster** | **13,000x faster** | **13,000x faster** |
-| Set operations | **7x faster** | **7x faster** | **7x faster** |
-| Parallel fold | **2.3x faster** | **2.3x faster** | **2.3x faster** |
-| nth/rank | **O(log n)** | **O(log n)** | **O(log n)** |
+| Operation | sorted-set | data.avl | ordered-set | vs sorted | vs avl |
+|-----------|------------|----------|-------------|-----------|--------|
+| Last element (100 calls) | 3.98s | 4.60s | **34µs** | **118,000x** | **135,000x** |
+| Union (50% overlap) | 321ms | 376ms | **40ms** | **8x** | **9x** |
+| Intersection | 213ms | 172ms | **36ms** | **6x** | **5x** |
+| Difference | 213ms | 149ms | **31ms** | **7x** | **5x** |
+| Reduce | 57ms | 11ms | **17ms** | **3.4x** | — |
+
+**Parallel Fold (r/fold):**
+| N | sorted-set | data.avl | ordered-set | vs sorted | vs avl |
+|---|------------|----------|-------------|-----------|--------|
+| 500K | 54ms | 11ms | **3.4ms** | **16x** | **3.2x** |
+| 1M | 71ms | 18ms | **7.2ms** | **10x** | **2.5x** |
+| 2M | 197ms | 45ms | **15ms** | **13x** | **3x** |
+
+Tree-based fork-join parallelism. sorted-set and data.avl fall back to sequential.
+
+**Lookup (10K queries, N=100K):**
+- sorted-set: 2.93ms
+- ordered-set: 2.80ms (on par)
+- long-ordered-set: **2.11ms (28% faster)**
+
+Performance advantages grow with collection size. For `last` element, ordered-set is O(log n) while sorted-set and data.avl are O(n).
 
 ### Breaking Changes
 

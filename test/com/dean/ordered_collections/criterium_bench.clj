@@ -32,6 +32,7 @@
   (:require [criterium.core :as crit]
             [clojure.core.reducers :as r]
             [clojure.data.avl :as avl]
+            [clojure.set :as cset]
             [clojure.string :as str]
             [com.dean.ordered-collections.core :as core]
             [com.dean.ordered-collections.tree.order :as order]))
@@ -336,6 +337,117 @@
     (run-bench (r/fold + sum-elems os))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Set Operations (union, intersection, difference)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn bench-set-union
+  "Benchmark set union. Tests merging two sets with ~50% overlap."
+  [n]
+  (let [;; Create two sets with 50% overlap: [0, n) and [n/2, 3n/2)
+        elems1 (range n)
+        elems2 (range (quot n 2) (+ n (quot n 2)))
+        ss1    (into (sorted-set) elems1)
+        ss2    (into (sorted-set) elems2)
+        as1    (into (avl/sorted-set) elems1)
+        as2    (into (avl/sorted-set) elems2)
+        os1    (core/ordered-set elems1)
+        os2    (core/ordered-set elems2)]
+    (print-header (str "SET UNION: Two sets of N=" n " with 50% overlap"))
+
+    (print-section "sorted-set (clojure.set/union)")
+    (run-bench (cset/union ss1 ss2))
+
+    (print-section "data.avl/sorted-set (clojure.set/union)")
+    (run-bench (cset/union as1 as2))
+
+    (print-section "ordered-set (parallel union)")
+    (run-bench (core/union os1 os2))))
+
+(defn bench-set-intersection
+  "Benchmark set intersection. Tests intersecting two sets with ~50% overlap."
+  [n]
+  (let [elems1 (range n)
+        elems2 (range (quot n 2) (+ n (quot n 2)))
+        ss1    (into (sorted-set) elems1)
+        ss2    (into (sorted-set) elems2)
+        as1    (into (avl/sorted-set) elems1)
+        as2    (into (avl/sorted-set) elems2)
+        os1    (core/ordered-set elems1)
+        os2    (core/ordered-set elems2)]
+    (print-header (str "SET INTERSECTION: Two sets of N=" n " with 50% overlap"))
+
+    (print-section "sorted-set (clojure.set/intersection)")
+    (run-bench (cset/intersection ss1 ss2))
+
+    (print-section "data.avl/sorted-set (clojure.set/intersection)")
+    (run-bench (cset/intersection as1 as2))
+
+    (print-section "ordered-set (parallel intersection)")
+    (run-bench (core/intersection os1 os2))))
+
+(defn bench-set-difference
+  "Benchmark set difference. Tests differing two sets with ~50% overlap."
+  [n]
+  (let [elems1 (range n)
+        elems2 (range (quot n 2) (+ n (quot n 2)))
+        ss1    (into (sorted-set) elems1)
+        ss2    (into (sorted-set) elems2)
+        as1    (into (avl/sorted-set) elems1)
+        as2    (into (avl/sorted-set) elems2)
+        os1    (core/ordered-set elems1)
+        os2    (core/ordered-set elems2)]
+    (print-header (str "SET DIFFERENCE: Two sets of N=" n " with 50% overlap"))
+
+    (print-section "sorted-set (clojure.set/difference)")
+    (run-bench (cset/difference ss1 ss2))
+
+    (print-section "data.avl/sorted-set (clojure.set/difference)")
+    (run-bench (cset/difference as1 as2))
+
+    (print-section "ordered-set (parallel difference)")
+    (run-bench (core/difference os1 os2))))
+
+(defn run-set-operations-benchmarks
+  "Run all set operation benchmarks at given size."
+  [n]
+  (bench-set-union n)
+  (bench-set-intersection n)
+  (bench-set-difference n))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; First/Last Access
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn bench-first-last
+  "Benchmark first/last element access.
+   This demonstrates the dramatic difference between O(log n) direct access
+   and O(n) sequence traversal for `last`."
+  [n & {:keys [num-ops] :or {num-ops 1000}}]
+  (let [elems (range n)
+        ss    (into (sorted-set) elems)
+        as    (into (avl/sorted-set) elems)
+        os    (core/ordered-set elems)]
+    (print-header (str "FIRST/LAST ACCESS: " num-ops " operations, N=" n))
+
+    (print-section "sorted-set first")
+    (run-bench (dotimes [_ num-ops] (first ss)))
+
+    (print-section "sorted-set last (O(n) - traverses entire seq)")
+    (run-bench (dotimes [_ num-ops] (last ss)))
+
+    (print-section "data.avl/sorted-set first")
+    (run-bench (dotimes [_ num-ops] (first as)))
+
+    (print-section "data.avl/sorted-set last (O(n) - traverses entire seq)")
+    (run-bench (dotimes [_ num-ops] (last as)))
+
+    (print-section "ordered-set first (O(log n) - direct tree access)")
+    (run-bench (dotimes [_ num-ops] (.first ^java.util.SortedSet os)))
+
+    (print-section "ordered-set last (O(log n) - direct tree access)")
+    (run-bench (dotimes [_ num-ops] (.last ^java.util.SortedSet os)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Specialty Operations
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -561,6 +673,18 @@
   (bench-map-construction n)
   (bench-set-construction n))
 
+(defn compare-set-operations
+  "Direct comparison of set operations (union, intersection, difference)."
+  [n]
+  (bench-set-union n)
+  (bench-set-intersection n)
+  (bench-set-difference n))
+
+(defn compare-first-last
+  "Direct comparison of first/last access."
+  [n]
+  (bench-first-last n))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Suite Runners
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -591,7 +715,8 @@
   (bench-rank-access n)
   (bench-rank-lookup n)
   (bench-split n)
-  (bench-subseq n))
+  (bench-subseq n)
+  (bench-first-last n))
 
 (defn run-string-benchmarks
   "Run string key benchmarks at given size."
@@ -636,6 +761,7 @@
 
       (run-map-benchmarks n)
       (run-set-benchmarks n)
+      (run-set-operations-benchmarks n)
       (run-specialty-benchmarks n)
       (run-string-benchmarks n)
       (run-interval-benchmarks n))
@@ -699,6 +825,14 @@
   (bench-map-fold 500000)
   (bench-set-fold 1000000)
   (bench-subseq 100000)
+
+  ;; Set operations (major performance win)
+  (with-quick-bench
+    (compare-set-operations 100000))
+
+  ;; First/last access (dramatic difference)
+  (with-quick-bench
+    (bench-first-last 100000))
 
   ;; Quick sanity check
   (with-quick-bench

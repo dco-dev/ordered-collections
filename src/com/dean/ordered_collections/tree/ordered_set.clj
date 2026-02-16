@@ -328,8 +328,7 @@
   clojure.core.reducers.CollFold
   (coll-fold [this n combinef reducef]
     (with-ordered-set this
-      (tree/node-chunked-fold n root combinef
-        (fn [acc node] (reducef acc (node/-k node))))))
+      (tree/node-parallel-fold-keys combinef reducef root)))
 
   PNearest
   (nearest [this test k]

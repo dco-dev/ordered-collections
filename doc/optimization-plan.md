@@ -108,7 +108,7 @@ Based on benchmarks at N=100,000:
 | Batch construction | **25% faster** (sets) | Parallel fold + union |
 | Direct reduce | **2.1x faster** | IReduceInit with tree traversal |
 | Reduce over seq | **27% faster** | IReduceInit on seq types |
-| First/last | **~7000x faster** | O(log n) vs O(n) |
+| First/last | **~118,000x faster** | O(log n) vs O(n) |
 | Set operations | **6-9x faster** | Parallel divide-and-conquer |
 | Count on seq | **O(1) vs O(n)** | Counted seqs track size |
 | nth access | **O(log n) vs O(n)** | Subtree weights |

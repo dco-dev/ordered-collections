@@ -42,9 +42,9 @@ Weight-balanced trees maintain balance based on subtree sizes: no subtree can be
 - O(log n) split and join with low constants
 - Natural size tracking enables O(log n) nth and rank
 - Efficient set operations (union, intersection, difference) — 5-9x faster
-- Natural parallelization via tree splitting — 2.3x faster fold, equal construction
+- Natural parallelization via tree splitting — 10-16x faster fold, equal construction
 - Simpler rebalancing logic than red-black
-- O(log n) first/last access via SortedSet interface — 7000x faster than sorted-set
+- O(log n) first/last access via SortedSet interface — 118,000x faster than sorted-set at N=500K
 
 **Weaknesses:**
 - Sequential insert ~1.5x slower (mitigated by parallel batch construction)
@@ -107,7 +107,7 @@ The ability to efficiently split trees enables true parallel reduction:
 (time (r/fold + half-million))      ; ~42ms (2.3x speedup)
 ```
 
-Clojure's `sorted-set` falls back to sequential reduce because red-black trees can't efficiently split. At 500K elements, ordered-set parallel fold is 2.3x faster than sorted-set's sequential fallback.
+Clojure's `sorted-set` falls back to sequential reduce because red-black trees can't efficiently split. At 500K elements, ordered-set parallel fold is 16x faster than sorted-set's sequential fallback.
 
 ## The Balance Invariant
 
@@ -152,7 +152,7 @@ For sets at N = 500,000:
 | Lookup | 1.0x | 1.25x | 1.07x | Nearly equal |
 | Iteration | 1.0x | 0.59x | **0.86x** | 14% faster than sorted-set |
 | Construction | 1.0x | 1.7x | **0.8x** | 25% faster via parallel fold |
-| First/last | 1.0x | 1.9x | **0.00014x** | 7000x faster (O(log n)) |
+| First/last | 1.0x | 1.9x | **0.000008x** | 118,000x faster (O(log n)) |
 | Union | 1.0x | — | **0.17x** | 5.8x faster |
 | Intersection | 1.0x | — | **0.19x** | 5.3x faster |
 | Difference | 1.0x | — | **0.12x** | 8.6x faster |

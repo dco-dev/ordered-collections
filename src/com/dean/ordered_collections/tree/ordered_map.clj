@@ -188,8 +188,7 @@
   clojure.core.reducers.CollFold
   (coll-fold [this n combinef reducef]
     (with-ordered-map this
-      (tree/node-chunked-fold n root combinef
-        (fn [acc node] (reducef acc (node/-kv node))))))
+      (tree/node-parallel-fold-entries combinef reducef root)))
 
   clojure.lang.IPersistentMap
   (assocEx [this k v]

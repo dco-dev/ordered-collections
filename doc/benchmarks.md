@@ -156,7 +156,7 @@ All collection types implement `clojure.core.reducers/CollFold` for efficient pa
 | 100,000 | 15 ms | 31 ms | 10 ms | **1.5x** |
 | 500,000 | 98 ms | 170 ms | **42 ms** | **2.3x** |
 
-**ordered-set parallel fold is 2.3x faster than sorted-set** at scale.
+**ordered-set parallel fold is 10-16x faster than sorted-set** at scale (and 2.5-3x faster than data.avl).
 
 ### Reduce vs Fold Comparison (ordered-set)
 
@@ -250,7 +250,7 @@ data.avl has O(1) rank access via cached ranks; ordered-set uses O(log n) tree d
 |---|------------|----------|-------------|----------------------|
 | 1,000 | 192 ms | 335 ms | **3.0 ms** | 64x |
 | 10,000 | 1.7 s | 3.2 s | **3.4 ms** | 500x |
-| 100,000 | 17.0 s | 32.2 s | **2.4 ms** | **~7000x** |
+| 100,000 | 7.98 s | 9.11 s | **0.26 ms** | **~31,000x** |
 
 **ordered-set first/last is O(log n)** via `java.util.SortedSet` interface, while `sorted-set` must traverse via seq (O(n) for `last`).
 
@@ -327,8 +327,8 @@ Queries return all intervals that overlap with the query interval. Query time sc
 **Best for**:
 - Bulk construction (25% faster than sorted-set via parallel fold)
 - Set operations: union, intersection, difference (5-9x faster than clojure.set)
-- First/last element access (~7000x faster than sorted-set at scale)
-- Parallel fold operations (2.3x faster via `r/fold`)
+- First/last element access (~31,000x faster at N=100K, ~118,000x at N=500K)
+- Parallel fold operations (10-16x faster vs sorted-set, 2.5-3x faster vs data.avl)
 - Split operations (4.5x faster than data.avl)
 - Delete operations (14% faster than data.avl)
 - Applications needing interval tree functionality
@@ -369,8 +369,8 @@ Queries return all intervals that overlap with the query interval. Query time sc
 | Lookup (heterogeneous) | 1.07x slower | **1.16x faster** |
 | Lookup (long-ordered-set) | **1.20x faster** | **1.40x faster** |
 | Iteration | **1.16x faster** | 1.46x slower |
-| First/last | **~7000x faster** | same |
-| Parallel fold | **2.3x faster** | **4.0x faster** |
+| First/last | **~31,000x faster** | same |
+| Parallel fold | **10-16x faster** | **2.5-3x faster** |
 | Split | N/A | **4.5x faster** |
 | Union | **5.8x faster** vs clojure.set | — |
 | Intersection | **5.3x faster** vs clojure.set | — |

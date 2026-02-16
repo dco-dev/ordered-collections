@@ -15,13 +15,20 @@
 ;; Benchmarking Infrastructure
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; JIT warmup is critical for accurate benchmarks. The JVM needs significant
+;; iteration counts to trigger compilation and optimization. We use 20+ warmup
+;; iterations to ensure stable, reproducible results.
+
 (defmacro bench
-  "Run body warmup-n times, then measure-n times, return [mean-ns std-ns]"
+  "Run body warmup-n times, then measure-n times, return [mean-ns std-ns].
+
+   IMPORTANT: For accurate results, warmup-n should be at least 15-20 to allow
+   JIT compilation. Lower values will show artificially slow times."
   [warmup-n measure-n & body]
   `(do
      (dotimes [_# ~warmup-n] ~@body)
      (System/gc)
-     (Thread/sleep 50)
+     (Thread/sleep 100)
      (let [times# (long-array ~measure-n)]
        (dotimes [i# ~measure-n]
          (let [t0# (System/nanoTime)
@@ -69,9 +76,9 @@
   (doseq [n sizes]
     (let [pairs (mapv (fn [k] [k (str k)]) (shuffle (range n)))]
       (print-row n
-        [(bench 3 7 (into (sorted-map) pairs))
-         (bench 3 7 (into (avl/sorted-map) pairs))
-         (bench 3 7 (core/ordered-map pairs))]))))
+        [(bench 20 10 (into (sorted-map) pairs))
+         (bench 20 10 (into (avl/sorted-map) pairs))
+         (bench 20 10 (core/ordered-map pairs))]))))
 
 (defn bench-map-incremental-insert
   "Benchmark assoc one element at a time from empty."
@@ -81,13 +88,13 @@
   (doseq [n sizes]
     (let [ks (shuffle (range n))]
       (print-row n
-        [(bench 3 7
+        [(bench 20 10
            (loop [m (sorted-map) xs (seq ks)]
              (if xs (recur (assoc m (first xs) true) (next xs)) m)))
-         (bench 3 7
+         (bench 20 10
            (loop [m (avl/sorted-map) xs (seq ks)]
              (if xs (recur (assoc m (first xs) true) (next xs)) m)))
-         (bench 3 7
+         (bench 20 10
            (loop [m (core/ordered-map) xs (seq ks)]
              (if xs (recur (assoc m (first xs) true) (next xs)) m)))]))))
 
@@ -103,9 +110,9 @@
           am     (into (avl/sorted-map) pairs)
           om     (core/ordered-map pairs)]
       (print-row n
-        [(bench 3 7 (reduce (fn [m k] (dissoc m k)) sm to-del))
-         (bench 3 7 (reduce (fn [m k] (dissoc m k)) am to-del))
-         (bench 3 7 (reduce (fn [m k] (dissoc m k)) om to-del))]))))
+        [(bench 20 10 (reduce (fn [m k] (dissoc m k)) sm to-del))
+         (bench 20 10 (reduce (fn [m k] (dissoc m k)) am to-del))
+         (bench 20 10 (reduce (fn [m k] (dissoc m k)) om to-del))]))))
 
 (defn bench-map-lookup
   "Benchmark 10,000 random lookups on a map of size N."
@@ -119,9 +126,9 @@
           om    (core/ordered-map pairs)
           ks    (int-array (repeatedly 10000 #(rand-int n)))]
       (print-row n
-        [(bench 3 10 (dotimes [i 10000] (get sm (aget ks i))))
-         (bench 3 10 (dotimes [i 10000] (get am (aget ks i))))
-         (bench 3 10 (dotimes [i 10000] (om (aget ks i))))]))))
+        [(bench 20 10 (dotimes [i 10000] (get sm (aget ks i))))
+         (bench 20 10 (dotimes [i 10000] (get am (aget ks i))))
+         (bench 20 10 (dotimes [i 10000] (om (aget ks i))))]))))
 
 (defn bench-map-iteration
   "Benchmark traversing all N entries via reduce."
@@ -134,9 +141,9 @@
           am    (into (avl/sorted-map) pairs)
           om    (core/ordered-map pairs)]
       (print-row n
-        [(bench 3 10 (reduce (fn [^long acc [k _]] (+ acc (long k))) 0 sm))
-         (bench 3 10 (reduce (fn [^long acc [k _]] (+ acc (long k))) 0 am))
-         (bench 3 10 (reduce (fn [^long acc [k _]] (+ acc (long k))) 0 om))]))))
+        [(bench 20 10 (reduce (fn [^long acc [k _]] (+ acc (long k))) 0 sm))
+         (bench 20 10 (reduce (fn [^long acc [k _]] (+ acc (long k))) 0 am))
+         (bench 20 10 (reduce (fn [^long acc [k _]] (+ acc (long k))) 0 om))]))))
 
 (defn bench-map-seq-iteration
   "Benchmark traversing all N entries via seq (lazy)."
@@ -149,9 +156,9 @@
           am    (into (avl/sorted-map) pairs)
           om    (core/ordered-map pairs)]
       (print-row n
-        [(bench 3 10 (reduce (fn [^long acc [k _]] (+ acc (long k))) 0 (seq sm)))
-         (bench 3 10 (reduce (fn [^long acc [k _]] (+ acc (long k))) 0 (seq am)))
-         (bench 3 10 (reduce (fn [^long acc [k _]] (+ acc (long k))) 0 (seq om)))]))))
+        [(bench 20 10 (reduce (fn [^long acc [k _]] (+ acc (long k))) 0 (seq sm)))
+         (bench 20 10 (reduce (fn [^long acc [k _]] (+ acc (long k))) 0 (seq am)))
+         (bench 20 10 (reduce (fn [^long acc [k _]] (+ acc (long k))) 0 (seq om)))]))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Set Benchmarks
@@ -165,9 +172,9 @@
   (doseq [n sizes]
     (let [elems (shuffle (range n))]
       (print-row n
-        [(bench 3 7 (into (sorted-set) elems))
-         (bench 3 7 (into (avl/sorted-set) elems))
-         (bench 3 7 (core/ordered-set elems))]))))
+        [(bench 20 10 (into (sorted-set) elems))
+         (bench 20 10 (into (avl/sorted-set) elems))
+         (bench 20 10 (core/ordered-set elems))]))))
 
 (defn bench-set-incremental-insert
   "Benchmark conj one element at a time from empty."
@@ -177,13 +184,13 @@
   (doseq [n sizes]
     (let [elems (shuffle (range n))]
       (print-row n
-        [(bench 3 7
+        [(bench 20 10
            (loop [s (sorted-set) xs (seq elems)]
              (if xs (recur (conj s (first xs)) (next xs)) s)))
-         (bench 3 7
+         (bench 20 10
            (loop [s (avl/sorted-set) xs (seq elems)]
              (if xs (recur (conj s (first xs)) (next xs)) s)))
-         (bench 3 7
+         (bench 20 10
            (loop [s (core/ordered-set) xs (seq elems)]
              (if xs (recur (conj s (first xs)) (next xs)) s)))]))))
 
@@ -199,9 +206,9 @@
           as     (into (avl/sorted-set) elems)
           os     (core/ordered-set elems)]
       (print-row n
-        [(bench 3 7 (reduce (fn [s x] (disj s x)) ss to-del))
-         (bench 3 7 (reduce (fn [s x] (disj s x)) as to-del))
-         (bench 3 7 (reduce (fn [s x] (disj s x)) os to-del))]))))
+        [(bench 20 10 (reduce (fn [s x] (disj s x)) ss to-del))
+         (bench 20 10 (reduce (fn [s x] (disj s x)) as to-del))
+         (bench 20 10 (reduce (fn [s x] (disj s x)) os to-del))]))))
 
 (defn bench-set-lookup
   "Benchmark 10,000 random contains? checks on a set of size N."
@@ -215,9 +222,9 @@
           os    (core/ordered-set elems)
           ks    (int-array (repeatedly 10000 #(rand-int n)))]
       (print-row n
-        [(bench 3 10 (dotimes [i 10000] (contains? ss (aget ks i))))
-         (bench 3 10 (dotimes [i 10000] (contains? as (aget ks i))))
-         (bench 3 10 (dotimes [i 10000] (contains? os (aget ks i))))]))))
+        [(bench 20 10 (dotimes [i 10000] (contains? ss (aget ks i))))
+         (bench 20 10 (dotimes [i 10000] (contains? as (aget ks i))))
+         (bench 20 10 (dotimes [i 10000] (contains? os (aget ks i))))]))))
 
 (defn bench-set-iteration
   "Benchmark traversing all N elements via reduce."
@@ -230,9 +237,9 @@
           as    (into (avl/sorted-set) elems)
           os    (core/ordered-set elems)]
       (print-row n
-        [(bench 3 10 (reduce (fn [^long acc x] (+ acc (long x))) 0 ss))
-         (bench 3 10 (reduce (fn [^long acc x] (+ acc (long x))) 0 as))
-         (bench 3 10 (reduce (fn [^long acc x] (+ acc (long x))) 0 os))]))))
+        [(bench 20 10 (reduce (fn [^long acc x] (+ acc (long x))) 0 ss))
+         (bench 20 10 (reduce (fn [^long acc x] (+ acc (long x))) 0 as))
+         (bench 20 10 (reduce (fn [^long acc x] (+ acc (long x))) 0 os))]))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Ranked Access Benchmarks (data.avl specialty)
@@ -249,8 +256,8 @@
           os    (core/ordered-set elems)
           idxs  (int-array (repeatedly 10000 #(rand-int n)))]
       (print-row n
-        [(bench 3 10 (dotimes [i 10000] (nth as (aget idxs i))))
-         (bench 3 10 (dotimes [i 10000] (nth os (aget idxs i))))]))))
+        [(bench 20 10 (dotimes [i 10000] (nth as (aget idxs i))))
+         (bench 20 10 (dotimes [i 10000] (nth os (aget idxs i))))]))))
 
 (defn bench-rank-lookup
   "Benchmark finding the rank of an element."
@@ -263,8 +270,8 @@
           os    (core/ordered-set elems)
           ks    (int-array (repeatedly 10000 #(rand-int n)))]
       (print-row n
-        [(bench 3 10 (dotimes [i 10000] (avl/rank-of as (aget ks i))))
-         (bench 3 10 (dotimes [i 10000] (.indexOf ^java.util.List os (aget ks i))))]))))
+        [(bench 20 10 (dotimes [i 10000] (avl/rank-of as (aget ks i))))
+         (bench 20 10 (dotimes [i 10000] (.indexOf ^java.util.List os (aget ks i))))]))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Split Operations (data.avl specialty)
@@ -306,7 +313,7 @@
           os    (core/ordered-set elems)
           ;; Parallel fold with chunk size
           fold-time (fn [coll]
-                      (first (bench 3 10
+                      (first (bench 20 10
                                (r/fold 512  ;; chunk size
                                        +   ;; combinef
                                        (fn [^long acc x] (+ acc (long x)))
@@ -330,8 +337,8 @@
   (doseq [n sizes]
     (let [elems (shuffle (range n))
           os    (core/ordered-set elems)
-          [os-reduce _] (bench 3 10 (reduce (fn [^long acc x] (+ acc (long x))) 0 os))
-          [os-fold _]   (bench 3 10 (r/fold 512 + (fn [^long acc x] (+ acc (long x))) os))
+          [os-reduce _] (bench 20 10 (reduce (fn [^long acc x] (+ acc (long x))) 0 os))
+          [os-fold _]   (bench 20 10 (r/fold 512 + (fn [^long acc x] (+ acc (long x))) os))
           os-speedup (if (pos? os-fold) (/ (double os-reduce) os-fold) 0.0)]
       (println (format "%-12d %-18s %-18s %-12.1fx"
                        n
@@ -364,9 +371,9 @@
           pairs (mapv (fn [k] [k k]) ks)
           cmp   #(compare (str %1) (str %2))]
       (print-row n
-        [(bench 3 7 (into (sorted-map-by cmp) pairs))
-         (bench 3 7 (into (avl/sorted-map-by cmp) pairs))
-         (bench 3 7 (core/ordered-map string-cmp pairs))]))))
+        [(bench 20 10 (into (sorted-map-by cmp) pairs))
+         (bench 20 10 (into (avl/sorted-map-by cmp) pairs))
+         (bench 20 10 (core/ordered-map string-cmp pairs))]))))
 
 (defn bench-string-map-lookup
   "Benchmark lookups with string keys."
@@ -382,9 +389,9 @@
           om    (core/ordered-map string-cmp pairs)
           look  (object-array (repeatedly 10000 #(nth ks (rand-int n))))]
       (print-row n
-        [(bench 3 10 (dotimes [i 10000] (get sm (aget look i))))
-         (bench 3 10 (dotimes [i 10000] (get am (aget look i))))
-         (bench 3 10 (dotimes [i 10000] (om (aget look i))))]))))
+        [(bench 20 10 (dotimes [i 10000] (get sm (aget look i))))
+         (bench 20 10 (dotimes [i 10000] (get am (aget look i))))
+         (bench 20 10 (dotimes [i 10000] (om (aget look i))))]))))
 
 (defn bench-string-map-iteration
   "Benchmark iteration with string keys."
@@ -399,9 +406,9 @@
           am    (into (avl/sorted-map-by cmp) pairs)
           om    (core/ordered-map string-cmp pairs)]
       (print-row n
-        [(bench 3 10 (reduce (fn [^long acc [k _]] (+ acc (long (hash k)))) 0 sm))
-         (bench 3 10 (reduce (fn [^long acc [k _]] (+ acc (long (hash k)))) 0 am))
-         (bench 3 10 (reduce (fn [^long acc [k _]] (+ acc (long (hash k)))) 0 om))]))))
+        [(bench 20 10 (reduce (fn [^long acc [k _]] (+ acc (long (hash k)))) 0 sm))
+         (bench 20 10 (reduce (fn [^long acc [k _]] (+ acc (long (hash k)))) 0 am))
+         (bench 20 10 (reduce (fn [^long acc [k _]] (+ acc (long (hash k)))) 0 om))]))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Memory Footprint (approximate)
@@ -538,7 +545,7 @@
                               [a b]))
                           (range n))]
       (print-row n
-        [(bench 3 7 (core/interval-set intervals))]))))
+        [(bench 20 10 (core/interval-set intervals))]))))
 
 (defn bench-interval-set-query
   "Benchmark interval overlap queries via get (returns overlapping intervals)."
@@ -556,7 +563,7 @@
           queries   (vec (repeatedly 1000
                            (fn [] (let [a (rand-int 1000000)] [a (+ a (rand-int 100))]))))]
       (print-row n
-        [(bench 3 10 (doseq [q queries] (get iset q)))]))))
+        [(bench 20 10 (doseq [q queries] (get iset q)))]))))
 
 (defn bench-interval-map-construction
   "Benchmark building an interval map from N random intervals."
@@ -570,7 +577,7 @@
                           [[a b] i]))
                       (range n))]
       (print-row n
-        [(bench 3 7 (core/interval-map pairs))]))))
+        [(bench 20 10 (core/interval-map pairs))]))))
 
 (defn bench-interval-map-query
   "Benchmark interval map overlap queries."
@@ -588,7 +595,7 @@
           queries (vec (repeatedly 1000
                          (fn [] (let [a (rand-int 1000000)] [a (+ a (rand-int 100))]))))]
       (print-row n
-        [(bench 3 10 (doseq [q queries] (get imap q)))]))))
+        [(bench 20 10 (doseq [q queries] (get imap q)))]))))
 
 (defn run-interval-benchmarks
   "Run interval set and map benchmarks."

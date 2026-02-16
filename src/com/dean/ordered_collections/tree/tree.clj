@@ -2117,8 +2117,81 @@
        (not (pos? cnt)) nil
        true (->> from (node-split-nth n) node-seq (take cnt))))))
 
+;; Threshold for parallel fold - below this use sequential reduce
+(def ^:const ^long +fold-parallel-threshold+ 8192)
+
+(defn node-parallel-fold-keys
+  "Parallel fold over keys using ForkJoinPool.
+
+   Uses tree structure for natural parallelism:
+   - Below threshold: sequential in-order traversal
+   - Above threshold: fork left subtree, compute right inline, combine results
+
+   Algorithm: O(n) work, O(log n) span for balanced trees."
+  [combinef reducef root]
+  (letfn [(seq-fold [n]
+            ;; Sequential fold for small subtrees
+            (if (leaf? n)
+              (combinef)
+              (lr [l r] n
+                (let [acc (seq-fold l)
+                      acc (reducef acc (-k n))]
+                  (if (reduced? acc)
+                    @acc
+                    (let [racc (seq-fold r)]
+                      (combinef acc racc)))))))
+          (par-fold [n]
+            ;; Parallel fold using fork-join
+            (cond
+              (leaf? n) (combinef)
+              (<= (node-size n) +fold-parallel-threshold+) (seq-fold n)
+              :else
+              (lr [l r] n
+                (fork-join
+                  [left-result (par-fold l)
+                   right-result (par-fold r)]
+                  (let [combined (combinef left-result right-result)]
+                    (reducef combined (-k n)))))))]
+    ;; If already in ForkJoinPool, run directly; otherwise submit
+    (if (ForkJoinTask/inForkJoinPool)
+      (par-fold root)
+      (.invoke fork-join-pool
+        (proxy [RecursiveTask] []
+          (compute [] (par-fold root)))))))
+
+(defn node-parallel-fold-entries
+  "Parallel fold over map entries using ForkJoinPool."
+  [combinef reducef root]
+  (letfn [(seq-fold [n]
+            (if (leaf? n)
+              (combinef)
+              (lr [l r] n
+                (let [acc (seq-fold l)
+                      acc (reducef acc (MapEntry. (-k n) (-v n)))]
+                  (if (reduced? acc)
+                    @acc
+                    (let [racc (seq-fold r)]
+                      (combinef acc racc)))))))
+          (par-fold [n]
+            (cond
+              (leaf? n) (combinef)
+              (<= (node-size n) +fold-parallel-threshold+) (seq-fold n)
+              :else
+              (lr [l r] n
+                (fork-join
+                  [left-result (par-fold l)
+                   right-result (par-fold r)]
+                  (let [combined (combinef left-result right-result)]
+                    (reducef combined (MapEntry. (-k n) (-v n))))))))]
+    (if (ForkJoinTask/inForkJoinPool)
+      (par-fold root)
+      (.invoke fork-join-pool
+        (proxy [RecursiveTask] []
+          (compute [] (par-fold root)))))))
+
 (defn node-chunked-fold
-  "Parallel chunked fold mechansim to suport clojure.core.reducers/CollFold"
+  "Parallel chunked fold mechanism to support clojure.core.reducers/CollFold.
+   DEPRECATED: Use node-parallel-fold-keys or node-parallel-fold-entries instead."
   [^long i n combinef reducef]
   {:pre [(pos? i)]}
   (let [offsets (vec (range 0 (node-size n) i))
