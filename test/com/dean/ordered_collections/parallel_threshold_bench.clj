@@ -9,7 +9,6 @@
             [com.dean.ordered-collections.tree.order :as order])
   (:import [com.dean.ordered_collections.tree.root INodeCollection]))
 
-(set! *warn-on-reflection* true)
 
 (defn warmup
   "JIT warmup - run operation multiple times."

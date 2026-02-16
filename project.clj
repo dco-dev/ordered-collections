@@ -5,11 +5,11 @@
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
 
-  :dependencies [[org.clojure/clojure "1.12.4"]
-                 [org.clojure/math.combinatorics "0.3.2"]]
+  :dependencies [[org.clojure/clojure "1.12.4"]]
 
   :profiles {:dev {:dependencies [[org.clojure/data.avl "0.2.0"]
                                   [org.clojure/test.check "1.1.1"]
+                                  [org.clojure/math.combinatorics "0.3.2"]
                                   [criterium "0.4.6"]
                                   [com.clojure-goes-fast/clj-memory-meter "0.3.0"]
                                   [com.google.guava/guava "33.0.0-jre"]]
@@ -26,4 +26,6 @@
              :src-linenum-anchor-prefix "L"
              :project {:name "com.dean/ordered-collections"}}
 
-  :global-vars {*warn-on-reflection* true})
+  :global-vars {*warn-on-reflection* true}
+
+  :aliases {"bench" ["run" "-m" "com.dean.ordered-collections.bench-runner"]})

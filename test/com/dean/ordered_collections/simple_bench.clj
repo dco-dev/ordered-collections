@@ -1,6 +1,14 @@
-(ns com.dean.ordered-collections.bench
-  "Comprehensive benchmark suite comparing sorted-map, ordered-map,
-   and clojure.data.avl implementations."
+(ns com.dean.ordered-collections.simple-bench
+  "Simple benchmark suite without Criterium dependency.
+
+   For quick iteration during development. Uses basic timing with
+   manual warmup. For rigorous benchmarks with EDN output, use
+   lein bench instead.
+
+   Usage:
+     (require '[com.dean.ordered-collections.simple-bench :as sb])
+     (sb/run-quick)     ; N up to 10K
+     (sb/run-all)       ; Full suite"
   (:require [clojure.core.reducers :as r]
             [clojure.data.avl :as avl]
             [com.dean.ordered-collections.core :as core]
@@ -9,7 +17,6 @@
             [com.dean.ordered-collections.tree.order :as order]
             [com.dean.ordered-collections.tree.interval :as interval]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Benchmarking Infrastructure

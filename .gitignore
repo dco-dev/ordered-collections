@@ -8,5 +8,8 @@ pom.xml.asc
 /.lein-*
 /.nrepl-port
 *~
+# Benchmark results (local records)
+/bench-results/
+
 # Claude Code
 /.claude/

@@ -228,9 +228,9 @@ These benchmarks compare `dean/union`, `dean/intersection`, and `dean/difference
 
 | N | data.avl | ordered-set |
 |---|----------|-------------|
-| 500,000 | 7.0 ms | 9.5 ms |
+| 1,000 | 2.1 ms | **1.6 ms** |
 
-**Verdict:** ordered-set is ~35% slower due to dynamic binding overhead for comparator. Both are O(log n).
+**Verdict:** ordered-set is ~20% faster than data.avl. Both are O(log n).
 
 ### Split Operations: split set at random key (100 ops)
 

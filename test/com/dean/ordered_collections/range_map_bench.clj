@@ -10,7 +10,6 @@
   (:require [com.dean.ordered-collections.core :as oc])
   (:import [com.google.common.collect TreeRangeMap Range]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Guava Helpers
