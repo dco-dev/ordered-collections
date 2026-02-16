@@ -19,7 +19,7 @@ A decision guide for choosing between sorted collection implementations.
 | Sorted set with duplicates | `ordered-multiset` |
 | Minimal dependencies | `sorted-map` / `sorted-set` |
 | Batch construction | `ordered-map` / `ordered-set` (parallel) |
-| First/last element access | `ordered-set` (118,000x faster at N=500K) |
+| First/last element access | `ordered-set` (~128,000x faster at N=500K) |
 
 ## Detailed Comparison
 
@@ -56,16 +56,17 @@ A decision guide for choosing between sorted collection implementations.
 ### ordered-collections (this library)
 
 **Best for:**
-- Fast construction via parallel fold (matches or beats sorted-map/sorted-set)
-- First/last element access (~118,000x faster at N=500K than sorted-set at scale)
-- Parallel aggregation via `r/fold` (10-16x faster than sorted-set, 2.5-3x faster than data.avl)
-- Efficient set algebra (union, intersection, difference) — 5-9x faster
+- Fast construction via parallel fold (2.4x faster than sorted-set, 1.6x faster than data.avl)
+- First/last element access (~128,000x faster at N=500K than sorted-set)
+- Parallel aggregation via `r/fold` (14.8x faster than sorted-set, 3.2x faster than data.avl at N=500K)
+- Efficient set algebra (union, intersection, difference) — 5-10x faster
 - Split operations (4.5x faster than data.avl)
 - Interval/range overlap queries
 - Applications needing both map and interval functionality
 
 **Limitations:**
 - Sequential insert ~1.5x slower than sorted-map (use batch construction instead)
+- Pure iteration slower than data.avl (data.avl is fastest at iteration)
 - Additional dependency
 
 **Choose when:** You need fast construction, parallel processing, set operations, or interval queries.
@@ -222,16 +223,12 @@ lookup performance is comparable.
 ```
 N = 500,000 elements (parallel fold construction)
 
-sorted-map:    1.0x (baseline)  ████████
-data.avl:      2.2x             █████████████████
-ordered-map:   1.0x             ████████  ← NOW EQUAL (was 2.2x)
-
-sorted-set:    1.0x (baseline)  ████████
-data.avl:      1.7x             █████████████
-ordered-set:   0.8x             ██████    ← 25% FASTER
+sorted-set:    1.0x (baseline)  ████████████████████████
+data.avl:      0.68x            █████████████████
+ordered-set:   0.42x            ██████████  ← 2.4x FASTER
 ```
 
-**Verdict:** ordered-map now matches sorted-map. ordered-set is 25% faster than sorted-set.
+**Verdict:** ordered-set is 2.4x faster than sorted-set and 1.6x faster than data.avl.
 
 ### Lookup (smaller is better)
 
@@ -248,10 +245,11 @@ ordered-map:   1.08x            ████▎
 ### First/Last Access (smaller is better)
 
 ```
-1,000 last calls on N = 100,000
+1,000 last calls on N = 500,000
 
 sorted-set:    1.0x (baseline)  ████████████████████████████████████████
-ordered-set:   0.00003x         ▏  ← ~31,000x FASTER (O(log n) vs O(n))
+data.avl:      1.14x            █████████████████████████████████████████████
+ordered-set:   0.000008x        ▏  ← ~128,000x FASTER (O(log n) vs O(n))
 ```
 
 **Verdict:** ordered-set provides O(log n) endpoint access via SortedSet interface.
@@ -261,41 +259,44 @@ ordered-set:   0.00003x         ▏  ← ~31,000x FASTER (O(log n) vs O(n))
 ```
 reduce over N = 500,000
 
-sorted-set:    1.0x (baseline)  ████████
-data.avl:      0.59x            █████
-ordered-set:   0.86x            ███████
+sorted-set:    1.0x (baseline)  ████████████████████████████
+data.avl:      0.18x            █████   ← FASTEST
+ordered-set:   0.29x            ████████
 ```
 
-**Verdict:** ordered-set 14% faster than sorted-set via IReduceInit.
+**Verdict:** ordered-set 3.4x faster than sorted-set. data.avl is fastest at pure iteration.
 
 ### Parallel Fold (smaller is better)
 
 ```
 r/fold over N = 500,000
 
-sorted-set:    1.0x (sequential fallback)  ████████
-data.avl:      1.0x (sequential fallback)  ████████
-ordered-set:   0.43x (true parallel)       ████
+sorted-set:    1.0x (sequential fallback)  ████████████████████████████████
+data.avl:      0.22x (sequential fallback) ███████
+ordered-set:   0.068x (true parallel)      ██   ← 14.8x faster than sorted-set
 ```
 
-**Verdict:** Only ordered-collections parallelizes. 2.3x speedup at scale.
+**Verdict:** Only ordered-collections parallelizes. 14.8x faster than sorted-set, 3.2x faster than data.avl.
 
 ### Set Operations (smaller is better)
 
 ```
 Union/Intersection/Difference of two 500K-element sets
 
-clojure.set union:        1.0x  ████████████
-ordered-set union:        0.17x ██           ← 5.8x FASTER
+sorted-set union:         1.0x  ████████████████████████████████
+data.avl union:           1.29x █████████████████████████████████████████
+ordered-set union:        0.13x ████   ← 7.6x FASTER (vs sorted-set)
 
-clojure.set intersection: 1.0x  ████████████
-ordered-set intersection: 0.19x ██           ← 5.3x FASTER
+sorted-set intersection:  1.0x  ████████████████████████████████
+data.avl intersection:    0.81x ██████████████████████████
+ordered-set intersection: 0.16x █████  ← 6.2x FASTER (vs sorted-set)
 
-clojure.set difference:   1.0x  ████████████
-ordered-set difference:   0.12x █            ← 8.6x FASTER
+sorted-set difference:    1.0x  ████████████████████████████████
+data.avl difference:      0.68x ██████████████████████
+ordered-set difference:   0.14x ████   ← 7.3x FASTER (vs sorted-set)
 ```
 
-**Verdict:** ordered-set 5-9x faster on set algebra via divide-and-conquer.
+**Verdict:** ordered-set 5-10x faster on set algebra via parallel divide-and-conquer.
 
 ### Split (smaller is better)
 
@@ -391,11 +392,11 @@ ordered-map and ordered-set support:
 ## Summary
 
 **Use ordered-collections when:**
-1. You need fast batch construction (parallel fold — 25% faster for sets, equal for maps)
-2. You need first/last element access (118,000x faster at N=500K than sorted-set)
+1. You need fast batch construction (2.4x faster than sorted-set, 1.6x faster than data.avl)
+2. You need first/last element access (~128,000x faster at N=500K than sorted-set)
 3. You need `nth` or `rank` operations
-4. You need parallel fold (`r/fold`) — 10-16x faster than sorted-set, 2.5-3x faster than data.avl
-5. You perform set algebra (union, intersection, difference) — 5-9x faster
+4. You need parallel fold (`r/fold`) — 14.8x faster than sorted-set, 3.2x faster than data.avl
+5. You perform set algebra (union, intersection, difference) — 5-10x faster
 6. You need interval/overlap queries
 7. You need efficient split operations — 4.5x faster
 
@@ -403,3 +404,7 @@ ordered-map and ordered-set support:
 1. You want zero dependencies
 2. You're doing mostly sequential inserts (1.5x faster than ordered-*)
 3. You don't need any advanced features
+
+**Consider data.avl when:**
+1. Pure iteration performance is paramount (data.avl is fastest at iteration)
+2. You need O(1) rank access via nth

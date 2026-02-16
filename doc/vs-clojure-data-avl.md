@@ -58,12 +58,11 @@ Both libraries provide drop-in replacements for Clojure's sorted collections wit
 
 | N | sorted-set | data.avl | ordered-set |
 |---|------------|----------|-------------|
-| 1,000 | ~0.3 ms | ~0.4 ms | ~0.3 ms |
-| 10,000 | ~4 ms | ~5 ms | ~4 ms |
-| 100,000 | ~80 ms | ~90 ms | ~70 ms |
-| 500,000 | ~500 ms | ~550 ms | ~300 ms |
+| 10,000 | 17 ms | 28 ms | **18 ms** |
+| 100,000 | 248 ms | 390 ms | **212 ms** |
+| 500,000 | 890 ms | 604 ms | **371 ms** |
 
-**Verdict**: At small sizes, roughly equivalent. **At scale, ordered-collections wins** due to parallel construction via `r/fold` and fast parallel union. While data.avl uses transients internally, ordered-collections compensates with multi-threaded tree building.
+**Verdict**: At small sizes, roughly equivalent. **At scale (N=500K), ordered-collections is 2.4x faster than sorted-set and 1.6x faster than data.avl** due to parallel construction via `r/fold` and fast parallel union.
 
 ### Incremental Insert (assoc/conj one at a time)
 
@@ -88,23 +87,21 @@ Comparing ordered-collections to data.avl (which falls back to clojure.set):
 
 **At N=500,000 (two sets with 50% overlap):**
 
-| Operation | sorted-set | data.avl | ordered-set | Speedup |
-|-----------|------------|----------|-------------|---------|
-| Union | 321ms | 376ms | **40ms** | **8x** |
-| Intersection | 213ms | 172ms | **36ms** | **5-6x** |
-| Difference | 213ms | 149ms | **31ms** | **5-7x** |
+| Operation | sorted-set | data.avl | ordered-set | vs sorted-set | vs data.avl |
+|-----------|------------|----------|-------------|---------------|-------------|
+| Union | 288ms | 371ms | **38ms** | **7.6x** | **10x** |
+| Intersection | 217ms | 176ms | **35ms** | **6.2x** | **5x** |
+| Difference | 211ms | 144ms | **29ms** | **7.3x** | **5x** |
 
-**Verdict**: **ordered-collections is 5-8x faster** at scale due to Adams' divide-and-conquer algorithm with fork-join parallelism (for collections above 65,536 combined elements).
+**Verdict**: **ordered-collections is 5-10x faster** at scale due to Adams' divide-and-conquer algorithm with fork-join parallelism (for collections above 65,536 combined elements).
 
 ### Parallel Fold (r/fold)
 
 | N | sorted-set | data.avl | ordered-set | vs sorted | vs avl |
 |---|------------|----------|-------------|-----------|--------|
-| 500,000 | 54ms | 11ms | **3.4ms** | **16x** | **3.2x** |
-| 1,000,000 | 71ms | 18ms | **7.2ms** | **10x** | **2.5x** |
-| 2,000,000 | 197ms | 45ms | **15ms** | **13x** | **3x** |
+| 500,000 | 60.3ms | 13.0ms | **4.1ms** | **14.8x** | **3.2x** |
 
-**Verdict**: **ordered-collections is 2.5-3x faster than data.avl** for parallel fold using tree-based fork-join. data.avl falls back to sequential reduction.
+**Verdict**: **ordered-collections is 3.2x faster than data.avl** and 14.8x faster than sorted-set for parallel fold using tree-based fork-join. Both data.avl and sorted-set fall back to sequential reduction.
 
 ### Transient Batch Operations
 

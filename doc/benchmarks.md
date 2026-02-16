@@ -96,9 +96,9 @@ Note: Seq iteration now uses efficient direct ISeq implementations (`KeySeq`/`En
 |---|------------|----------|-------------|
 | 10,000 | 17 ms | 28 ms | **18 ms** |
 | 100,000 | 248 ms | 390 ms | **212 ms** |
-| 500,000 | 1.5 s | 2.5 s | **1.2 s** |
+| 500,000 | 890 ms | 604 ms | **371 ms** |
 
-**ordered-set construction is 25% faster than sorted-set** due to parallel fold during bulk loading.
+**ordered-set construction is 2.4x faster than sorted-set** (and 1.6x faster than data.avl) due to parallel fold during bulk loading.
 
 ### Insert: conj one element at a time from empty
 
@@ -140,23 +140,23 @@ Note: Seq iteration now uses efficient direct ISeq implementations (`KeySeq`/`En
 |---|------------|----------|-------------|
 | 10,000 | 1.5 ms | 0.9 ms | 1.3 ms |
 | 100,000 | 17 ms | 11 ms | 14 ms |
-| 500,000 | 95 ms | 56 ms | **82 ms** |
+| 500,000 | 55 ms | **10.1 ms** | 16.2 ms |
 
-**ordered-set iteration is 14% faster than sorted-set** via `IReduceInit`.
+**ordered-set iteration is 3.4x faster than sorted-set** via `IReduceInit`. data.avl is fastest at pure iteration.
 
 ## Parallel Fold Benchmarks (r/fold)
 
 All collection types implement `clojure.core.reducers/CollFold` for efficient parallel reduction.
 
-### Set Parallel Fold: r/fold with chunk size 512
+### Set Parallel Fold: r/fold
 
 | N | sorted-set | data.avl | ordered-set | speedup vs sorted-set |
 |---|------------|----------|-------------|----------------------|
 | 10,000 | 1.5 ms | 3.1 ms | 2.0 ms | 0.8x |
 | 100,000 | 15 ms | 31 ms | 10 ms | **1.5x** |
-| 500,000 | 98 ms | 170 ms | **42 ms** | **2.3x** |
+| 500,000 | 60.3 ms | 13.0 ms | **4.1 ms** | **14.8x** |
 
-**ordered-set parallel fold is 10-16x faster than sorted-set** at scale (and 2.5-3x faster than data.avl).
+**ordered-set parallel fold is 14.8x faster than sorted-set** and **3.2x faster than data.avl** at N=500K. Both sorted-set and data.avl fall back to sequential reduce; only ordered-set uses true parallel fork-join.
 
 ### Reduce vs Fold Comparison (ordered-set)
 
@@ -186,33 +186,33 @@ Note: `r/fold` speedup increases with collection size due to parallel execution.
 
 ## Set Operations (Union, Intersection, Difference)
 
-These benchmarks compare `dean/union`, `dean/intersection`, and `dean/difference` against `clojure.set` equivalents.
+These benchmarks compare `dean/union`, `dean/intersection`, and `dean/difference` against `clojure.set` equivalents on sorted-set and data.avl.
 
-### Union: Merge two sets of size N/2 each (50% overlap)
+### Union: Merge two sets of size N each (50% overlap)
 
-| N | clojure.set | ordered-set | speedup |
-|---|-------------|-------------|---------|
-| 10,000 | 24 ms | 4 ms | **6.0x** |
-| 100,000 | 210 ms | 38 ms | **5.5x** |
-| 500,000 | 1.1 s | 190 ms | **5.8x** |
+| N | sorted-set | data.avl | ordered-set | speedup |
+|---|------------|----------|-------------|---------|
+| 10,000 | 24 ms | 31 ms | 4 ms | **6-8x** |
+| 100,000 | 210 ms | 270 ms | 38 ms | **5.5-7x** |
+| 500,000 | 288 ms | 371 ms | **38 ms** | **7.6-10x** |
 
-### Intersection: Find common elements in two sets of size N/2 each (50% overlap)
+### Intersection: Find common elements in two sets of size N each (50% overlap)
 
-| N | clojure.set | ordered-set | speedup |
-|---|-------------|-------------|---------|
-| 10,000 | 18 ms | 3 ms | **6.0x** |
-| 100,000 | 175 ms | 32 ms | **5.5x** |
-| 500,000 | 870 ms | 164 ms | **5.3x** |
+| N | sorted-set | data.avl | ordered-set | speedup |
+|---|------------|----------|-------------|---------|
+| 10,000 | 18 ms | 22 ms | 3 ms | **6-7x** |
+| 100,000 | 175 ms | 140 ms | 32 ms | **4.4-5.5x** |
+| 500,000 | 217 ms | 176 ms | **35 ms** | **5.0-6.2x** |
 
 ### Difference: Remove elements of one set from another (50% overlap)
 
-| N | clojure.set | ordered-set | speedup |
-|---|-------------|-------------|---------|
-| 10,000 | 19 ms | 2 ms | **9.5x** |
-| 100,000 | 191 ms | 22 ms | **8.7x** |
-| 500,000 | 977 ms | 114 ms | **8.6x** |
+| N | sorted-set | data.avl | ordered-set | speedup |
+|---|------------|----------|-------------|---------|
+| 10,000 | 19 ms | 15 ms | 2 ms | **7.5-9.5x** |
+| 100,000 | 191 ms | 145 ms | 22 ms | **6.6-8.7x** |
+| 500,000 | 211 ms | 144 ms | **29 ms** | **5.0-7.3x** |
 
-**ordered-set set operations are 5-9x faster than clojure.set** due to divide-and-conquer algorithms that exploit tree structure.
+**ordered-set set operations are 5-10x faster than clojure.set on sorted-set/data.avl** due to parallel divide-and-conquer algorithms that exploit tree structure.
 
 ## Specialty Operations
 
@@ -251,8 +251,9 @@ data.avl has O(1) rank access via cached ranks; ordered-set uses O(log n) tree d
 | 1,000 | 192 ms | 335 ms | **3.0 ms** | 64x |
 | 10,000 | 1.7 s | 3.2 s | **3.4 ms** | 500x |
 | 100,000 | 7.98 s | 9.11 s | **0.26 ms** | **~31,000x** |
+| 500,000 | 41.1 s | 46.9 s | **0.32 ms** | **~128,000x** |
 
-**ordered-set first/last is O(log n)** via `java.util.SortedSet` interface, while `sorted-set` must traverse via seq (O(n) for `last`).
+**ordered-set first/last is O(log n)** via `java.util.SortedSet` interface, while `sorted-set` and `data.avl` must traverse via seq (O(n) for `last`).
 
 **Note**: Clojure's `first` on sorted-set is O(1), but `last` requires full seq traversal. ordered-set provides O(log n) access to both endpoints via the `java.util.SortedSet` interface methods `.first` and `.last`.
 
@@ -325,21 +326,21 @@ Queries return all intervals that overlap with the query interval. Query time sc
 ### When to use ordered-set
 
 **Best for**:
-- Bulk construction (25% faster than sorted-set via parallel fold)
-- Set operations: union, intersection, difference (5-9x faster than clojure.set)
-- First/last element access (~31,000x faster at N=100K, ~118,000x at N=500K)
-- Parallel fold operations (10-16x faster vs sorted-set, 2.5-3x faster vs data.avl)
+- Bulk construction (2.4x faster than sorted-set, 1.6x faster than data.avl)
+- Set operations: union, intersection, difference (5-10x faster than clojure.set)
+- First/last element access (~31,000x faster at N=100K, ~128,000x at N=500K)
+- Parallel fold operations (14.8x faster vs sorted-set, 3.2x faster vs data.avl at N=500K)
 - Split operations (4.5x faster than data.avl)
-- Delete operations (14% faster than data.avl)
+- Iteration via reduce (3.4x faster than sorted-set at N=500K)
 - Applications needing interval tree functionality
 - Use with `subseq`/`rsubseq` (full `clojure.lang.Sorted` support)
 
 **Comparable to**:
 - Lookup performance (7% slower than sorted-set with default comparator, 14% faster than data.avl)
-- Iteration via reduce (14% faster than sorted-set)
 
-**Slower than sorted-set**:
-- Sequential insert (~1.6x) — use batch construction instead
+**Slower than**:
+- Sequential insert (~1.6x vs sorted-set) — use batch construction instead
+- Pure iteration vs data.avl (data.avl is fastest at iteration)
 
 **Note on heterogeneous key support**: The default `ordered-set` supports mixed key types, requiring `clojure.core/compare` dispatch on every comparison. This affects both lookup and insert performance. For homogeneous collections, use `long-ordered-set` (20% faster than sorted-set for both operations) or `string-ordered-set` (5% faster).
 
@@ -362,19 +363,19 @@ Queries return all intervals that overlap with the query interval. Query time sc
 
 | Operation | vs sorted-set | vs data.avl |
 |-----------|---------------|-------------|
-| Construction | **1.25x faster** | **2.1x faster** |
+| Construction | **2.4x faster** | **1.6x faster** |
 | Insert (heterogeneous) | 1.56x slower | same |
 | Insert (long-ordered-set) | ~equal | **1.56x faster** |
 | Delete | 1.38x slower | **1.17x faster** |
 | Lookup (heterogeneous) | 1.07x slower | **1.16x faster** |
 | Lookup (long-ordered-set) | **1.20x faster** | **1.40x faster** |
-| Iteration | **1.16x faster** | 1.46x slower |
-| First/last | **~31,000x faster** | same |
-| Parallel fold | **10-16x faster** | **2.5-3x faster** |
+| Iteration | **3.4x faster** | 1.6x slower |
+| First/last | **~128,000x faster** | **~145,000x faster** |
+| Parallel fold | **14.8x faster** | **3.2x faster** |
 | Split | N/A | **4.5x faster** |
-| Union | **5.8x faster** vs clojure.set | — |
-| Intersection | **5.3x faster** vs clojure.set | — |
-| Difference | **8.6x faster** vs clojure.set | — |
+| Union | **7.6x faster** | **10x faster** |
+| Intersection | **6.2x faster** | **5.0x faster** |
+| Difference | **7.3x faster** | **5.0x faster** |
 
 *Heterogeneous insert/lookup uses `clojure.core/compare` for mixed-type support. For homogeneous numeric keys, `long-ordered-set` uses primitive `Long/compare` and beats `sorted-set`.*
 
@@ -394,9 +395,36 @@ Queries return all intervals that overlap with the query interval. Query time sc
 
 ## Running Benchmarks
 
+### Criterium Benchmarks (Recommended for Reproducibility)
+
+The Criterium suite provides statistically rigorous benchmarks with JIT warmup, GC correction, and confidence intervals:
+
+```clojure
+(require '[com.dean.ordered-collections.criterium-bench :as cb])
+
+;; Run with quick-bench for faster iteration
+(cb/with-quick-bench
+  (cb/bench-set-fold 500000))
+
+;; Run full Criterium analysis (slower but more accurate)
+(cb/bench-set-construction 500000)
+(cb/bench-set-fold 500000)
+(cb/bench-first-last 500000)
+(cb/bench-set-iteration 500000)
+
+;; Set operations comparison
+(cb/with-quick-bench
+  (cb/run-set-operations-benchmarks 500000))
+
+;; Full suite (30-60 minutes)
+(cb/run-all :sizes [100000 500000])
+```
+
+All benchmarks in this document are reproducible using the Criterium suite. Results may vary by hardware but relative ratios should be consistent.
+
 ### Quick Benchmarks (bench.clj)
 
-The benchmark suite provides fast, repeatable measurements:
+The quick benchmark suite provides fast, repeatable measurements for development:
 
 ```clojure
 (require '[com.dean.ordered-collections.bench :as bench])

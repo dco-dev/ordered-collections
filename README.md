@@ -58,12 +58,12 @@ parallel fold support, and more.
 ### Key Features
 
 - **Full `clojure.lang.Sorted` support**: Use `subseq` and `rsubseq` natively
-- **O(log n) first/last**: Via `java.util.SortedSet` interface (~31,000x faster `last` than `sorted-set`)
+- **O(log n) first/last**: Via `java.util.SortedSet` interface (~128,000x faster `last` than `sorted-set` at N=500K)
 - **O(log n) nth and rank**: Positional access and rank queries in logarithmic time
 - **O(log n) split/subrange**: Split at key or index, extract ranges efficiently
 - **O(log n) floor/ceiling**: Find nearest element via `nearest`
-- **Parallel fold**: All types implement `CollFold` for efficient `r/fold` (10-16x faster)
-- **Fast set operations**: Union, intersection, difference 7-9x faster than `clojure.set`
+- **Parallel fold**: All types implement `CollFold` for efficient `r/fold` (14.8x faster at N=500K)
+- **Fast set operations**: Union, intersection, difference 5-10x faster than `clojure.set`
 - **Proper hashing**: `IHashEq` support for correct behavior in hash-based collections
 - **Serializable**: `java.io.Serializable` marker interface
 - **Fast iteration**: Optimized `IReduceInit`/`IReduce` (faster than `sorted-set`)
@@ -102,19 +102,18 @@ parallel fold support, and more.
 
 | Operation | sorted-set | data.avl | ordered-set | vs sorted | vs avl |
 |-----------|------------|----------|-------------|-----------|--------|
-| Last element (100 calls) | 3.98s | 4.60s | **34µs** | **118,000x** | **135,000x** |
-| Union (50% overlap) | 321ms | 376ms | **40ms** | **8x** | **9x** |
-| Intersection | 213ms | 172ms | **36ms** | **6x** | **5x** |
-| Difference | 213ms | 149ms | **31ms** | **7x** | **5x** |
-| Reduce | 57ms | 11ms | **17ms** | **3.4x** | — |
+| Last element (1000 calls) | 41.1s | 46.9s | **322µs** | **128,000x** | **146,000x** |
+| Construction | 890ms | 604ms | **371ms** | **2.4x** | **1.6x** |
+| Union (50% overlap) | 288ms | 371ms | **38ms** | **7.6x** | **10x** |
+| Intersection | 217ms | 176ms | **35ms** | **6.2x** | **5x** |
+| Difference | 211ms | 144ms | **29ms** | **7.3x** | **5x** |
+| Reduce | 55ms | 10.1ms | 16.2ms | **3.4x** | — |
 
 ### Parallel Fold (r/fold)
 
 | N | sorted-set | data.avl | ordered-set | vs sorted | vs avl |
 |---|------------|----------|-------------|-----------|--------|
-| 500,000 | 54ms | 11ms | **3.4ms** | **16x** | **3.2x** |
-| 1,000,000 | 71ms | 18ms | **7.2ms** | **10x** | **2.5x** |
-| 2,000,000 | 197ms | 45ms | **15ms** | **13x** | **3x** |
+| 500,000 | 60.3ms | 13.0ms | **4.1ms** | **14.8x** | **3.2x** |
 
 ordered-set implements true parallel `r/fold` via tree-based fork-join. sorted-set and data.avl fall back to sequential reduce.
 
@@ -195,9 +194,9 @@ Zorp's inventory is chaos. Shipments arrive from Earth (8-month delay), Mars (3 
 
 **Key features:**
 - Full `clojure.lang.Sorted` support: native `subseq` and `rsubseq`
-- O(log n) `last` via `java.util.SortedSet` interface (~31,000x faster than `sorted-set`)
-- Parallel fold via `CollFold` (10-16x faster)
-- Fast set operations: union, intersection, difference 7-9x faster than `clojure.set`
+- O(log n) `last` via `java.util.SortedSet` interface (~128,000x faster than `sorted-set` at N=500K)
+- Parallel fold via `CollFold` (14.8x faster at N=500K)
+- Fast set operations: union, intersection, difference 5-10x faster than `clojure.set`
 
 ---
 
@@ -485,12 +484,12 @@ Zorp's hottest releases require a reservation system. Customers select time slot
 (seq (subseq available >= 170 < 180))
 ;; => (170 171 172 173 174 176 177 178 179)  -- plenty! (175 was reserved)
 
-;; Set operations are 7-9x faster than clojure.set for large sets
+;; Set operations are 5-10x faster than clojure.set for large sets
 (def s1 (oc/ordered-set (range 0 500000)))
 (def s2 (oc/ordered-set (range 250000 750000)))
-(oc/union s1 s2)        ;; 129ms (clojure.set: 1.1s)
-(oc/intersection s1 s2) ;; 91ms (clojure.set: 870ms)
-(oc/difference s1 s2)   ;; 102ms (clojure.set: 977ms)
+(oc/union s1 s2)        ;; 38ms (clojure.set: 288ms)
+(oc/intersection s1 s2) ;; 35ms (clojure.set: 217ms)
+(oc/difference s1 s2)   ;; 29ms (clojure.set: 211ms)
 ```
 
 ---
@@ -572,7 +571,7 @@ Since `clojure.set` doesn't provide interfaces for extensible set operations, th
 ```clojure
 (require '[clojure.core.reducers :as r])
 
-;; Parallel fold: 10-16x faster than sorted-set
+;; Parallel fold: 14.8x faster than sorted-set
 (r/fold + (oc/ordered-set (range 500000)))
 
 ;; First/last via Java SortedSet interface: O(log n)
@@ -583,7 +582,7 @@ Since `clojure.set` doesn't provide interfaces for extensible set operations, th
 (subseq (oc/ordered-set (range 100)) >= 25 < 75)
 (rsubseq (oc/ordered-set (range 100)) > 50)
 
-;; Parallel set operations: 7-9x faster than clojure.set
+;; Parallel set operations: 5-10x faster than clojure.set
 (let [s1 (oc/ordered-set (range 0 500000))
       s2 (oc/ordered-set (range 250000 750000))]
   (oc/union s1 s2)
