@@ -1,11 +1,16 @@
 # com.dean/ordered-collections
 
-**Sorted collections that do more.** Drop-in replacements for `sorted-set` and `sorted-map` with O(log n) positional access, 7-9x faster set operations, and parallel fold support—plus specialized collections you didn't know you needed.
+**Sorted collections that do more.** Drop-in replacements for
+Clojure `sorted-set` and `sorted-map` with O(log n) positional access, 7-9x
+faster set operations, and parallel fold support.
+
+plus specialized collections you didn't even know you needed --
 
 Need to find what's scheduled at 3pm? **Interval maps** let you query overlapping ranges. Building a leaderboard? Get any player's rank in O(log n). Working with sensor data? **Fuzzy lookup** snaps queries to the nearest calibration point. Managing IP allocations? **Range maps** carve out non-overlapping regions.
 
 All built on an extensible weight-balanced tree platform with a shared foundation
-for efficient splitting, joining, and parallel operations.
+for efficient splitting, joining, and parallel operations.  From scratch
+{no external libraries or dependencies}.
 
 ![tests](https://github.com/dco-dev/ordered-collections/actions/workflows/clojure.yml/badge.svg)
 [![Clojars Project](https://img.shields.io/clojars/v/com.dean/ordered-collections.svg)](https://clojars.org/com.dean/ordered-collections)
@@ -28,7 +33,7 @@ for efficient splitting, joining, and parallel operations.
 
 ## Quick Start
 
-Use `ordered-set` and `ordered-map` exactly like `sorted-set` and `sorted-map`:
+Use `ordered-set` and `ordered-map` exactly like `clojure.core/sorted-set` and `clojure.core/sorted-map`:
 
 ```clojure
 

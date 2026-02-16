@@ -19,7 +19,7 @@ A decision guide for choosing between sorted collection implementations.
 | Sorted set with duplicates | `ordered-multiset` |
 | Minimal dependencies | `sorted-map` / `sorted-set` |
 | Batch construction | `ordered-map` / `ordered-set` (parallel) |
-| First/last element access | `ordered-set` (~128,000x faster at N=500K) |
+| First/last element access | `ordered-set` (~92,000x faster at N=500K) |
 
 ## Detailed Comparison
 
@@ -58,10 +58,10 @@ A decision guide for choosing between sorted collection implementations.
 
 **Best for:**
 - Fast construction via parallel fold (2.4x faster than sorted-set, 1.6x faster than data.avl)
-- First/last element access (~128,000x faster at N=500K than sorted-set)
+- First/last element access (~92,000x faster at N=500K than sorted-set)
 - Parallel aggregation via `r/fold` (14.8x faster than sorted-set, 3.2x faster than data.avl at N=500K)
 - Efficient set algebra (union, intersection, difference) — 5-10x faster
-- Split operations (4.5x faster than data.avl)
+- Split operations (3x faster than data.avl)
 - Interval/range overlap queries
 - Applications needing both map and interval functionality
 
@@ -249,8 +249,8 @@ ordered-map:   1.08x            ████▎
 1,000 last calls on N = 500,000
 
 sorted-set:    1.0x (baseline)  ████████████████████████████████████████
-data.avl:      1.14x            █████████████████████████████████████████████
-ordered-set:   0.000008x        ▏  ← ~128,000x FASTER (O(log n) vs O(n))
+data.avl:      1.33x            █████████████████████████████████████████████████████
+ordered-set:   0.000011x        ▏  ← ~92,000x FASTER (O(log n) vs O(n))
 ```
 
 **Verdict:** ordered-set provides O(log n) endpoint access via SortedSet interface.
@@ -305,10 +305,10 @@ ordered-set difference:   0.14x ████   ← 7.3x FASTER (vs sorted-set)
 100 splits on N = 500,000
 
 data.avl:      1.0x (baseline)  ██████████
-ordered-set:   0.22x            ██
+ordered-set:   0.32x            ███
 ```
 
-**Verdict:** ordered-set 4.5x faster on splits.
+**Verdict:** ordered-set 3x faster on splits.
 
 ## Memory Comparison
 
@@ -394,12 +394,12 @@ ordered-map and ordered-set support:
 
 **Use ordered-collections when:**
 1. You need fast batch construction (2.4x faster than sorted-set, 1.6x faster than data.avl)
-2. You need first/last element access (~128,000x faster at N=500K than sorted-set)
+2. You need first/last element access (~92,000x faster at N=500K than sorted-set)
 3. You need `nth` or `rank` operations
 4. You need parallel fold (`r/fold`) — 14.8x faster than sorted-set, 3.2x faster than data.avl
 5. You perform set algebra (union, intersection, difference) — 5-10x faster
 6. You need interval/overlap queries
-7. You need efficient split operations — 4.5x faster
+7. You need efficient split operations — 3x faster
 
 **Stick with sorted-map/sorted-set when:**
 1. You want zero dependencies

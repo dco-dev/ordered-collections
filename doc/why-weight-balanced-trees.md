@@ -46,7 +46,7 @@ Weight-balanced trees maintain balance based on subtree sizes: no subtree can be
 - Efficient set operations (union, intersection, difference) — 5-9x faster
 - Natural parallelization via tree splitting — 10-16x faster fold, equal construction
 - Simpler rebalancing logic than red-black
-- O(log n) first/last access via SortedSet interface — 118,000x faster than sorted-set at N=500K
+- O(log n) first/last access via SortedSet interface — 92,000x faster than sorted-set at N=500K
 
 **Weaknesses:**
 - Sequential insert ~1.5x slower (mitigated by parallel batch construction)
@@ -144,7 +144,7 @@ At N = 500,000 elements:
 | Lookup | 1.0x | 1.1x | 1.08x | Nearly equal |
 | Iteration | 1.0x | 0.79x | 0.99x | Comparable |
 | Construction | 1.0x | 2.2x | **1.0x** | Equal via parallel fold |
-| Split | N/A | 1.0x | **0.22x** | Weight-balanced 4.5x faster |
+| Split | N/A | 1.0x | **0.32x** | Weight-balanced 3x faster |
 | Parallel fold | 1.0x | 1.0x | **0.43x** | Only weight-balanced parallelizes |
 
 For sets at N = 500,000:
@@ -154,7 +154,7 @@ For sets at N = 500,000:
 | Lookup | 1.0x | 1.25x | 1.07x | Nearly equal |
 | Iteration | 1.0x | 0.59x | **0.86x** | 14% faster than sorted-set |
 | Construction | 1.0x | 1.7x | **0.8x** | 25% faster via parallel fold |
-| First/last | 1.0x | 1.9x | **0.000008x** | 118,000x faster (O(log n)) |
+| First/last | 1.0x | 1.33x | **0.000011x** | ~92,000x faster (O(log n)) |
 | Union | 1.0x | — | **0.17x** | 5.8x faster |
 | Intersection | 1.0x | — | **0.19x** | 5.3x faster |
 | Difference | 1.0x | — | **0.12x** | 8.6x faster |

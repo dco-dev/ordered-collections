@@ -6,13 +6,15 @@
 |-----------|---------|
 | JVM | OpenJDK 25.0.1 |
 | Clojure | 1.12.4 |
-| Hardware | Intel Core i9 (16 cores) |
+| Hardware | Intel i9 |
 | Memory | 32 GB |
 | OS | macOS |
 
-**Methodology**: Each benchmark runs 3 warmup iterations followed by 5 timed iterations. Results shown are the mean of timed iterations. All collections are built from shuffled data to avoid best-case insertion patterns.
+**Methodology**: Benchmarks use [Criterium](https://github.com/hugoduncan/criterium) for statistically valid JVM measurements with automatic JIT warmup, multiple samples, and outlier detection. All collections are built from shuffled data to avoid best-case insertion patterns.
 
 **Note**: Results will vary by system. Relative performance ratios are more meaningful than absolute times.
+
+**Reproducibility**: Run `(require '[com.dean.ordered-collections.criterium-bench :as cb])` then `(cb/run-all :sizes [500000] :quick true)` to reproduce these benchmarks.
 
 ## Libraries Compared
 
@@ -162,11 +164,9 @@ All collection types implement `clojure.core.reducers/CollFold` for efficient pa
 
 | N | reduce | r/fold | speedup |
 |---|--------|--------|---------|
-| 10,000 | 1.5 ms | 1.1 ms | 1.4x |
-| 100,000 | 14 ms | 12 ms | 1.2x |
-| 500,000 | 80 ms | 44 ms | **1.8x** |
+| 500,000 | 16.2 ms | 4.1 ms | **4.0x** |
 
-Note: `r/fold` speedup increases with collection size due to parallel execution.
+Note: `r/fold` provides significant speedup via true parallel fork-join execution.
 
 ### CollFold Support by Type
 
@@ -228,9 +228,9 @@ These benchmarks compare `dean/union`, `dean/intersection`, and `dean/difference
 
 | N | data.avl | ordered-set |
 |---|----------|-------------|
-| 10,000 | 11 ms | 24 ms |
-| 100,000 | 14 ms | 27 ms |
-| 500,000 | 19 ms | 29 ms |
+| 500,000 | 7.0 ms | 9.5 ms |
+
+**Verdict:** ordered-set is ~35% slower due to dynamic binding overhead for comparator. Both are O(log n).
 
 ### Split Operations: split set at random key (100 ops)
 
@@ -238,18 +238,18 @@ These benchmarks compare `dean/union`, `dean/intersection`, and `dean/difference
 |---|----------|-------------|
 | 10,000 | 4.7 ms | **1.8 ms** |
 | 100,000 | 8.9 ms | **2.1 ms** |
-| 500,000 | 11.2 ms | **2.5 ms** |
+| 500,000 | 1.5 ms | **0.49 ms** |
 
-**ordered-set split is 4.5x faster than data.avl** due to efficient tree splitting algorithm.
+**ordered-set split is 3x faster than data.avl** due to efficient tree splitting algorithm.
 
 ### First/Last Element Access: 1,000 first/last calls
 
-| N | sorted-set | data.avl | ordered-set | speedup vs sorted-set |
-|---|------------|----------|-------------|----------------------|
+| N | sorted-set last | data.avl last | ordered-set last | speedup vs sorted-set |
+|---|-----------------|---------------|------------------|----------------------|
 | 1,000 | 192 ms | 335 ms | **3.0 ms** | 64x |
 | 10,000 | 1.7 s | 3.2 s | **3.4 ms** | 500x |
 | 100,000 | 7.98 s | 9.11 s | **0.26 ms** | **~31,000x** |
-| 500,000 | 41.1 s | 46.9 s | **0.32 ms** | **~128,000x** |
+| 500,000 | 35.9 s | 47.8 s | **0.39 ms** | **~92,000x** |
 
 **ordered-set first/last is O(log n)** via `java.util.SortedSet` interface, while `sorted-set` and `data.avl` must traverse via seq (O(n) for `last`).
 
@@ -262,36 +262,44 @@ These benchmarks compare `dean/union`, `dean/intersection`, and `dean/difference
 | N | interval-set |
 |---|--------------|
 | 10,000 | 111 ms |
-| 100,000 | 1.5 s |
-| 500,000 | 8.7 s |
+| 100,000 | 332 ms |
+| 500,000 | 2.4 s |
 
 Interval tree construction includes maintaining augmented max values at each node.
 
-### Interval Set Query: 1,000 overlap queries
+### Interval Set Query: 10,000 point queries
 
 | N | interval-set |
 |---|--------------|
 | 10,000 | 46 ms |
-| 100,000 | 166 ms |
-| 500,000 | 697 ms |
+| 100,000 | 147 ms |
+| 500,000 | 179 ms |
 
-Queries return all intervals that overlap with the query interval. Query time scales with both tree size and number of matching intervals.
+Queries return all intervals that overlap with the query point. Query time scales with both tree size and number of matching intervals.
 
 ### Interval Map Construction
 
 | N | interval-map |
 |---|--------------|
 | 10,000 | 106 ms |
-| 100,000 | 1.5 s |
-| 500,000 | 8.7 s |
+| 100,000 | 409 ms |
+| 500,000 | 2.9 s |
 
-### Interval Map Query: 1,000 overlap queries
+### Interval Map Query: 10,000 point queries
 
 | N | interval-map |
 |---|--------------|
 | 10,000 | 43 ms |
 | 100,000 | 176 ms |
-| 500,000 | 722 ms |
+| 500,000 | 179 ms |
+
+### Interval Set Fold
+
+| N | reduce | r/fold (parallel) |
+|---|--------|-------------------|
+| 500,000 | 23 ms | 27 ms |
+
+Note: Interval sets support `r/fold` for parallel reduction.
 
 ## String Keys (Custom Comparator)
 
@@ -301,7 +309,9 @@ Queries return all intervals that overlap with the query interval. Query time sc
 |---|---------------|----------|-------------|
 | 10,000 | 16 ms | 31 ms | 38 ms |
 | 100,000 | 217 ms | 436 ms | 507 ms |
-| 500,000 | 1.5 s | 2.9 s | 3.1 s |
+| 500,000 | 960 ms | 1.0 s | **439 ms** |
+
+**ordered-map with strings is 2.2x faster than sorted-map-by** at N=500K via parallel batch construction.
 
 ### Lookup
 
@@ -309,7 +319,9 @@ Queries return all intervals that overlap with the query interval. Query time sc
 |---|---------------|----------|-------------|
 | 10,000 | 9.7 ms | 11.3 ms | 15.6 ms |
 | 100,000 | 12.8 ms | 15.5 ms | 20.1 ms |
-| 500,000 | 19.0 ms | 20.9 ms | 27.5 ms |
+| 500,000 | 14.3 ms | 10.2 ms | 12.3 ms |
+
+**Lookup is competitive**: ordered-map is 14% faster than sorted-map-by, 20% slower than data.avl at N=500K.
 
 ### Iteration
 
@@ -317,7 +329,9 @@ Queries return all intervals that overlap with the query interval. Query time sc
 |---|---------------|----------|-------------|
 | 10,000 | 2.1 ms | 1.8 ms | 2.3 ms |
 | 100,000 | 27 ms | 21 ms | 26 ms |
-| 500,000 | 143 ms | 126 ms | 155 ms |
+| 500,000 | 111 ms | 35 ms | **34 ms** |
+
+**ordered-map iteration matches data.avl** and is 3.3x faster than sorted-map-by at N=500K.
 
 ## Summary
 
@@ -326,9 +340,9 @@ Queries return all intervals that overlap with the query interval. Query time sc
 **Best for**:
 - Bulk construction (2.4x faster than sorted-set, 1.6x faster than data.avl)
 - Set operations: union, intersection, difference (5-10x faster than clojure.set)
-- First/last element access (~31,000x faster at N=100K, ~128,000x at N=500K)
+- First/last element access (~31,000x faster at N=100K, ~92,000x at N=500K)
 - Parallel fold operations (14.8x faster vs sorted-set, 3.2x faster vs data.avl at N=500K)
-- Split operations (4.5x faster than data.avl)
+- Split operations (3x faster than data.avl)
 - Iteration via reduce (3.4x faster than sorted-set at N=500K)
 - Applications needing interval tree functionality
 - Use with `subseq`/`rsubseq` (full `clojure.lang.Sorted` support)
@@ -368,9 +382,9 @@ Queries return all intervals that overlap with the query interval. Query time sc
 | Lookup (heterogeneous) | 1.07x slower | **1.16x faster** |
 | Lookup (long-ordered-set) | **1.20x faster** | **1.40x faster** |
 | Iteration | **3.4x faster** | 1.6x slower |
-| First/last | **~128,000x faster** | **~145,000x faster** |
+| First/last | **~92,000x faster** | **~122,000x faster** |
 | Parallel fold | **14.8x faster** | **3.2x faster** |
-| Split | N/A | **4.5x faster** |
+| Split | N/A | **3x faster** |
 | Union | **7.6x faster** | **10x faster** |
 | Intersection | **6.2x faster** | **5.0x faster** |
 | Difference | **7.3x faster** | **5.0x faster** |

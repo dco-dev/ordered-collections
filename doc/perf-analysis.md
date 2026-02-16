@@ -12,7 +12,7 @@ The library's advantages grow with collection size. At N=500,000:
 
 | Operation | sorted-set | data.avl | ordered-set | vs sorted | vs avl |
 |-----------|------------|----------|-------------|-----------|--------|
-| Last element (100 calls) | 3.98s | 4.60s | **34µs** | **118,000x** | **135,000x** |
+| Last element (1000 calls) | 35.9s | 47.8s | **0.39ms** | **~92,000x** | **~122,000x** |
 | Union (50% overlap) | 321ms | 376ms | **40ms** | **8x** | **9x** |
 | Intersection | 213ms | 172ms | **36ms** | **6x** | **5x** |
 | Difference | 213ms | 149ms | **31ms** | **7x** | **5x** |
@@ -142,7 +142,7 @@ The most dramatic performance difference—grows with collection size due to O(l
 | N | sorted-set | data.avl | ordered-set | vs sorted | vs avl |
 |---|------------|----------|-------------|-----------|--------|
 | 100,000 (1K calls) | 7.98s | 9.11s | **256µs** | **31,000x** | **36,000x** |
-| 500,000 (100 calls) | 3.98s | 4.60s | **34µs** | **118,000x** | **135,000x** |
+| 500,000 (1K calls) | 35.9s | 47.8s | **0.39ms** | **~92,000x** | **~122,000x** |
 
 ### Why the Difference?
 
@@ -248,14 +248,14 @@ Parallel divide-and-conquer merge for ordered maps.
 
 ## Split Operations
 
-4.5x faster than data.avl for splitting at a key.
+3x faster than data.avl for splitting at a key.
 
 ### Benchmark Results (100 splits on N = 500,000)
 
 | Library | Time | Speedup |
 |---------|------|---------|
-| data.avl | 10.5ms | 1.0x |
-| ordered-set | **2.2ms** | 4.5x |
+| data.avl | 1.5ms | 1.0x |
+| ordered-set | **0.49ms** | 3x |
 
 ### Implementation
 
@@ -343,7 +343,7 @@ The ~8 byte overhead stores subtree weights for O(log n) nth/rank operations.
 ## Recommendations
 
 ### Use ordered-set when working at scale (N > 100K):
-- Need `last` element access (**118,000x faster** at N=500K)
+- Need `last` element access (**~92,000x faster** at N=500K)
 - Performing set algebra (**6-8x faster** at N=500K)
 - Need reduce over large collections (**3.4x faster** at N=500K)
 - Need nth/rank access (O(log n) vs O(n))
