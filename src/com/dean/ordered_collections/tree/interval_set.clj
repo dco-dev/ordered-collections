@@ -224,7 +224,7 @@
     (IntervalSet. (node/leaf) cmp alloc stitch {}))
   (contains [this k]
     (with-interval-set this
-      (some? (seq (tree/node-find-intervals this (interval/ordered-pair k))))))
+      (some? (seq (tree/node-find-intervals root (interval/ordered-pair k))))))
   (disjoin [this k]
     (IntervalSet. (tree/node-remove root (interval/ordered-pair k) cmp alloc) cmp alloc stitch _meta))
   (cons [this k]
