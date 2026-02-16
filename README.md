@@ -98,7 +98,7 @@ Benchmarks at N=500,000 elements (JVM 21, Clojure 1.12):
 
 **Where ordered-set wins:**
 
-The first/last speedup comes from O(log n) positional access via size annotations—`sorted-set` must traverse the entire seq. Set operations use Adams' divide-and-conquer algorithm parallelized across a ForkJoinPool.
+The first/last speedup comes from O(log n) positional access via size annotations—`sorted-set` must traverse the entire seq. Set operations use Adams' divide-and-conquer algorithm with automatic parallelization for large inputs.
 
 | Operation | sorted-set | data.avl | ordered-set | Speedup |
 |-----------|------------|----------|-------------|---------|
@@ -133,7 +133,12 @@ The core is a weight-balanced binary tree using balance parameters (δ=3, γ=2) 
 
 **Split and join** are the fundamental primitives. Splitting a tree at a key produces two trees in O(log n); joining two trees where all keys in one are less than all keys in the other is also O(log n). Set operations, subrange extraction, and parallel fold all reduce to split/join.
 
-Set operations use Adams' divide-and-conquer algorithm with O(m log(n/m + 1)) complexity. The implementation parallelizes across a ForkJoinPool when inputs exceed a threshold.
+**Parallelism** Set operations build on Adams' divide-and-conquer
+algorithm (1992, "Efficient Sets—A Balancing Act") extended with the
+parallel join-based approach from Blelloch, Ferizovic & Sun (2016, "Just
+Join for Parallel Ordered Sets"). Complexity is O(m log(n/m + 1)) where
+m ≤ n. When combined tree size exceeds a given size, operations
+automatically parallelize via ForkJoinPool, yielding significant speedup on multi-core systems.
 
 **Enumerators** provide efficient lazy traversal. Rather than eagerly converting trees to sequences, an enumerator walks down the spine building a chain of frames—each saving (node, subtree, next-frame). This gives O(1) access to the current element, O(log n) amortized cost per advance, and only O(log n) space. Sequences, reduce, and fold all use enumerators internally.
 
