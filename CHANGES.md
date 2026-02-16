@@ -125,7 +125,7 @@ All notable changes to this project will be documented in this file.
 - Set operations (union, intersection, difference) now use `java.util.concurrent.ForkJoinPool`
 - Work-stealing parallelism based on Blelloch, Ferizovic, Sun (2016) join-based algorithms
 - **6.9x faster** union, **7.4x faster** intersection vs `clojure.set`
-- Automatic threshold tuning (8K elements) for optimal sequential/parallel tradeoff
+- Automatic threshold tuning (64K combined elements) for optimal sequential/parallel tradeoff
 
 #### Primitive Lookup Optimization
 - `long-ordered-set` and `long-ordered-map` now use primitive `Long/compare` directly

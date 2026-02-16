@@ -1457,8 +1457,10 @@
 
 ;; Threshold for parallel execution - tuned for modern multi-core CPUs.
 ;; Below this threshold, sequential execution is faster due to fork overhead.
-;; Empirically determined: 8K-16K is optimal for most workloads.
-(def ^:const ^long +parallel-threshold+ 8192)
+;; Empirically determined via parallel_threshold_bench.clj:
+;;   - Union crossover: ~65K
+;;   - Intersection/Difference crossover: ~49K
+(def ^:const ^long +parallel-threshold+ 65536)
 
 ;; Secondary threshold for very small subtrees where even sequential
 ;; divide-and-conquer has overhead. Use direct linear merge instead.

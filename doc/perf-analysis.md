@@ -186,7 +186,7 @@ Divide-and-conquer algorithms with parallel execution provide 7-9x speedups over
 (node-set-union-parallel s1 s2)  ;; O(m * log(n/m)) when m << n
 ```
 
-For collections above 10,000 elements, set operations automatically use fork-join parallelism to process left and right subtrees concurrently.
+For collections above 65,536 combined elements, set operations automatically use fork-join parallelism to process left and right subtrees concurrently.
 
 ## Map Merge Operations
 

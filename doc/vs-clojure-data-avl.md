@@ -85,15 +85,21 @@ Based on benchmarks run on JDK 21, Apple M1 Pro.
 
 ### Set Operations (union/intersection/difference)
 
-| N | clojure.set | ordered-set | Speedup |
-|---|-------------|-------------|---------|
-| 10,000 | ~15 ms | ~2 ms | 7x |
-| 100,000 | ~200 ms | ~25 ms | 8x |
-| 500,000 | ~1.5 s | ~150 ms | 10x |
+Comparing ordered-collections to data.avl (which falls back to clojure.set):
 
-**Verdict**: **ordered-collections is dramatically faster** for set operations due to Adams' divide-and-conquer algorithm with fork-join parallelism.
+| N | Operation | data.avl | ordered-set | Speedup |
+|---|-----------|----------|-------------|---------|
+| 10,000 | Union | ~2.6 ms | ~0.4 ms | 6x |
+| 10,000 | Intersection | ~1.3 ms | ~0.4 ms | 3x |
+| 50,000 | Union | ~14 ms | ~2.3 ms | 6x |
+| 50,000 | Intersection | ~7.6 ms | ~2.4 ms | 3x |
+| 100,000 | Union | ~26 ms | ~16 ms | 1.6x |
+| 100,000 | Intersection | ~17 ms | ~7.7 ms | 2.2x |
+| 500,000 | Union | ~129 ms | ~20 ms | 6.5x |
+| 500,000 | Intersection | ~89 ms | ~25 ms | 3.5x |
+| 500,000 | Difference | ~81 ms | ~18 ms | 4.5x |
 
-*Note: data.avl does not provide specialized set operations; it falls back to clojure.set.*
+**Verdict**: **ordered-collections is 2-6x faster** for set operations due to Adams' divide-and-conquer algorithm with fork-join parallelism (for collections above 65,536 combined elements).
 
 ### Parallel Fold (r/fold)
 

@@ -103,9 +103,9 @@ The first/last speedup comes from O(log n) positional access via size annotation
 | Operation | sorted-set | data.avl | ordered-set | Speedup |
 |-----------|------------|----------|-------------|---------|
 | First/last access | 17s | 2.6ms | **2.4ms** | **~7000x** vs sorted-set |
-| Union | 1.1s | 180ms | **129ms** | **8x** vs sorted-set |
-| Intersection | 870ms | 140ms | **91ms** | **9x** vs sorted-set |
-| Difference | 977ms | 155ms | **102ms** | **8x** vs sorted-set |
+| Union | 1.1s | 129ms | **20ms** | **6.5x** vs data.avl |
+| Intersection | 870ms | 89ms | **25ms** | **3.5x** vs data.avl |
+| Difference | 977ms | 81ms | **18ms** | **4.5x** vs data.avl |
 | Parallel fold | 98ms | 95ms | **42ms** | **2.3x** |
 | Construction | 1.5s | 1.3s | **1.2s** | **1.25x** |
 | Reduce | 96ms | 85ms | **81ms** | **1.2x** |

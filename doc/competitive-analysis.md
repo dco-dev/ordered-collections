@@ -50,7 +50,7 @@ union(T1, T2):
 
 This is asymptotically optimal and **dramatically faster** than `clojure.set/union` which is O(n).
 
-ordered-collections adds **parallel execution** via ForkJoinPool for trees exceeding 10,000 elements, providing additional speedup on multi-core systems.
+ordered-collections adds **parallel execution** via ForkJoinPool for trees exceeding 65,536 combined elements, providing additional speedup on multi-core systems.
 
 ### Indexed Access
 
