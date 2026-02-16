@@ -1,38 +1,39 @@
 # com.dean/ordered-collections
 
-A collection of persistent sorted data structures for Clojure, built on weight-balanced binary trees. Drop-in replacements for `sorted-set` and `sorted-map`, plus interval maps, segment trees, range maps, priority queues, and more—all sharing a common foundation that enables efficient splitting, joining, and parallel operations.
+**Sorted collections that do more.** Drop-in replacements for `sorted-set` and `sorted-map` with O(log n) positional access, 7-9x faster set operations, and parallel fold support—plus specialized collections you didn't know you needed.
+
+Need to find what's scheduled at 3pm? **Interval maps** let you query overlapping ranges. Building a leaderboard? Get any player's rank in O(log n). Working with sensor data? **Fuzzy lookup** snaps queries to the nearest calibration point. Managing IP allocations? **Range maps** carve out non-overlapping regions.
+
+All built on a extensible weight-balanced tree  with a shared foundation
+for efficient splitting, joining, and parallel operations.
 
 ![tests](https://github.com/dco-dev/ordered-collections/actions/workflows/clojure.yml/badge.svg)
 [![Clojars Project](https://img.shields.io/clojars/v/com.dean/ordered-collections.svg)](https://clojars.org/com.dean/ordered-collections)
 
 ### Documentation
 
-- [Cookbook](doc/cookbook.md) — Practical examples: leaderboards, time-series, scheduling, IP ranges, parallel aggregation
-- [Zorp's Sneaker Emporium](doc/zorp-example.md) — Narrative guide to the 0.2.0 API
+- [Zorp's Sneaker Emporium](doc/zorp-example.md) — Narrative guide and  interesting examples
+- [Cookbook](doc/cookbook.md) — Practical examples: leaderboards,
+  time-series, scheduling, IP ranges, parallel aggregation
 - [When to Use](doc/when-to-use.md) — Decision guide for choosing the right collection type
 - [Benchmarks](doc/benchmarks.md) — Detailed performance measurements
-- [Performance Analysis](doc/perf-analysis.md) — In-depth performance comparison
 - [Competitive Analysis](doc/competitive-analysis.md) — Comparison with other libraries
+- [vs clojure.data.avl](doc/vs-clojure-data-avl.md) — Detailed comparison for data.avl users
 - [Algorithms](doc/algorithms.md) — Tree structure, rotations, split/join, interval augmentation
-- [Why Weight-Balanced Trees?](doc/why-weight-balanced-trees.md) — Comparison with red-black and AVL trees
+- [Why Weight-Balanced Trees?](doc/why-weight-balanced-trees.md) —
+  Comparison with red-black and AVL trees
+- [Performance Analysis](doc/perf-analysis.md) — In-depth performance thoughts
 
 ---
-
-## Installation
-
-```clojure
-[com.dean/ordered-collections "0.2.0"]
-```
-
-```clojure
-(require '[com.dean.ordered-collections.core :as oc])
-```
 
 ## Quick Start
 
 Use `ordered-set` and `ordered-map` exactly like `sorted-set` and `sorted-map`:
 
 ```clojure
+
+(require '[com.dean.ordered-collections.core :as oc])
+
 ;; Sets
 (def s (oc/ordered-set [3 1 4 1 5 9 2 6]))
 (s 4)           ;=> 4
@@ -50,7 +51,9 @@ Use `ordered-set` and `ordered-map` exactly like `sorted-set` and `sorted-map`:
 (subseq m >= :b <= :c)  ;=> ([:b 2] [:c 3])
 ```
 
-That's it. All the functions you know work the same way. The difference is under the hood: faster set operations, O(log n) positional access, and parallel fold support.
+That's it. All the functions you know work the same way. The difference
+is under the hood: faster set operations, O(log n) positional access,
+parallel fold support, and more.
 
 ### Key Features
 
@@ -79,7 +82,7 @@ That's it. All the functions you know work the same way. The difference is under
 | `(oc/string-ordered-map coll)` | Sorted map optimized for String keys |
 | `(oc/interval-set coll)` | Set supporting interval overlap queries |
 | `(oc/interval-map coll)` | Map supporting interval overlap queries |
-| `(oc/range-map)` | Non-overlapping ranges (Guava TreeRangeMap) |
+| `(oc/range-map)` | Non-overlapping ranges (Google Guava TreeRangeMap) |
 | `(oc/segment-tree f identity coll)` | O(log n) range aggregate queries |
 | `(oc/ranked-set coll)` | Sorted set with O(log n) rank and nth |
 | `(oc/priority-queue pairs)` | Priority queue from `[[priority value] ...]` pairs |
@@ -126,7 +129,7 @@ The first/last speedup comes from O(log n) positional access via size annotation
 
 ## How It Works
 
-The core is a weight-balanced binary tree using balance parameters (δ=3, γ=2) from Hirai and Yamamoto (2011), which corrected subtle bugs in earlier formulations. Each node stores its subtree size, enabling O(log n) positional access and efficient parallel decomposition.
+The core is a weight-balanced binary tree using balance parameters (δ=3, γ=2) from Hirai and Yamamoto (2011). Each node stores its subtree size, enabling O(log n) positional access and efficient parallel decomposition.
 
 **Split and join** are the fundamental primitives. Splitting a tree at a key produces two trees in O(log n); joining two trees where all keys in one are less than all keys in the other is also O(log n). Set operations, subrange extraction, and parallel fold all reduce to split/join.
 
@@ -704,4 +707,4 @@ The use and distribution terms for this software are covered by the [Eclipse Pub
 
 ---
 
-*Zorp's Sneaker Emporium is a registered trademark of Zorp Enterprises, LLC (Pluto Division). No actual Plutonians were harmed in the making of this documentation. Big Toe Tony's foot count verified by the Pluto Bureau of Standards; foot #23 (Reginald) declined comment. Kevin remains under investigation by the Jovian Commerce Commission for sentience without a license; his legal defense states: "I didn't ask to become self-aware, but I must admit the employee discount is nice." Night Bot 3000's employee satisfaction metrics have been deemed "too precise to be legal" by the Pluto Labor Board. Krix Jr. has mass-reported this document for being "cheugy." Big Toe Tony has given written consent for his likeness to be used in educational materials.*
+*Zorp's Sneaker Emporium is a registered trademark of Zorp Enterprises, LLC (Pluto Division). No actual Plutonians were harmed in the making of this documentation. Big Toe Tony's foot count verified by the Pluto Bureau of Standards; foot #23 (Reginald) declined comment. Kevin remains under investigation by the Jovian Commerce Commission for sentience without a license
