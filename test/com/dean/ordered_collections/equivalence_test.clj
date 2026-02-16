@@ -8,102 +8,17 @@
    - Property tests: Generative testing via test.check"
   (:require [clojure.data.avl :as avl]
             [clojure.set :as cset]
-            [clojure.test :refer [deftest testing is are]]
+            [clojure.test :refer [deftest testing is]]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
             [com.dean.ordered-collections.core :as oc]
+            [com.dean.ordered-collections.test-utils :as tu
+             :refer [small medium large huge massive extreme
+                     rand-longs rand-ints rand-strings rand-map-entries
+                     ->ss ->as ->os ->los ->sm ->am ->om
+                     assert-eq with-iterations]]
             [com.dean.ordered-collections.tree.protocol :as proto]))
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Test Scales
-;;
-;; Equivalence tests (comparison with sorted-set/sorted-map):
-;;   small    = 100      (fast, many iterations)
-;;   medium   = 1,000    (still fast enough for sorted-set)
-;;   large    = 10,000   (sorted-set slows down here)
-;;
-;; Correctness tests (ordered-set only, invariant verification):
-;;   huge     = 100,000  (stress tests)
-;;   massive  = 1,000,000 (high cardinality)
-;;   extreme  = 5,000,000 (stress ceiling)
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(def ^:const small   100)
-(def ^:const medium  1000)
-(def ^:const large   10000)
-(def ^:const huge    100000)
-(def ^:const massive 1000000)
-(def ^:const extreme 5000000)
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Data Generators
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn rand-longs
-  "Generate n unique random longs in [0, max-val)"
-  [n max-val]
-  (loop [s (transient #{})]
-    (if (>= (count s) n)
-      (vec (persistent! s))
-      (recur (conj! s (long (rand max-val)))))))
-
-(defn rand-ints
-  "Generate n unique random integers in [-range/2, range/2)"
-  [n range-size]
-  (let [half (quot range-size 2)]
-    (loop [s (transient #{})]
-      (if (>= (count s) n)
-        (vec (persistent! s))
-        (recur (conj! s (- (rand-int range-size) half)))))))
-
-(defn rand-strings
-  "Generate n unique random strings"
-  [n]
-  (let [chars "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"]
-    (loop [s (transient #{})]
-      (if (>= (count s) n)
-        (vec (persistent! s))
-        (recur (conj! s (apply str (repeatedly (+ 5 (rand-int 20)) #(rand-nth chars)))))))))
-
-(defn rand-map-entries
-  "Generate n unique [k v] pairs with integer keys and values"
-  [n max-key]
-  (let [keys (rand-longs n max-key)]
-    (mapv #(vector % (rand-int 1000000)) keys)))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Abstraction: Equivalence Assertions
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn same-seq?
-  "True if all collections have identical element sequences"
-  [& colls]
-  (apply = (map vec colls)))
-
-(defn assert-eq
-  "Assert that all results are equal, with descriptive message"
-  [msg & vals]
-  (is (apply = vals) msg))
-
-(defmacro with-iterations
-  "Run body n times"
-  [n & body]
-  `(dotimes [_# ~n] ~@body))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Collection Constructors
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn ->ss [xs] (into (sorted-set) xs))
-(defn ->as [xs] (into (avl/sorted-set) xs))
-(defn ->os [xs] (oc/ordered-set xs))
-(defn ->los [xs] (oc/long-ordered-set xs))
-
-(defn ->sm [xs] (into (sorted-map) xs))
-(defn ->am [xs] (into (avl/sorted-map) xs))
-(defn ->om [xs] (oc/ordered-map xs))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; PART 1: SET EQUIVALENCE TESTS
@@ -549,15 +464,8 @@
 ;; PART 4: PROPERTY-BASED TESTS (test.check)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn distinct-by [f coll]
-  (vals (reduce (fn [m x] (assoc m (f x) x)) {} coll)))
-
-(def gen-int-set
-  (gen/fmap #(vec (distinct %)) (gen/vector gen/small-integer 0 500)))
-
-(def gen-int-map-entries
-  (gen/fmap #(vec (distinct-by first %))
-            (gen/vector (gen/tuple gen/small-integer gen/small-integer) 0 500)))
+(def gen-int-set tu/gen-int-set)
+(def gen-int-map-entries tu/gen-int-map-entries)
 
 (defspec prop-set-construction 100
   (prop/for-all [xs gen-int-set]

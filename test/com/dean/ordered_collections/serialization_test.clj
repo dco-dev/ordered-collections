@@ -15,7 +15,9 @@
    Note: Collections created with custom comparators (via ordered-set-by, etc.)
    will only be serializable if the custom comparator itself is serializable."
   (:require [clojure.test :refer [deftest testing is]]
-            [com.dean.ordered-collections.core :as oc])
+            [com.dean.ordered-collections.core :as oc]
+            [com.dean.ordered-collections.test-utils :as tu
+             :refer [rand-longs rand-strings rand-map-entries]])
   (:import [java.io ByteArrayInputStream ByteArrayOutputStream
             ObjectInputStream ObjectOutputStream]))
 
@@ -53,33 +55,6 @@
     true
     (catch java.io.NotSerializableException _
       false)))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Data Generators
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn rand-longs
-  "Generate n unique random longs in [0, max-val)"
-  [n max-val]
-  (loop [s (transient #{})]
-    (if (>= (count s) n)
-      (vec (persistent! s))
-      (recur (conj! s (long (rand max-val)))))))
-
-(defn rand-strings
-  "Generate n unique random strings"
-  [n]
-  (let [chars "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"]
-    (loop [s (transient #{})]
-      (if (>= (count s) n)
-        (vec (persistent! s))
-        (recur (conj! s (apply str (repeatedly (+ 5 (rand-int 20)) #(rand-nth chars)))))))))
-
-(defn rand-map-entries
-  "Generate n unique [k v] pairs"
-  [n max-key]
-  (let [keys (rand-longs n max-key)]
-    (mapv #(vector % (rand-int 1000000)) keys)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Test Scales

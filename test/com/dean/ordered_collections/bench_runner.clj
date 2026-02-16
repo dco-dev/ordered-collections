@@ -15,6 +15,9 @@
             [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.pprint :as pp]
+            [com.dean.ordered-collections.bench-utils :as bu
+             :refer [generate-pairs generate-elements generate-lookup-keys
+                     generate-string-keys format-ns]]
             [com.dean.ordered-collections.core :as core]
             [com.dean.ordered-collections.tree.order :as order])
   (:import [java.time Instant LocalDateTime]
@@ -31,22 +34,6 @@
 (defn timestamp []
   (.format (LocalDateTime/now)
            (DateTimeFormatter/ofPattern "yyyy-MM-dd_HH-mm-ss")))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Test Data Generation
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn generate-pairs [n]
-  (mapv (fn [k] [k (str "value-" k)]) (shuffle (range n))))
-
-(defn generate-elements [n]
-  (vec (shuffle (range n))))
-
-(defn generate-lookup-keys ^ints [n num-lookups]
-  (int-array (repeatedly num-lookups #(rand-int n))))
-
-(defn generate-string-keys [n]
-  (mapv #(format "key-%08d" %) (shuffle (range n))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Benchmark Execution
@@ -66,12 +53,7 @@
       :samples     (:sample-count results#)
       :outliers    (:outliers results#)}))
 
-(defn format-time [ns]
-  (cond
-    (>= ns 1e9)  (format "%.2fs" (/ ns 1e9))
-    (>= ns 1e6)  (format "%.2fms" (/ ns 1e6))
-    (>= ns 1e3)  (format "%.2fµs" (/ ns 1e3))
-    :else        (format "%dns" ns)))
+(def format-time format-ns)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Individual Benchmarks

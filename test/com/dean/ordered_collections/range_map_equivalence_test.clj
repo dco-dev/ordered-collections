@@ -11,11 +11,12 @@
    - range-remove (remove): remove all mappings in a range
 
    Reference: https://guava.dev/releases/33.0.0-jre/api/docs/com/google/common/collect/TreeRangeMap.html"
-  (:require [clojure.test :refer [deftest testing is are]]
+  (:require [clojure.test :refer [deftest testing is]]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
-            [com.dean.ordered-collections.core :as oc])
+            [com.dean.ordered-collections.core :as oc]
+            [com.dean.ordered-collections.test-utils :as tu])
   (:import [com.google.common.collect TreeRangeMap Range]))
 
 
@@ -76,13 +77,7 @@
 
 (def gen-range
   "Generate a valid range [lo hi) where lo < hi."
-  (gen/bind (gen/tuple gen/small-integer gen/small-integer)
-            (fn [[a b]]
-              (let [lo (min a b)
-                    hi (max a b)]
-                (if (= lo hi)
-                  (gen/return [lo (inc hi)])  ;; Ensure lo < hi
-                  (gen/return [lo hi]))))))
+  tu/gen-range)
 
 (def gen-range-value-pair
   "Generate a [[lo hi] value] pair."

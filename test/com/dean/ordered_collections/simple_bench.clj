@@ -11,65 +11,13 @@
      (sb/run-all)       ; Full suite"
   (:require [clojure.core.reducers :as r]
             [clojure.data.avl :as avl]
+            [com.dean.ordered-collections.bench-utils :as bu
+             :refer [bench format-ns format-result print-header print-row]]
             [com.dean.ordered-collections.core :as core]
             [com.dean.ordered-collections.tree.node :as node]
             [com.dean.ordered-collections.tree.tree :as tree]
             [com.dean.ordered-collections.tree.order :as order]
             [com.dean.ordered-collections.tree.interval :as interval]))
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Benchmarking Infrastructure
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;; JIT warmup is critical for accurate benchmarks. The JVM needs significant
-;; iteration counts to trigger compilation and optimization. We use 20+ warmup
-;; iterations to ensure stable, reproducible results.
-
-(defmacro bench
-  "Run body warmup-n times, then measure-n times, return [mean-ns std-ns].
-
-   IMPORTANT: For accurate results, warmup-n should be at least 15-20 to allow
-   JIT compilation. Lower values will show artificially slow times."
-  [warmup-n measure-n & body]
-  `(do
-     (dotimes [_# ~warmup-n] ~@body)
-     (System/gc)
-     (Thread/sleep 100)
-     (let [times# (long-array ~measure-n)]
-       (dotimes [i# ~measure-n]
-         (let [t0# (System/nanoTime)
-               _#  ~@body
-               t1# (System/nanoTime)]
-           (aset times# i# (- t1# t0#))))
-       (let [n#    (alength times#)
-             sum#  (areduce times# i# acc# 0.0 (+ acc# (aget times# i#)))
-             mean# (/ sum# n#)
-             var#  (areduce times# i# acc# 0.0
-                     (let [d# (- (aget times# i#) mean#)]
-                       (+ acc# (* d# d#))))
-             std#  (Math/sqrt (/ var# n#))]
-         [(long mean#) (long std#)]))))
-
-(defn- fmt-ns [ns]
-  (cond
-    (>= ns 1e9) (format "%.1f s"  (/ ns 1e9))
-    (>= ns 1e6) (format "%.2f ms" (/ ns 1e6))
-    (>= ns 1e3) (format "%.1f µs" (/ ns 1e3))
-    :else       (format "%d ns"   (long ns))))
-
-(defn- fmt-result [[mean std]]
-  (str (fmt-ns mean) " ± " (fmt-ns std)))
-
-(defn- print-header [title cols]
-  (println)
-  (println (str "=== " title " ==="))
-  (println (apply format (str "%-10s" (apply str (repeat (count cols) " %-20s"))) "N" cols))
-  (println (apply str (repeat (+ 10 (* 21 (count cols))) "-"))))
-
-(defn- print-row [n results]
-  (println (apply format (str "%-10d" (apply str (repeat (count results) " %-20s")))
-                  n (map fmt-result results))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Map Benchmarks
@@ -349,8 +297,8 @@
           os-speedup (if (pos? os-fold) (/ (double os-reduce) os-fold) 0.0)]
       (println (format "%-12d %-18s %-18s %-12.1fx"
                        n
-                       (fmt-ns os-reduce)
-                       (fmt-ns os-fold)
+                       (format-ns os-reduce)
+                       (format-ns os-fold)
                        os-speedup)))))
 
 (defn run-parallel-benchmarks

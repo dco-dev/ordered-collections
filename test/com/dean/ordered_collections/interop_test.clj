@@ -10,53 +10,13 @@
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
-            [com.dean.ordered-collections.core :as oc]
+            [com.dean.ordered-collections.test-utils :as tu
+             :refer [gen-int-set gen-non-empty-int-set
+                     gen-int-map-entries gen-non-empty-int-map-entries
+                     gen-test-symbol
+                     ->ts ->hs ->os ->tm ->om]]
             [com.dean.ordered-collections.tree.interop]
             [com.dean.ordered-collections.tree.protocol :as proto]))
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Generators
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn distinct-by [f coll]
-  (vals (reduce (fn [m x] (assoc m (f x) x)) {} coll)))
-
-(def gen-int-set
-  "Generator for vectors of distinct integers (suitable for set construction)"
-  (gen/fmap #(vec (distinct %)) (gen/vector gen/small-integer 0 200)))
-
-(def gen-non-empty-int-set
-  "Generator for non-empty vectors of distinct integers"
-  (gen/fmap #(vec (distinct %))
-            (gen/such-that not-empty (gen/vector gen/small-integer 1 200))))
-
-(def gen-int-map-entries
-  "Generator for vectors of distinct [k v] pairs"
-  (gen/fmap #(vec (distinct-by first %))
-            (gen/vector (gen/tuple gen/small-integer gen/small-integer) 0 200)))
-
-(def gen-non-empty-int-map-entries
-  "Generator for non-empty vectors of distinct [k v] pairs"
-  (gen/fmap #(vec (distinct-by first %))
-            (gen/such-that not-empty
-                           (gen/vector (gen/tuple gen/small-integer gen/small-integer) 1 200))))
-
-(def gen-test-symbol
-  "Generator for nearest/subrange test symbols"
-  (gen/elements [:< :<= :> :>=]))
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Collection Constructors
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn ->ts [xs] (into (sorted-set) xs))
-(defn ->hs [xs] (into #{} xs))
-(defn ->os [xs] (oc/ordered-set xs))
-
-(defn ->tm [xs] (into (sorted-map) xs))
-(defn ->om [xs] (oc/ordered-map xs))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
