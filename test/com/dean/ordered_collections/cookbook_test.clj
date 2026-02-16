@@ -285,7 +285,7 @@
   (let [cutoff (- timestamp max-age)
         fresh-data (if-let [first-key (first (keys data))]
                      (if (< first-key cutoff)
-                       (let [[_ _ right] (oc/split-key data cutoff)]
+                       (let [[_ _ right] (oc/split-key cutoff data)]
                          right)
                        data)
                      data)]
@@ -441,27 +441,27 @@
   (let [prices (oc/ordered-set [100 200 300 400 500 600 700 800 900 1000])]
 
     (testing "split-key with existing key"
-      (let [[below match above] (oc/split-key prices 500)]
+      (let [[below match above] (oc/split-key 500 prices)]
         (is (= [100 200 300 400] (vec below)))
         (is (= 500 match))
         (is (= [600 700 800 900 1000] (vec above)))))
 
     (testing "split-key with non-existing key"
-      (let [[below match above] (oc/split-key prices 550)]
+      (let [[below match above] (oc/split-key 550 prices)]
         (is (= [100 200 300 400 500] (vec below)))
         (is (nil? match))
         (is (= [600 700 800 900 1000] (vec above)))))
 
     (testing "split-at"
-      (let [[left right] (oc/split-at prices 3)]
+      (let [[left right] (oc/split-at 3 prices)]
         (is (= [100 200 300] (vec left)))
         (is (= [400 500 600 700 800 900 1000] (vec right)))))
 
     (testing "pagination using split-at"
       (let [paginate (fn [coll page-size page-num]
                        (let [offset (* page-size page-num)
-                             [_ remaining] (oc/split-at coll offset)
-                             [page _] (oc/split-at remaining page-size)]
+                             [_ remaining] (oc/split-at offset coll)
+                             [page _] (oc/split-at page-size remaining)]
                          (vec page)))]
         (is (= [100 200 300] (paginate prices 3 0)))
         (is (= [400 500 600] (paginate prices 3 1)))
@@ -478,28 +478,28 @@
                      [40 "widget-d"] [50 "widget-e"] [60 "widget-f"]])]
 
     (testing "two-sided bounds >="
-      (let [sub (oc/subrange inventory >= 25 <= 50)]
+      (let [sub (oc/subrange inventory :>= 25 :<= 50)]
         (is (= 3 (count sub)))
         (is (contains? sub 30))
         (is (contains? sub 50))
         (is (not (contains? sub 20)))))
 
     (testing "one-sided bound >"
-      (let [sub (oc/subrange inventory > 40)]
+      (let [sub (oc/subrange inventory :> 40)]
         (is (= 2 (count sub)))
         (is (contains? sub 50))
         (is (contains? sub 60))))
 
     (testing "one-sided bound <"
-      (let [sub (oc/subrange inventory < 30)]
+      (let [sub (oc/subrange inventory :< 30)]
         (is (= 2 (count sub)))
         (is (contains? sub 10))
         (is (contains? sub 20)))))
 
   (testing "subrange on set"
     (let [ids (oc/ordered-set (range 0 100 5))]
-      (is (= [20 25 30 35] (vec (oc/subrange ids >= 20 < 40))))
-      (is (= 7 (count (oc/subrange ids >= 50 <= 80)))))))
+      (is (= [20 25 30 35] (vec (oc/subrange ids :>= 20 :< 40))))
+      (is (= 7 (count (oc/subrange ids :>= 50 :<= 80)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 13. Floor/Ceiling Queries
@@ -508,22 +508,22 @@
 (deftest floor-ceiling-queries-test
   (let [versions (oc/ordered-set [100 200 300 450 500 800])]
 
-    (testing "nearest <="
-      (is (= 300 (oc/nearest versions <= 350)))
-      (is (= 300 (oc/nearest versions <= 300)))
-      (is (nil? (oc/nearest versions <= 50))))
+    (testing "nearest :<="
+      (is (= 300 (oc/nearest versions :<= 350)))
+      (is (= 300 (oc/nearest versions :<= 300)))
+      (is (nil? (oc/nearest versions :<= 50))))
 
-    (testing "nearest <"
-      (is (= 200 (oc/nearest versions < 300)))
-      (is (= 300 (oc/nearest versions < 350))))
+    (testing "nearest :<"
+      (is (= 200 (oc/nearest versions :< 300)))
+      (is (= 300 (oc/nearest versions :< 350))))
 
-    (testing "nearest >="
-      (is (= 450 (oc/nearest versions >= 350)))
-      (is (= 800 (oc/nearest versions >= 800))))
+    (testing "nearest :>="
+      (is (= 450 (oc/nearest versions :>= 350)))
+      (is (= 800 (oc/nearest versions :>= 800))))
 
-    (testing "nearest >"
-      (is (= 800 (oc/nearest versions > 500)))
-      (is (nil? (oc/nearest versions > 800)))))
+    (testing "nearest :>"
+      (is (= 800 (oc/nearest versions :> 500)))
+      (is (nil? (oc/nearest versions :> 800)))))
 
   (testing "nearest on ordered-map"
     (let [config-versions (oc/ordered-map
@@ -531,9 +531,9 @@
                              [200 {:feature-a true :feature-b true}]
                              [350 {:feature-a true :feature-b true :feature-c true}]])]
       (is (= [200 {:feature-a true :feature-b true}]
-             (oc/nearest config-versions <= 300)))
+             (oc/nearest config-versions :<= 300)))
       (is (= [350 {:feature-a true :feature-b true :feature-c true}]
-             (oc/nearest config-versions >= 300))))))
+             (oc/nearest config-versions :>= 300))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Performance Tips Validation

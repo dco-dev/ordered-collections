@@ -81,19 +81,19 @@
      11.0 11.5 12.0 12.5 13.0 13.5 14.0 14.5 15.0]))
 
 (deftest chapter-2-big-toe-tonys-fitting-test
-  (testing "nearest <= finds floor (largest size that fits)"
-    (is (= 11.0 (oc/nearest available-sizes <= 11.3)))
-    (is (= 10.5 (oc/nearest available-sizes <= 10.8)))
-    (is (= 9.0 (oc/nearest available-sizes <= 9.2))))
+  (testing "nearest :<= finds floor (largest size that fits)"
+    (is (= 11.0 (oc/nearest available-sizes :<= 11.3)))
+    (is (= 10.5 (oc/nearest available-sizes :<= 10.8)))
+    (is (= 9.0 (oc/nearest available-sizes :<= 9.2))))
 
-  (testing "nearest >= finds ceiling (smallest size with room)"
-    (is (= 11.5 (oc/nearest available-sizes >= 11.3)))
-    (is (= 11.0 (oc/nearest available-sizes >= 10.8)))
-    (is (= 9.5 (oc/nearest available-sizes >= 9.2))))
+  (testing "nearest :>= finds ceiling (smallest size with room)"
+    (is (= 11.5 (oc/nearest available-sizes :>= 11.3)))
+    (is (= 11.0 (oc/nearest available-sizes :>= 10.8)))
+    (is (= 9.5 (oc/nearest available-sizes :>= 9.2))))
 
   (testing "nearest with strict bounds"
-    (is (= 10.5 (oc/nearest available-sizes < 11.0)))
-    (is (= 13.5 (oc/nearest available-sizes > 13.0))))
+    (is (= 10.5 (oc/nearest available-sizes :< 11.0)))
+    (is (= 13.5 (oc/nearest available-sizes :> 13.0))))
 
   (testing "fit-foot function finds snug and roomy options"
     (let [tonys-feet {:reginald 11.3 :gerald 10.8 :margaret 9.2
@@ -101,8 +101,8 @@
           fit-foot (fn [[foot-name ideal-size]]
                      {:foot foot-name
                       :ideal ideal-size
-                      :snug (oc/nearest available-sizes <= ideal-size)
-                      :roomy (oc/nearest available-sizes >= ideal-size)})
+                      :snug (oc/nearest available-sizes :<= ideal-size)
+                      :roomy (oc/nearest available-sizes :>= ideal-size)})
           fits (into {} (map (fn [f] [(:foot f) f]) (map fit-foot tonys-feet)))]
       (is (= {:foot :reginald :ideal 11.3 :snug 11.0 :roomy 11.5}
              (:reginald fits)))
@@ -112,10 +112,10 @@
              (:margaret fits)))))
 
   (testing "nearest at boundaries"
-    (is (nil? (oc/nearest available-sizes < 6.0)))
-    (is (nil? (oc/nearest available-sizes > 15.0)))
-    (is (= 6.0 (oc/nearest available-sizes <= 6.0)))
-    (is (= 15.0 (oc/nearest available-sizes >= 15.0)))))
+    (is (nil? (oc/nearest available-sizes :< 6.0)))
+    (is (nil? (oc/nearest available-sizes :> 15.0)))
+    (is (= 6.0 (oc/nearest available-sizes :<= 6.0)))
+    (is (= 15.0 (oc/nearest available-sizes :>= 15.0)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Chapter 3: The Split Decision (split-at, split-key)
@@ -128,13 +128,13 @@
                                 [(+ 100 (* id 50)) {:id id}]))
           n (count customer-spending)]
       ;; Top 10%
-      (let [[_ top-10-pct] (oc/split-at customer-spending (- n (quot n 10)))]
+      (let [[_ top-10-pct] (oc/split-at (- n (quot n 10)) customer-spending)]
         (is (= 100 (count top-10-pct))))
       ;; Bottom 20%
-      (let [[bottom-20-pct _] (oc/split-at customer-spending (quot n 5))]
+      (let [[bottom-20-pct _] (oc/split-at (quot n 5) customer-spending)]
         (is (= 200 (count bottom-20-pct))))
       ;; Median
-      (let [[lower upper] (oc/split-at customer-spending (quot n 2))]
+      (let [[lower upper] (oc/split-at (quot n 2) customer-spending)]
         (is (= 500 (count lower)))
         (is (= 500 (count upper))))))
 
@@ -142,14 +142,14 @@
     (let [customer-spending (oc/ordered-map
                               [[100 {:id 0}] [500 {:id 1}] [1000 {:id 2}]
                                [5000 {:id 3}] [10000 {:id 4}] [25000 {:id 5}]])
-          [casual exact vip] (oc/split-key customer-spending 10000)]
+          [casual exact vip] (oc/split-key 10000 customer-spending)]
       (is (= 4 (count casual)))       ; 100, 500, 1000, 5000
       (is (some? exact))              ; exact match at 10000
       (is (= 1 (count vip)))))        ; 25000
 
   (testing "split-key with no exact match"
     (let [spending (oc/ordered-map [[100 :a] [500 :b] [1000 :c]])
-          [below exact above] (oc/split-key spending 750)]
+          [below exact above] (oc/split-key 750 spending)]
       (is (= 2 (count below)))        ; 100, 500
       (is (nil? exact))               ; no 750
       (is (= 1 (count above)))))      ; 1000
@@ -158,7 +158,7 @@
     (let [customer-spending (oc/ordered-map
                               [[100 :a] [500 :b] [1000 :c] [5000 :d]
                                [10000 :e] [25000 :f] [50000 :g]])
-          [_ _ high-spenders] (oc/split-key customer-spending 25000)]
+          [_ _ high-spenders] (oc/split-key 25000 customer-spending)]
       ;; Can get last element of result
       (is (= [50000 :g] (last high-spenders))))))
 
@@ -209,7 +209,7 @@
     (let [tier-thresholds (oc/ordered-set [0 500 1000 2500 5000])
           tier-status (fn [points]
                         (let [[threshold tier _] (oc/fuzzy-nearest loyalty-tiers points)
-                              next-threshold (oc/nearest tier-thresholds > threshold)]
+                              next-threshold (oc/nearest tier-thresholds :> threshold)]
                           (cond-> tier
                             next-threshold (assoc :points-to-next (- next-threshold points)))))
           status (tier-status 480)]
@@ -273,7 +273,7 @@
 
 (deftest chapter-6-clearance-audit-test
   (testing "Find items stale 90+ days - liquidation candidates"
-    (let [liquidation-candidates (oc/subrange stale-inventory >= 90)]
+    (let [liquidation-candidates (oc/subrange stale-inventory :>= 90)]
       (is (= 4 (count liquidation-candidates)))
       (is (contains? liquidation-candidates 91))
       (is (contains? liquidation-candidates 120))
@@ -281,7 +281,7 @@
       (is (contains? liquidation-candidates 203))))
 
   (testing "Calculate liquidation value"
-    (let [liquidation-candidates (oc/subrange stale-inventory >= 90)
+    (let [liquidation-candidates (oc/subrange stale-inventory :>= 90)
           value (->> liquidation-candidates
                      (map (fn [[_ item]]
                             (* (:price item) (- 1 (:markdown item)))))
@@ -291,19 +291,19 @@
       (is (< (Math/abs (- 1405.15 value)) 0.01))))
 
   (testing "Warning zone (60-90 days)"
-    (let [warning-zone (oc/subrange stale-inventory >= 60 < 90)]
+    (let [warning-zone (oc/subrange stale-inventory :>= 60 :< 90)]
       (is (= 1 (count warning-zone)))
       (let [[days item] (first warning-zone)]
         (is (= 67 days))
         (is (= "Europa Ice" (:name item))))))
 
   (testing "Fresh items (under 30 days)"
-    (is (= 1 (count (oc/subrange stale-inventory < 30)))))
+    (is (= 1 (count (oc/subrange stale-inventory :< 30)))))
 
   (testing "Compare full-price vs discounted inventory"
-    (let [full-price (oc/subrange stale-inventory < 60)
-          discounted (oc/subrange stale-inventory >= 60)
-          liquidation (oc/subrange stale-inventory >= 90)]
+    (let [full-price (oc/subrange stale-inventory :< 60)
+          discounted (oc/subrange stale-inventory :>= 60)
+          liquidation (oc/subrange stale-inventory :>= 90)]
       (is (= 2 (count full-price)))
       (is (= 5 (count discounted)))
       (is (= 4 (count liquidation))))))
@@ -417,10 +417,10 @@
       (is (= :available (network (ip "10.0.200.0")))))
 
     ;; Chapter 2: nearest for size fitting
-    (is (= 11.0 (oc/nearest available-sizes <= 11.3)))
+    (is (= 11.0 (oc/nearest available-sizes :<= 11.3)))
 
     ;; Chapter 3: split-key for segmentation
-    (let [[small _ large] (oc/split-key (oc/ordered-set [100 500 1000 5000 10000]) 1000)]
+    (let [[small _ large] (oc/split-key 1000 (oc/ordered-set [100 500 1000 5000 10000]))]
       (is (= [100 500] (vec small)))
       (is (= [5000 10000] (vec large))))
 
@@ -431,7 +431,7 @@
     (is (= (+ 67 72 58 43 31 19) (oc/query traffic-totals 18 24)))
 
     ;; Chapter 6: subrange for filtering
-    (is (= 4 (count (oc/subrange stale-inventory >= 90))))
+    (is (= 4 (count (oc/subrange stale-inventory :>= 90))))
 
     ;; Chapter 7: interval-map + segment-tree for attribution
     (is (some #{:flash-sale} (promotions 26)))

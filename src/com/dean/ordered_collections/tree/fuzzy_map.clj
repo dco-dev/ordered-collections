@@ -7,10 +7,11 @@
    Tie-breaking: When two keys are equidistant, use :< to prefer the
    smaller key, or :> to prefer the larger key."
   (:require [clojure.core.reducers       :as r :refer [coll-fold]]
+            [com.dean.ordered-collections.tree.fuzzy-set :as fuzzy]
             [com.dean.ordered-collections.tree.node     :as node]
             [com.dean.ordered-collections.tree.order    :as order]
-            [com.dean.ordered-collections.tree.tree     :as tree]
-            [com.dean.ordered-collections.tree.fuzzy-set :as fuzzy])
+            [com.dean.ordered-collections.tree.root]
+            [com.dean.ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang                RT Murmur3 MapEntry]
             [com.dean.ordered_collections.tree.root     INodeCollection
                                          IBalancedCollection

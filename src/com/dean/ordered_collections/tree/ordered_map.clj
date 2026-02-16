@@ -1,11 +1,12 @@
 (ns com.dean.ordered-collections.tree.ordered-map
   (:require [clojure.core.reducers       :as r :refer [coll-fold]]
             [com.dean.ordered-collections.tree.node     :as node]
+            [com.dean.ordered-collections.tree.order    :as order]
             [com.dean.ordered-collections.tree.protocol :as proto]
             [com.dean.ordered-collections.tree.root]
-            [com.dean.ordered-collections.tree.tree     :as tree]
-            [com.dean.ordered-collections.tree.order    :as order])
+            [com.dean.ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang                RT Murmur3]
+            [com.dean.ordered_collections.tree.protocol PNearest PRanked PSplittable]
             [com.dean.ordered_collections.tree.root     INodeCollection
                                          IBalancedCollection
                                          IOrderedCollection]))
@@ -230,7 +231,59 @@
         (unchecked-add acc (bit-xor (clojure.lang.Util/hasheq (node/-k n))
                                     (clojure.lang.Util/hasheq (node/-v n)))))
       (long 0)
-      root)))
+      root))
+
+  PNearest
+  (nearest [this test k]
+    (with-ordered-map this
+      (case test
+        :< (when-let [n (tree/node-predecessor root k)]
+             [(node/-k n) (node/-v n)])
+        :<= (when-let [n (tree/node-find-nearest root k :<)]
+              [(node/-k n) (node/-v n)])
+        :> (when-let [n (tree/node-successor root k)]
+             [(node/-k n) (node/-v n)])
+        :>= (when-let [n (tree/node-find-nearest root k :>)]
+              [(node/-k n) (node/-v n)])
+        (throw (ex-info "nearest test must be :<, :<=, :>, or :>=" {:test test})))))
+
+  PRanked
+  (rank-of [this k]
+    (with-ordered-map this
+      (or (tree/node-rank root k) -1)))
+
+  PSplittable
+  (split-key [this k]
+    (with-ordered-map this
+      (let [[l present r] (tree/node-split root k)
+            entry (when present [(first present) (second present)])]
+        [(OrderedMap. l cmp alloc stitch {})
+         entry
+         (OrderedMap. r cmp alloc stitch {})])))
+  (split-at [this i]
+    (with-ordered-map this
+      (let [n (tree/node-size root)]
+        (cond
+          (<= i 0) [(.empty this) this]
+          (>= i n) [this (.empty this)]
+          :else
+          (let [left-root  (tree/node-split-lesser root (node/-k (tree/node-nth root i)))
+                right-root (tree/node-split-nth root i)]
+            [(OrderedMap. left-root cmp alloc stitch {})
+             (OrderedMap. right-root cmp alloc stitch {})])))))
+  (subrange [this test k]
+    (with-ordered-map this
+      (let [result-root (case test
+                          (:< :<=) (tree/node-split-lesser root k)
+                          (:> :>=) (tree/node-split-greater root k)
+                          (throw (ex-info "subrange test must be :<, :<=, :>, or :>=" {:test test})))
+            ;; For <= and >=, include the key itself if present
+            result-root (case test
+                          (:<= :>=) (if-let [n (tree/node-find root k)]
+                                      (tree/node-add result-root (node/-k n) (node/-v n))
+                                      result-root)
+                          result-root)]
+        (OrderedMap. result-root cmp alloc stitch {})))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Literal Representation

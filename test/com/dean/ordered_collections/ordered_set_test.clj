@@ -117,22 +117,22 @@
   (testing "split-key on ordered-set"
     (let [s (ordered-set [1 2 3 4 5])]
       ;; Split at existing key
-      (let [[left entry right] (split-key s 3)]
+      (let [[left entry right] (split-key 3 s)]
         (is (= #{1 2} left))
         (is (= 3 entry))
         (is (= #{4 5} right)))
       ;; Split at non-existing key
-      (let [[left entry right] (split-key s 2.5)]
+      (let [[left entry right] (split-key 2.5 s)]
         (is (= #{1 2} left))
         (is (nil? entry))
         (is (= #{3 4 5} right)))
       ;; Split at first element
-      (let [[left entry right] (split-key s 1)]
+      (let [[left entry right] (split-key 1 s)]
         (is (= #{} left))
         (is (= 1 entry))
         (is (= #{2 3 4 5} right)))
       ;; Split at last element
-      (let [[left entry right] (split-key s 5)]
+      (let [[left entry right] (split-key 5 s)]
         (is (= #{1 2 3 4} left))
         (is (= 5 entry))
         (is (= #{} right)))))
@@ -140,12 +140,12 @@
   (testing "split-key on ordered-map"
     (let [m (ordered-map [[1 :a] [2 :b] [3 :c] [4 :d] [5 :e]])]
       ;; Split at existing key
-      (let [[left entry right] (split-key m 3)]
+      (let [[left entry right] (split-key 3 m)]
         (is (= {1 :a 2 :b} left))
         (is (= [3 :c] entry))
         (is (= {4 :d 5 :e} right)))
       ;; Split at non-existing key
-      (let [[left entry right] (split-key m 2.5)]
+      (let [[left entry right] (split-key 2.5 m)]
         (is (= {1 :a 2 :b} left))
         (is (nil? entry))
         (is (= {3 :c 4 :d 5 :e} right))))))
@@ -154,77 +154,150 @@
   (testing "split-at on ordered-set"
     (let [s (ordered-set [1 2 3 4 5])]
       ;; Split at middle
-      (let [[left right] (split-at s 2)]
+      (let [[left right] (split-at 2 s)]
         (is (= #{1 2} left))
         (is (= #{3 4 5} right)))
       ;; Split at 0
-      (let [[left right] (split-at s 0)]
+      (let [[left right] (split-at 0 s)]
         (is (= #{} left))
         (is (= #{1 2 3 4 5} right)))
       ;; Split at end
-      (let [[left right] (split-at s 5)]
+      (let [[left right] (split-at 5 s)]
         (is (= #{1 2 3 4 5} left))
         (is (= #{} right)))
       ;; Split at 1
-      (let [[left right] (split-at s 1)]
+      (let [[left right] (split-at 1 s)]
         (is (= #{1} left))
         (is (= #{2 3 4 5} right)))))
 
   (testing "split-at on ordered-map"
     (let [m (ordered-map [[1 :a] [2 :b] [3 :c] [4 :d] [5 :e]])]
-      (let [[left right] (split-at m 2)]
+      (let [[left right] (split-at 2 m)]
         (is (= {1 :a 2 :b} left))
         (is (= {3 :c 4 :d 5 :e} right))))))
 
 (deftest subrange-test
   (testing "subrange with single test"
     (let [s (ordered-set (range 10))]
-      (is (= #{0 1 2 3 4} (subrange s < 5)))
-      (is (= #{0 1 2 3 4 5} (subrange s <= 5)))
-      (is (= #{6 7 8 9} (subrange s > 5)))
-      (is (= #{5 6 7 8 9} (subrange s >= 5)))))
+      (is (= #{0 1 2 3 4} (subrange s :< 5)))
+      (is (= #{0 1 2 3 4 5} (subrange s :<= 5)))
+      (is (= #{6 7 8 9} (subrange s :> 5)))
+      (is (= #{5 6 7 8 9} (subrange s :>= 5)))))
 
   (testing "subrange with two tests"
     (let [s (ordered-set (range 10))]
-      (is (= #{3 4 5 6} (subrange s >= 3 < 7)))
-      (is (= #{3 4 5 6 7} (subrange s >= 3 <= 7)))
-      (is (= #{4 5 6} (subrange s > 3 < 7)))
-      (is (= #{4 5 6 7} (subrange s > 3 <= 7)))))
+      (is (= #{3 4 5 6} (subrange s :>= 3 :< 7)))
+      (is (= #{3 4 5 6 7} (subrange s :>= 3 :<= 7)))
+      (is (= #{4 5 6} (subrange s :> 3 :< 7)))
+      (is (= #{4 5 6 7} (subrange s :> 3 :<= 7)))))
 
   (testing "subrange on ordered-map"
     (let [m (ordered-map (for [i (range 10)] [i (keyword (str i))]))]
-      (is (= {3 :3 4 :4 5 :5 6 :6} (subrange m >= 3 < 7))))))
+      (is (= {3 :3 4 :4 5 :5 6 :6} (subrange m :>= 3 :< 7)))))
+
+  (testing "subrange with strings"
+    (let [s (ordered-set ["apple" "banana" "cherry" "date" "elderberry" "fig"])]
+      (is (= #{"cherry" "date"} (subrange s :>= "cherry" :< "elderberry")))
+      (is (= #{"apple" "banana"} (subrange s :< "cherry")))
+      (is (= #{"elderberry" "fig"} (subrange s :> "date")))))
+
+  (testing "subrange with keywords"
+    (let [s (ordered-set [:a :b :c :d :e :f])]
+      (is (= #{:b :c :d} (subrange s :> :a :<= :d)))
+      (is (= #{:e :f} (subrange s :>= :e)))))
+
+  (testing "subrange with java.time.LocalDate"
+    (let [dates (ordered-set [(java.time.LocalDate/of 2024 1 1)
+                              (java.time.LocalDate/of 2024 3 15)
+                              (java.time.LocalDate/of 2024 6 30)
+                              (java.time.LocalDate/of 2024 9 15)
+                              (java.time.LocalDate/of 2024 12 31)])
+          q2-start (java.time.LocalDate/of 2024 4 1)
+          q3-end (java.time.LocalDate/of 2024 9 30)]
+      (is (= #{(java.time.LocalDate/of 2024 6 30)
+               (java.time.LocalDate/of 2024 9 15)}
+             (subrange dates :>= q2-start :<= q3-end))))))
 
 (deftest nearest-test
   (testing "nearest on ordered-set"
     (let [s (ordered-set [1 3 5 7 9])]
-      ;; < - greatest less than
-      (is (= 5 (nearest s < 6)))
-      (is (= 5 (nearest s < 5.5)))
-      (is (nil? (nearest s < 1)))
-      ;; < when key exists (predecessor test)
-      (is (= 3 (nearest s < 5)))   ; predecessor of 5 is 3
-      (is (= 7 (nearest s < 9)))   ; predecessor of 9 is 7
-      ;; <= - greatest less than or equal
-      (is (= 5 (nearest s <= 5)))
-      (is (= 5 (nearest s <= 6)))
-      (is (= 1 (nearest s <= 1)))
-      ;; > - least greater than
-      (is (= 7 (nearest s > 6)))
-      (is (nil? (nearest s > 9)))
-      ;; > when key exists (successor test)
-      (is (= 7 (nearest s > 5)))   ; successor of 5 is 7
-      (is (= 3 (nearest s > 1)))   ; successor of 1 is 3
-      ;; >= - least greater than or equal
-      (is (= 5 (nearest s >= 5)))
-      (is (= 7 (nearest s >= 6)))
-      (is (= 9 (nearest s >= 9)))))
+      ;; :< - greatest less than
+      (is (= 5 (nearest s :< 6)))
+      (is (= 5 (nearest s :< 5.5)))
+      (is (nil? (nearest s :< 1)))
+      ;; :< when key exists (predecessor test)
+      (is (= 3 (nearest s :< 5)))   ; predecessor of 5 is 3
+      (is (= 7 (nearest s :< 9)))   ; predecessor of 9 is 7
+      ;; :<= - greatest less than or equal
+      (is (= 5 (nearest s :<= 5)))
+      (is (= 5 (nearest s :<= 6)))
+      (is (= 1 (nearest s :<= 1)))
+      ;; :> - least greater than
+      (is (= 7 (nearest s :> 6)))
+      (is (nil? (nearest s :> 9)))
+      ;; :> when key exists (successor test)
+      (is (= 7 (nearest s :> 5)))   ; successor of 5 is 7
+      (is (= 3 (nearest s :> 1)))   ; successor of 1 is 3
+      ;; :>= - least greater than or equal
+      (is (= 5 (nearest s :>= 5)))
+      (is (= 7 (nearest s :>= 6)))
+      (is (= 9 (nearest s :>= 9)))))
 
   (testing "nearest on ordered-map"
     (let [m (ordered-map [[1 :a] [3 :b] [5 :c] [7 :d] [9 :e]])]
-      (is (= [5 :c] (nearest m < 6)))
-      (is (= [3 :b] (nearest m < 5)))   ; predecessor test
-      (is (= [5 :c] (nearest m <= 5)))
-      (is (= [7 :d] (nearest m > 6)))
-      (is (= [7 :d] (nearest m > 5)))   ; successor test
-      (is (= [5 :c] (nearest m >= 5))))))
+      (is (= [5 :c] (nearest m :< 6)))
+      (is (= [3 :b] (nearest m :< 5)))   ; predecessor test
+      (is (= [5 :c] (nearest m :<= 5)))
+      (is (= [7 :d] (nearest m :> 6)))
+      (is (= [7 :d] (nearest m :> 5)))   ; successor test
+      (is (= [5 :c] (nearest m :>= 5)))))
+
+  (testing "nearest with strings"
+    (let [s (ordered-set ["apple" "banana" "cherry" "date" "elderberry"])]
+      (is (= "cherry" (nearest s :< "coconut")))
+      (is (= "cherry" (nearest s :<= "cherry")))
+      (is (= "date" (nearest s :> "cherry")))
+      (is (= "cherry" (nearest s :>= "cherry")))
+      (is (= "banana" (nearest s :<= "blueberry")))
+      (is (nil? (nearest s :< "apple")))
+      (is (nil? (nearest s :> "elderberry")))))
+
+  (testing "nearest with keywords"
+    (let [s (ordered-set [:alpha :beta :gamma :delta :epsilon])]
+      (is (= :delta (nearest s :< :epsilon)))
+      (is (= :beta (nearest s :<= :beta)))
+      (is (= :gamma (nearest s :>= :gamma)))))
+
+  (testing "nearest with java.time.LocalDate"
+    (let [dates (ordered-set [(java.time.LocalDate/of 2024 1 1)
+                              (java.time.LocalDate/of 2024 3 15)
+                              (java.time.LocalDate/of 2024 6 30)
+                              (java.time.LocalDate/of 2024 12 31)])]
+      (is (= (java.time.LocalDate/of 2024 3 15)
+             (nearest dates :<= (java.time.LocalDate/of 2024 4 1))))
+      (is (= (java.time.LocalDate/of 2024 6 30)
+             (nearest dates :>= (java.time.LocalDate/of 2024 4 1))))))
+
+  (testing "nearest with vectors (lexicographic)"
+    (let [s (ordered-set [[1 1] [1 2] [2 1] [2 2] [3 1]])]
+      (is (= [1 2] (nearest s :< [2 1])))
+      (is (= [2 1] (nearest s :<= [2 1])))
+      (is (= [2 2] (nearest s :> [2 1]))))))
+
+(deftest rank-of-test
+  (testing "rank-of on ordered-set"
+    (let [s (ordered-set [10 20 30 40 50])]
+      (is (= 0 (rank-of s 10)))
+      (is (= 2 (rank-of s 30)))
+      (is (= 4 (rank-of s 50)))
+      (is (= -1 (rank-of s 25)))
+      (is (= -1 (rank-of s 5)))
+      (is (= -1 (rank-of s 100)))))
+
+  (testing "rank-of on ordered-map"
+    (let [m (ordered-map [[1 :a] [3 :b] [5 :c] [7 :d] [9 :e]])]
+      (is (= 0 (rank-of m 1)))
+      (is (= 2 (rank-of m 5)))
+      (is (= 4 (rank-of m 9)))
+      (is (= -1 (rank-of m 2)))
+      (is (= -1 (rank-of m 10))))))

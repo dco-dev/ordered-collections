@@ -1,4 +1,5 @@
 (ns com.dean.ordered-collections.tree.protocol
+  (:refer-clojure :exclude [split-at subrange])
   (:require [clojure.set :as set]))
 
 (set! *warn-on-reflection* true)
@@ -60,6 +61,51 @@
   (range-remove    [rm rng]       "Remove all mappings in [lo, hi) range.")
   (spanning-range  [rm]           "Return [lo hi] spanning all ranges, or nil if empty.")
   (gaps            [rm]           "Return seq of [lo hi] gaps between ranges."))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Ranked Protocol
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defprotocol PRanked
+  "Protocol for collections supporting O(log n) rank queries."
+  (rank-of [coll x]
+    "Return the 0-based index of element x in sorted order, or -1 if not present.
+    O(log n)."))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Nearest Protocol
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defprotocol PNearest
+  "Protocol for finding nearest elements relative to a key."
+  (nearest [coll test k]
+    "Find the nearest element satisfying test relative to k.
+    Tests: < (predecessor), <= (floor), >= (ceiling), > (successor).
+    Returns element (for sets) or [key value] (for maps), or nil if none.
+    O(log n)."))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Splittable Protocol
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defprotocol PSplittable
+  "Protocol for collections supporting efficient split operations.
+  Compatible with clojure.data.avl split operations."
+  (split-key [coll k]
+    "Split collection at key k, returning [left entry right].
+    - left: collection of elements less than k
+    - entry: the element/entry at k, or nil if not present
+    - right: collection of elements greater than k
+    O(log n).")
+  (split-at [coll i]
+    "Split collection at index i, returning [left right].
+    - left: collection of the first i elements (indices 0 to i-1)
+    - right: collection of remaining elements (indices i to n-1)
+    O(log n).")
+  (subrange [coll test k]
+    "Return subcollection of elements satisfying test relative to k.
+    Tests: :< :<= :>= :>
+    O(log n)."))
 
 (extend-type clojure.lang.PersistentHashSet
   PExtensibleSet

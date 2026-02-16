@@ -1,24 +1,24 @@
 (ns com.dean.ordered-collections.core
   (:refer-clojure :exclude [split-at])
   (:require [clojure.core.reducers                            :as r]
+            [com.dean.ordered-collections.tree.fuzzy-map            :as fuzzy-map]
+            [com.dean.ordered-collections.tree.fuzzy-set            :as fuzzy-set]
             [com.dean.ordered-collections.tree.interval             :as interval]
             [com.dean.ordered-collections.tree.interval-map         :refer [->IntervalMap]]
             [com.dean.ordered-collections.tree.interval-set         :refer [->IntervalSet]]
-            [com.dean.ordered-collections.tree.fuzzy-map            :as fuzzy-map]
-            [com.dean.ordered-collections.tree.fuzzy-set            :as fuzzy-set]
             [com.dean.ordered-collections.tree.node                 :as node]
             [com.dean.ordered-collections.tree.order                :as order]
+            [com.dean.ordered-collections.tree.ordered-map          :refer [->OrderedMap]]
             [com.dean.ordered-collections.tree.ordered-multiset     :as multiset]
+            [com.dean.ordered-collections.tree.ordered-set          :refer [->OrderedSet]]
             [com.dean.ordered-collections.tree.priority-queue       :as pq]
             [com.dean.ordered-collections.tree.protocol             :as proto]
-            [com.dean.ordered-collections.tree.ordered-map          :refer [->OrderedMap]]
-            [com.dean.ordered-collections.tree.ordered-set          :refer [->OrderedSet]]
-            [com.dean.ordered-collections.tree.ranked-set           :as ranked]
             [com.dean.ordered-collections.tree.range-map            :as rmap]
+            [com.dean.ordered-collections.tree.ranked-set           :as ranked]
             [com.dean.ordered-collections.tree.segment-tree         :as segtree]
             [com.dean.ordered-collections.tree.tree                 :as tree])
-  (:import  [com.dean.ordered_collections.tree.ordered_set OrderedSet]
-            [com.dean.ordered_collections.tree.ordered_map OrderedMap]
+  (:import  [com.dean.ordered_collections.tree.ordered_map OrderedMap]
+            [com.dean.ordered_collections.tree.ordered_set OrderedSet]
             [com.dean.ordered_collections.tree.root INodeCollection IOrderedCollection IBalancedCollection]))
 
 (set! *warn-on-reflection* true)
@@ -826,18 +826,6 @@
 ;; Split and Range Operations (data.avl compatible)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn- reconstruct-coll
-  "Reconstruct a collection of the same type with a new root node."
-  [coll node]
-  (let [cmp    (.getCmp ^IOrderedCollection coll)
-        stitch (.getStitch ^IBalancedCollection coll)
-        alloc  (.getAllocator ^INodeCollection coll)
-        root   (or node (node/leaf))]
-    (cond
-      (instance? OrderedSet coll) (->OrderedSet root cmp alloc stitch {})
-      (instance? OrderedMap coll) (->OrderedMap root cmp alloc stitch {})
-      :else (throw (ex-info "Operation not supported for this collection type" {:coll coll})))))
-
 (defn split-key
   "Split collection at key k, returning [left entry right].
 
@@ -851,21 +839,13 @@
    Compatible with clojure.data.avl/split-key.
 
    Example:
-     (split-key (ordered-set [1 2 3 4 5]) 3)
+     (split-key 3 (ordered-set [1 2 3 4 5]))
      ;=> [#{1 2} 3 #{4 5}]
 
-     (split-key (ordered-map [[1 :a] [2 :b] [3 :c]]) 2)
+     (split-key 2 (ordered-map [[1 :a] [2 :b] [3 :c]]))
      ;=> [{1 :a} [2 :b] {3 :c}]"
-  [coll k]
-  (let [root (.getRoot ^INodeCollection coll)
-        cmp  (.getCmp ^IOrderedCollection coll)]
-    (binding [order/*compare* cmp]
-      (let [[l present r] (tree/node-split root k)
-            ;; Format entry based on collection type
-            entry (when present
-                    (let [[k v] present]
-                      (if (instance? OrderedSet coll) k [k v])))]
-        [(reconstruct-coll coll l) entry (reconstruct-coll coll r)]))))
+  [k coll]
+  (proto/split-key coll k))
 
 (defn split-at
   "Split collection at index i, returning [left right].
@@ -875,116 +855,78 @@
 
    Complexity: O(log n)
 
-   Compatible with clojure.data.avl/split-at.
+   Compatible with clojure.core/split-at and clojure.data.avl/split-at.
 
    Example:
-     (split-at (ordered-set [1 2 3 4 5]) 2)
+     (split-at 2 (ordered-set [1 2 3 4 5]))
      ;=> [#{1 2} #{3 4 5}]"
-  [coll ^long i]
-  (let [root (.getRoot ^INodeCollection coll)
-        cmp  (.getCmp ^IOrderedCollection coll)
-        n    (tree/node-size root)]
-    (cond
-      (<= i 0) [(empty coll) coll]
-      (>= i n) [coll (empty coll)]
-      :else
-      (binding [order/*compare* cmp]
-        (let [left-root  (tree/node-split-lesser root (node/-k (tree/node-nth root i)))
-              right-root (tree/node-split-nth root i)]
-          [(reconstruct-coll coll left-root) (reconstruct-coll coll right-root)])))))
+  [i coll]
+  (proto/split-at coll i))
 
 (defn subrange
   "Return a subcollection comprising elements in the given range.
 
-   Arguments mirror clojure.core/subseq and rsubseq:
-     (subrange coll test key)           - elements where (test elem key) is true
+   Arguments:
+     (subrange coll test key)           - elements satisfying test relative to key
      (subrange coll start-test start-key end-test end-key)
 
-   Tests can be: < <= >= >
+   Tests: :< :<= :> :>=
 
    Complexity: O(log n) to construct the subrange
 
-   Compatible with clojure.data.avl/subrange.
-
    Example:
-     (subrange (ordered-set (range 10)) >= 3 < 7)
+     (subrange (ordered-set (range 10)) :>= 3 :< 7)
      ;=> #{3 4 5 6}
 
-     (subrange (ordered-set (range 10)) > 5)
+     (subrange (ordered-set (range 10)) :> 5)
      ;=> #{6 7 8 9}"
   ([coll test key]
-   (let [root (.getRoot ^INodeCollection coll)
-         cmp  (.getCmp ^IOrderedCollection coll)]
-     (binding [order/*compare* cmp]
-       (let [result-root (cond
-                           (or (identical? test <) (identical? test <=))
-                           (tree/node-split-lesser root key)
-                           (or (identical? test >) (identical? test >=))
-                           (tree/node-split-greater root key)
-                           :else (throw (ex-info "subrange test must be <, <=, >, or >=" {:test test})))
-             ;; For <= and >=, include the key itself if present
-             result-root (if (or (identical? test <=) (identical? test >=))
-                           (if-let [n (tree/node-find root key)]
-                             (tree/node-add result-root (node/-k n) (node/-v n))
-                             result-root)
-                           result-root)]
-         (reconstruct-coll coll result-root)))))
+   (proto/subrange coll test key))
   ([coll start-test start-key end-test end-key]
    (-> coll
-       (subrange start-test start-key)
-       (subrange end-test end-key))))
+       (proto/subrange start-test start-key)
+       (proto/subrange end-test end-key))))
 
 (defn nearest
   "Find the nearest element to key k satisfying the given test.
 
    Tests:
-     <  - greatest element less than k
-     <= - greatest element less than or equal to k
-     >= - least element greater than or equal to k
-     >  - least element greater than k
+     :<  - greatest element less than k (predecessor)
+     :<= - greatest element less than or equal to k (floor)
+     :>= - least element greater than or equal to k (ceiling)
+     :>  - least element greater than k (successor)
 
    Returns the element (for sets) or [key value] (for maps), or nil if none.
 
    Complexity: O(log n)
 
-   Compatible with clojure.data.avl/nearest.
-
    Example:
-     (nearest (ordered-set [1 3 5 7 9]) < 6)
+     (nearest (ordered-set [1 3 5 7 9]) :< 6)
      ;=> 5
 
-     (nearest (ordered-set [1 3 5 7 9]) >= 6)
+     (nearest (ordered-set [1 3 5 7 9]) :>= 6)
      ;=> 7
 
-     (nearest (ordered-map [[1 :a] [3 :b] [5 :c]]) <= 4)
+     (nearest (ordered-map [[1 :a] [3 :b] [5 :c]]) :<= 4)
      ;=> [3 :b]"
   [coll test k]
-  (let [root (.getRoot ^INodeCollection coll)
-        ^java.util.Comparator cmp (.getCmp ^IOrderedCollection coll)
-        format-result (fn [n]
-                        (if (instance? OrderedSet coll)
-                          (node/-k n)
-                          [(node/-k n) (node/-v n)]))]
-    (binding [order/*compare* cmp]
-      (cond
-        ;; < : greatest less than k (predecessor)
-        (identical? test <)
-        (when-let [n (tree/node-predecessor root k)]
-          (format-result n))
+  (proto/nearest coll test k))
 
-        ;; <= : greatest less than or equal to k (floor)
-        (identical? test <=)
-        (when-let [n (tree/node-find-nearest root k :<)]
-          (format-result n))
+(defn rank-of
+  "Return the 0-based index of element x in sorted order, or -1 if not present.
 
-        ;; > : least greater than k (successor)
-        (identical? test >)
-        (when-let [n (tree/node-successor root k)]
-          (format-result n))
+   Complexity: O(log n)
 
-        ;; >= : least greater than or equal to k (ceiling)
-        (identical? test >=)
-        (when-let [n (tree/node-find-nearest root k :>)]
-          (format-result n))
+   Compatible with clojure.data.avl/rank-of.
 
-        :else (throw (ex-info "nearest test must be <, <=, >, or >=" {:test test}))))))
+   Example:
+     (rank-of (ordered-set [10 20 30 40 50]) 30)
+     ;=> 2
+
+     (rank-of (ordered-set [10 20 30 40 50]) 25)
+     ;=> -1
+
+     (rank-of (ordered-map [[1 :a] [3 :b] [5 :c]]) 3)
+     ;=> 1"
+  [coll x]
+  (proto/rank-of coll x))
