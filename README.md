@@ -4,7 +4,7 @@
 
 Need to find what's scheduled at 3pm? **Interval maps** let you query overlapping ranges. Building a leaderboard? Get any player's rank in O(log n). Working with sensor data? **Fuzzy lookup** snaps queries to the nearest calibration point. Managing IP allocations? **Range maps** carve out non-overlapping regions.
 
-All built on a extensible weight-balanced tree  with a shared foundation
+All built on an extensible weight-balanced tree platform with a shared foundation
 for efficient splitting, joining, and parallel operations.
 
 ![tests](https://github.com/dco-dev/ordered-collections/actions/workflows/clojure.yml/badge.svg)
