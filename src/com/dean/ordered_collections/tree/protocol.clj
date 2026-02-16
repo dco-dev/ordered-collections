@@ -24,6 +24,17 @@
     "Return true if every element of that is also in this."))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Exclusive Association Protocol
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defprotocol PExclusiveAssoc
+  "Protocol for exclusive association (insert only, no update)."
+  (assoc-new [m k v]
+    "Associate k with v only if k is not already present.
+    Returns the new collection with the key added, or the original
+    collection unchanged if the key already exists."))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Ranked Protocol
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -78,7 +89,11 @@
   (aggregate-range [coll lo hi]
     "Return aggregate over index range [lo, hi] inclusive.")
   (aggregate [coll]
-    "Return aggregate over entire collection."))
+    "Return aggregate over entire collection.")
+  (update-val [coll k v]
+    "Update value at index k, returning new collection.")
+  (update-fn [coll k f]
+    "Update value at index k by applying f, returning new collection."))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interval Collection Protocol

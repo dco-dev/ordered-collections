@@ -209,7 +209,12 @@
   (aggregate [this]
     (if (node/leaf? root)
       identity
-      (.-agg ^AggregateNode root))))
+      (.-agg ^AggregateNode root)))
+  (update-val [this k v]
+    (seg-assoc this k v))
+  (update-fn [this k f]
+    (let [old-val (get this k identity)]
+      (seg-assoc this k (f old-val)))))
 
 (defn- seg-assoc [^SegmentTree st k v]
   (binding [order/*compare* (.-cmp st)
@@ -254,7 +259,7 @@
          (reduce (fn [n [k v]] (tree/node-add n k v)) (node/leaf) coll)
          op identity creator cmp {})))))
 
-(defn query
+(def query
   "Query the aggregate over index range [lo, hi] inclusive.
    O(log n) time.
 
@@ -262,20 +267,18 @@
      (def st (segment-tree + 0 {0 10, 1 20, 2 30, 3 40}))
      (query st 0 3)  ; => 100
      (query st 1 2)  ; => 50"
-  [st lo hi]
-  (proto/aggregate-range st lo hi))
+  proto/aggregate-range)
 
-(defn update-val
+(def update-val
   "Update the value at index k. O(log n) time.
 
    Example:
      (def st (segment-tree + 0 {0 10, 1 20, 2 30}))
      (def st' (update-val st 1 100))
      (query st' 0 2)  ; => 140"
-  [st k v]
-  (assoc st k v))
+  proto/update-val)
 
-(defn update-fn
+(def update-fn
   "Update the value at index k by applying f to the current value.
    O(log n) time.
 
@@ -283,14 +286,11 @@
      (def st (segment-tree + 0 {0 10, 1 20, 2 30}))
      (def st' (update-fn st 1 #(* % 2)))  ; double index 1
      (query st' 0 2)  ; => 80"
-  [^SegmentTree st k f]
-  (let [old-val (get st k (.-identity st))]
-    (assoc st k (f old-val))))
+  proto/update-fn)
 
-(defn aggregate
+(def aggregate
   "Return the aggregate over the entire tree. O(1) time."
-  [st]
-  (proto/aggregate st))
+  proto/aggregate)
 
 ;; Convenience constructors for common operations
 

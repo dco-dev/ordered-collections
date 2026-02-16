@@ -1,6 +1,6 @@
 (ns com.dean.ordered-collections.ordered-map-test
   (:require [clojure.test                :refer :all]
-            [com.dean.ordered-collections.core :refer [ordered-map ordered-map-by]])
+            [com.dean.ordered-collections.core :refer [ordered-map ordered-map-by assoc-new]])
   (:import  [java.util UUID]))
 
 
@@ -54,20 +54,21 @@
       (is (= (into s t) (into x t)))
       (is (= (into s t) (-> x (into t) (into t)))))))
 
-(deftest assoc-ex-test
-  (testing "assocEx adds new key"
+(deftest assoc-new-test
+  (testing "assoc-new adds new key"
     (let [m (ordered-map {:a 1 :b 2})]
-      (is (= {:a 1 :b 2 :c 3} (.assocEx m :c 3)))))
+      (is (= {:a 1 :b 2 :c 3} (assoc-new m :c 3)))))
 
-  (testing "assocEx throws on existing key"
+  (testing "assoc-new returns original on existing key"
     (let [m (ordered-map {:a 1 :b 2})]
-      (is (thrown? Exception (.assocEx m :a 99)))))
+      (is (identical? m (assoc-new m :a 99)))
+      (is (= {:a 1 :b 2} (assoc-new m :a 99)))))
 
-  (testing "assocEx works on empty map"
+  (testing "assoc-new works on empty map"
     (let [m (ordered-map)]
-      (is (= {:x 1} (.assocEx m :x 1)))))
+      (is (= {:x 1} (assoc-new m :x 1)))))
 
-  (testing "assocEx preserves ordering"
+  (testing "assoc-new preserves ordering"
     (let [m (ordered-map [[1 :a] [3 :c] [5 :e]])]
       (is (= [[1 :a] [2 :b] [3 :c] [5 :e]]
-             (seq (.assocEx m 2 :b)))))))
+             (seq (assoc-new m 2 :b)))))))

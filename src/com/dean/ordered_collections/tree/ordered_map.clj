@@ -6,7 +6,7 @@
             [com.dean.ordered-collections.tree.root]
             [com.dean.ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang                RT Murmur3]
-            [com.dean.ordered_collections.tree.protocol PNearest PRanked PSplittable]
+            [com.dean.ordered_collections.tree.protocol PNearest PRanked PSplittable PExclusiveAssoc]
             [com.dean.ordered_collections.tree.root     INodeCollection
                                          IBalancedCollection
                                          IOrderedCollection]))
@@ -305,7 +305,13 @@
           (let [left-root  (tree/node-split-lesser root (node/-k (tree/node-nth root i)))
                 right-root (tree/node-split-nth root i)]
             [(OrderedMap. left-root cmp alloc stitch {})
-             (OrderedMap. right-root cmp alloc stitch {})]))))))
+             (OrderedMap. right-root cmp alloc stitch {})])))))
+
+  proto/PExclusiveAssoc
+  (assoc-new [this k v]
+    (if-let [new-root (tree/node-add-if-absent root k v cmp tree/node-create-weight-balanced)]
+      (OrderedMap. new-root cmp alloc stitch _meta)
+      this)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Literal Representation

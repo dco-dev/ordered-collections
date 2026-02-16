@@ -321,6 +321,16 @@
   ([^java.util.Comparator comparator coll]
    (ordered-map* comparator coll)))
 
+(def assoc-new
+  "Associate key with value only if key is not already present.
+   Returns the new collection with the key added, or the original
+   collection unchanged if the key already exists.
+
+   Example:
+     (assoc-new m :new-key :value)  ; => {... :new-key :value}
+     (assoc-new m :existing-key :v) ; => m (unchanged)"
+  proto/assoc-new)
+
 (defn ordered-merge-with
   "Merge ordered maps with a function to resolve conflicts.
    When the same key appears in multiple maps, (f key val-in-result val-in-latter) is called.
