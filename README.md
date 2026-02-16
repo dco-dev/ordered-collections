@@ -140,7 +140,7 @@ Join for Parallel Ordered Sets"). Complexity is O(m log(n/m + 1)) where
 m ≤ n. When combined tree size exceeds a given size, operations
 automatically parallelize via ForkJoinPool, yielding significant speedup on multi-core systems.
 
-**Enumerators** provide efficient lazy traversal. Rather than eagerly converting trees to sequences, an enumerator walks down the spine building a chain of frames—each saving (node, subtree, next-frame). This gives O(1) access to the current element, O(log n) amortized cost per advance, and only O(log n) space. Sequences, reduce, and fold all use enumerators internally.
+**Enumerators** provide efficient lazy traversal, inspired by Kiselyov's "Towards the best collection API." Rather than eagerly converting trees to sequences, an enumerator walks down the spine building a chain of frames—each saving (node, subtree, next-frame). This gives O(1) access to the current element, O(log n) amortized cost per advance, and only O(log n) space. Sequences, reduce, and fold all use enumerators internally.
 
 **Augmented trees** extend the basic structure for specialized queries:
 - *Interval trees* store the maximum endpoint in each subtree, enabling O(log n + k) overlap queries
