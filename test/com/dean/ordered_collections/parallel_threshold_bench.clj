@@ -1,6 +1,10 @@
 (ns com.dean.ordered-collections.parallel-threshold-bench
   "Benchmark to find optimal parallel threshold for set operations.
 
+   Usage:
+     lein bench-parallel           ; Full benchmark
+     lein bench-parallel --quick   ; Quick mode
+
    Tests sequential vs parallel execution at various cardinalities
    to find the crossover point where parallelism becomes beneficial."
   (:require [com.dean.ordered-collections.core :as oc]
@@ -139,6 +143,14 @@
   (run-benchmark :sizes [1024 2048 4096 8192 16384 32768]
                  :warmup-iters 3
                  :bench-iters 10))
+
+(defn -main
+  "Entry point for lein bench-parallel."
+  [& args]
+  (if (some #{"--quick" "-q"} args)
+    (quick-bench)
+    (run-benchmark))
+  (shutdown-agents))
 
 (comment
   ;; Quick test

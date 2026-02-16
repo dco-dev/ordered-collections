@@ -1,7 +1,9 @@
 (ns com.dean.ordered-collections.range-map-bench
   "Benchmark comparing our range-map against Google Guava's TreeRangeMap.
 
-   Run with: lein run -m com.dean.ordered-collections.range-map-bench/run-all
+   Usage:
+     lein bench-range-map           ; Full suite
+     lein bench-range-map --quick   ; Quick mode
 
    Note: Our range-map is persistent (immutable) while Guava's is mutable.
    This means every modification creates a new structure via path-copying,

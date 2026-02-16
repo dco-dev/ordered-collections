@@ -6,9 +6,9 @@
    lein bench instead.
 
    Usage:
-     (require '[com.dean.ordered-collections.simple-bench :as sb])
-     (sb/run-quick)     ; N up to 10K
-     (sb/run-all)       ; Full suite"
+     lein bench-simple             ; Full suite (100 to 500K)
+     (sb/run-quick)                ; REPL: N up to 10K
+     (sb/run-all [100 1000 10000]) ; REPL: custom sizes"
   (:require [clojure.core.reducers :as r]
             [clojure.data.avl :as avl]
             [com.dean.ordered-collections.bench-utils :as bu

@@ -28,4 +28,7 @@
 
   :global-vars {*warn-on-reflection* true}
 
-  :aliases {"bench" ["run" "-m" "com.dean.ordered-collections.bench-runner"]})
+  :aliases {"bench"           ["run" "-m" "com.dean.ordered-collections.bench-runner"]
+             "bench-simple"    ["run" "-m" "com.dean.ordered-collections.simple-bench"]
+             "bench-range-map" ["run" "-m" "com.dean.ordered-collections.range-map-bench"]
+             "bench-parallel"  ["run" "-m" "com.dean.ordered-collections.parallel-threshold-bench"]})
