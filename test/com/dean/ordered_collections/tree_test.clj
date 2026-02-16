@@ -3,7 +3,6 @@
             [com.dean.ordered-collections.tree.node :as node]
             [com.dean.ordered-collections.tree.tree :as tree]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Fixtures

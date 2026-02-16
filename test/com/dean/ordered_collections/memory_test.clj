@@ -12,7 +12,6 @@
             [com.dean.ordered-collections.core :as oc]
             [clj-memory-meter.core :as mm]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Memory Measurement Helpers
@@ -50,14 +49,12 @@
             avl-set    (into (avl/sorted-set) data)
             ordered    (oc/ordered-set data)
             long-set   (oc/long-ordered-set data)
-            ranked     (oc/ranked-set data)
 
             ;; Measure
             core-bpe   (bytes-per-element core-set n)
             avl-bpe    (bytes-per-element avl-set n)
             ordered-bpe (bytes-per-element ordered n)
-            long-bpe   (bytes-per-element long-set n)
-            ranked-bpe (bytes-per-element ranked n)]
+            long-bpe   (bytes-per-element long-set n)]
 
         (println)
         (println (format "=== Set Memory at N=%,d ===" n))
@@ -69,8 +66,6 @@
                          ordered-bpe (format-bytes (measure-bytes ordered))))
         (println (format "  long-ordered:    %5.1f bytes/elem  (total: %s)"
                          long-bpe (format-bytes (measure-bytes long-set))))
-        (println (format "  ranked-set:      %5.1f bytes/elem  (total: %s)"
-                         ranked-bpe (format-bytes (measure-bytes ranked))))
 
         ;; Basic sanity checks - memory should be reasonable
         (is (< ordered-bpe 100) "ordered-set should use < 100 bytes/element")

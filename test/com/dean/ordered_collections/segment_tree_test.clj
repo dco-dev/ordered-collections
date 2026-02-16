@@ -3,7 +3,6 @@
   (:require [clojure.test :refer [deftest testing is]]
             [com.dean.ordered-collections.core :as oc]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Reference implementations for testing

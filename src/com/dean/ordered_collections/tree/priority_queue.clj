@@ -15,7 +15,6 @@
   (:import  [clojure.lang RT]
             [java.util Comparator]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Priority Queue Comparator

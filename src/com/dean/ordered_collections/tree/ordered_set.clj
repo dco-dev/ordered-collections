@@ -12,7 +12,6 @@
                                          IBalancedCollection
                                          IOrderedCollection]))
 
-(set! *warn-on-reflection* true)
 
 ;; - IMapIterable:  https://github.com/clojure/clojure/blob/master/src/jvm/clojure/lang/PersistentHashMap.java
 ;; - Collection Check: https://github.com/ztellman/collection-check/blob/master/src/collection_check/core.cljc
@@ -124,6 +123,10 @@
   (nth [_ i]
     ;; nth doesn't need comparator - only uses subtree sizes
     (node/-k (tree/node-nth root i)))
+  (nth [_ i not-found]
+    (if (and (>= i 0) (< i (tree/node-size root)))
+      (node/-k (tree/node-nth root i))
+      not-found))
 
   clojure.lang.Seqable
   (seq [_]
@@ -182,9 +185,8 @@
     (throw (UnsupportedOperationException.)))
 
   java.util.List
-  (indexOf [this x]
-    (with-ordered-set this
-      (tree/node-rank root x)))
+  (indexOf [_ x]
+    (tree/node-rank root x cmp))
   (lastIndexOf [this x]
     (.indexOf this x))
 
@@ -345,9 +347,26 @@
         (throw (ex-info "nearest test must be :<, :<=, :>, or :>=" {:test test})))))
 
   PRanked
-  (rank-of [this x]
-    (with-ordered-set this
-      (or (tree/node-rank root x) -1)))
+  (rank-of [_ x]
+    (or (tree/node-rank root x cmp) -1))
+  (slice [_ start end]
+    (let [n (tree/node-size root)
+          start (max 0 (long start))
+          end (min n (long end))]
+      (when (< start end)
+        (binding [order/*compare* cmp]
+          (map node/-k (tree/node-subseq root start (dec end)))))))
+  (median [_]
+    (let [n (tree/node-size root)]
+      (when (pos? n)
+        (binding [order/*compare* cmp]
+          (node/-k (tree/node-nth root (quot (dec n) 2)))))))
+  (percentile [_ pct]
+    (let [n (tree/node-size root)]
+      (when (pos? n)
+        (let [idx (min (dec n) (long (* (/ (double pct) 100.0) n)))]
+          (binding [order/*compare* cmp]
+            (node/-k (tree/node-nth root idx)))))))
 
   PSplittable
   (split-key [this k]

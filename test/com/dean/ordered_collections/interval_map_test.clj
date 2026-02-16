@@ -2,7 +2,6 @@
   (:require [clojure.test       :refer :all]
             [com.dean.ordered-collections.core :refer [interval-map]]))
 
-(set! *warn-on-reflection* true)
 
 
 ;; x8:                         +-----+

@@ -1,7 +1,6 @@
 (ns com.dean.ordered-collections.tree.node
   (:import  [clojure.lang MapEntry]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Leaf Representation

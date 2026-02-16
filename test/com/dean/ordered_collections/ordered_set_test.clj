@@ -6,7 +6,6 @@
             [clojure.test                 :refer :all]
             [com.dean.ordered-collections.core  :refer :all]))
 
-(set! *warn-on-reflection* true)
 
 ;; TODO: more coverage
 

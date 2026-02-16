@@ -9,6 +9,7 @@
   (:require [clojure.core.reducers       :as r :refer [coll-fold]]
             [com.dean.ordered-collections.tree.node     :as node]
             [com.dean.ordered-collections.tree.order    :as order]
+            [com.dean.ordered-collections.tree.protocol :refer [PRanked]]
             [com.dean.ordered-collections.tree.root]
             [com.dean.ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang                RT Murmur3]
@@ -16,7 +17,6 @@
                                          IBalancedCollection
                                          IOrderedCollection]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Distance Functions
@@ -131,8 +131,11 @@
 
   clojure.lang.Indexed
   (nth [_ i]
-    ;; nth doesn't need comparator - only uses subtree sizes
     (node/-k (tree/node-nth root i)))
+  (nth [_ i not-found]
+    (if (and (>= i 0) (< i (tree/node-size root)))
+      (node/-k (tree/node-nth root i))
+      not-found))
 
   clojure.lang.Seqable
   (seq [_]
@@ -182,9 +185,8 @@
     (throw (UnsupportedOperationException.)))
 
   java.util.List
-  (indexOf [this x]
-    (with-fuzzy-set this
-      (tree/node-rank root x)))
+  (indexOf [_ x]
+    (tree/node-rank root x cmp))
   (lastIndexOf [this x]
     (.indexOf this x))
 
@@ -290,7 +292,27 @@
   (coll-fold [this n combinef reducef]
     (with-fuzzy-set this
       (tree/node-chunked-fold n root combinef
-        (fn [acc node] (reducef acc (node/-k node)))))))
+        (fn [acc node] (reducef acc (node/-k node))))))
+
+  PRanked
+  (rank-of [_ x]
+    (or (tree/node-rank root x cmp) -1))
+  (slice [_ start end]
+    (let [n (tree/node-size root)
+          start (max 0 (long start))
+          end (min n (long end))]
+      (when (< start end)
+        (binding [order/*compare* cmp]
+          (map node/-k (tree/node-subseq root start (dec end)))))))
+  (median [_]
+    (let [n (tree/node-size root)]
+      (when (pos? n)
+        (node/-k (tree/node-nth root (quot (dec n) 2))))))
+  (percentile [_ pct]
+    (let [n (tree/node-size root)]
+      (when (pos? n)
+        (let [idx (min (dec n) (long (* (/ (double pct) 100.0) n)))]
+          (node/-k (tree/node-nth root idx)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Additional Methods

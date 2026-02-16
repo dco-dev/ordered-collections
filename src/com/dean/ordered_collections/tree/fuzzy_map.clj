@@ -10,6 +10,7 @@
             [com.dean.ordered-collections.tree.fuzzy-set :as fuzzy]
             [com.dean.ordered-collections.tree.node     :as node]
             [com.dean.ordered-collections.tree.order    :as order]
+            [com.dean.ordered-collections.tree.protocol :refer [PRanked]]
             [com.dean.ordered-collections.tree.root]
             [com.dean.ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang                RT Murmur3 MapEntry]
@@ -17,7 +18,6 @@
                                          IBalancedCollection
                                          IOrderedCollection]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Nearest Lookup for Maps
@@ -126,8 +126,11 @@
 
   clojure.lang.Indexed
   (nth [_ i]
-    ;; nth doesn't need comparator - only uses subtree sizes
     (node/-kv (tree/node-nth root i)))
+  (nth [_ i not-found]
+    (if (and (>= i 0) (< i (tree/node-size root)))
+      (node/-kv (tree/node-nth root i))
+      not-found))
 
   clojure.lang.MapEquivalence
 
@@ -308,7 +311,30 @@
   (coll-fold [this n combinef reducef]
     (with-fuzzy-map this
       (tree/node-chunked-fold n root combinef
-        (fn [acc node] (reducef acc (node/-kv node)))))))
+        (fn [acc node] (reducef acc (node/-kv node))))))
+
+  PRanked
+  (rank-of [_ k]
+    (or (tree/node-rank root k cmp) -1))
+  (slice [_ start end]
+    (let [n (tree/node-size root)
+          start (max 0 (long start))
+          end (min n (long end))]
+      (when (< start end)
+        (binding [order/*compare* cmp]
+          (map (fn [node] (MapEntry. (node/-k node) (node/-v node)))
+               (tree/node-subseq root start (dec end)))))))
+  (median [_]
+    (let [n (tree/node-size root)]
+      (when (pos? n)
+        (let [node (tree/node-nth root (quot (dec n) 2))]
+          (MapEntry. (node/-k node) (node/-v node))))))
+  (percentile [_ pct]
+    (let [n (tree/node-size root)]
+      (when (pos? n)
+        (let [idx (min (dec n) (long (* (/ (double pct) 100.0) n)))
+              node (tree/node-nth root idx)]
+          (MapEntry. (node/-k node) (node/-v node)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Additional Methods

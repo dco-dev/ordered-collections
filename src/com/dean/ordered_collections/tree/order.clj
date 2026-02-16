@@ -2,7 +2,6 @@
   (:refer-clojure :exclude [compare <= >= max])
   (:import [java.util Comparator]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Comparator

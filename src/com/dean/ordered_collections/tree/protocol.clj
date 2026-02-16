@@ -2,7 +2,6 @@
   (:refer-clojure :exclude [split-at subrange])
   (:require [clojure.set :as set]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Set Protocol
@@ -22,12 +21,12 @@
 (defprotocol PPriorityQueue
   "Protocol for priority queue operations.
   Elements are [priority value] pairs."
-  (push     [pq priority value] "Add element with given priority. O(log n).")
-  (push-all [pq pairs]          "Add multiple [priority value] pairs. O(k log n).")
+  (push     [pq priority value] "Add element with given priority.")
+  (push-all [pq pairs]          "Add multiple [priority value] pairs.")
   (peek-val [pq]                "Return just the value of min element, or nil.")
   (peek-max [pq]                "Return [priority value] of max element, or nil.")
   (peek-max-val [pq]            "Return just the value of max element, or nil.")
-  (pop-max  [pq]                "Remove max element. O(log n)."))
+  (pop-max  [pq]                "Remove max element."))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Multiset Protocol
@@ -35,9 +34,9 @@
 
 (defprotocol PMultiset
   "Protocol for multiset (bag) operations."
-  (multiplicity       [ms k]   "Return count of element k. O(log n).")
-  (disj-one           [ms k]   "Remove one occurrence of k. O(log n).")
-  (disj-all           [ms k]   "Remove all occurrences of k. O(log n).")
+  (multiplicity       [ms k]   "Return count of element k.")
+  (disj-one           [ms k]   "Remove one occurrence of k.")
+  (disj-all           [ms k]   "Remove all occurrences of k.")
   (distinct-elements  [ms]     "Return set of distinct elements.")
   (element-frequencies [ms]    "Return map of element -> count."))
 
@@ -47,7 +46,7 @@
 
 (defprotocol PIntervalCollection
   "Protocol for interval-based collections supporting overlap queries."
-  (overlapping [coll interval] "Return all intervals overlapping the given point or interval. O(log n + k)."))
+  (overlapping [coll interval] "Return all intervals overlapping the given point or interval."))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Range Map Protocol
@@ -67,10 +66,15 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defprotocol PRanked
-  "Protocol for collections supporting O(log n) rank queries."
+  "Protocol for collections supporting rank-based operations."
   (rank-of [coll x]
-    "Return the 0-based index of element x in sorted order, or -1 if not present.
-    O(log n)."))
+    "Return the 0-based index of element x in sorted order, or -1 if not present.")
+  (slice [coll start end]
+    "Return a seq of elements from index start (inclusive) to end (exclusive).")
+  (median [coll]
+    "Return the median element. For even-sized collections, returns the lower median.")
+  (percentile [coll pct]
+    "Return the element at the given percentile (0-100)."))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Nearest Protocol
@@ -81,8 +85,7 @@
   (nearest [coll test k]
     "Find the nearest element satisfying test relative to k.
     Tests: < (predecessor), <= (floor), >= (ceiling), > (successor).
-    Returns element (for sets) or [key value] (for maps), or nil if none.
-    O(log n)."))
+    Returns element (for sets) or [key value] (for maps), or nil if none."))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Splittable Protocol
@@ -95,17 +98,14 @@
     "Split collection at key k, returning [left entry right].
     - left: collection of elements less than k
     - entry: the element/entry at k, or nil if not present
-    - right: collection of elements greater than k
-    O(log n).")
+    - right: collection of elements greater than k")
   (split-at [coll i]
     "Split collection at index i, returning [left right].
     - left: collection of the first i elements (indices 0 to i-1)
-    - right: collection of remaining elements (indices i to n-1)
-    O(log n).")
+    - right: collection of remaining elements (indices i to n-1)")
   (subrange [coll test k]
     "Return subcollection of elements satisfying test relative to k.
-    Tests: :< :<= :>= :>
-    O(log n)."))
+    Tests: :< :<= :>= :>"))
 
 (extend-type clojure.lang.PersistentHashSet
   PExtensibleSet

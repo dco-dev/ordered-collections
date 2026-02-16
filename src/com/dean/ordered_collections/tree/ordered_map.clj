@@ -11,7 +11,6 @@
                                          IBalancedCollection
                                          IOrderedCollection]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Dynamic Environment
@@ -61,6 +60,10 @@
   (nth [_ i]
     ;; nth doesn't need comparator - only uses subtree sizes
     (node/-kv (tree/node-nth root i)))
+  (nth [_ i not-found]
+    (if (and (>= i 0) (< i (tree/node-size root)))
+      (node/-kv (tree/node-nth root i))
+      not-found))
 
   clojure.lang.MapEquivalence
 
@@ -247,9 +250,29 @@
         (throw (ex-info "nearest test must be :<, :<=, :>, or :>=" {:test test})))))
 
   PRanked
-  (rank-of [this k]
-    (with-ordered-map this
-      (or (tree/node-rank root k) -1)))
+  (rank-of [_ k]
+    (or (tree/node-rank root k cmp) -1))
+  (slice [_ start end]
+    (let [n (tree/node-size root)
+          start (max 0 (long start))
+          end (min n (long end))]
+      (when (< start end)
+        (binding [order/*compare* cmp]
+          (map (fn [node] (clojure.lang.MapEntry. (node/-k node) (node/-v node)))
+               (tree/node-subseq root start (dec end)))))))
+  (median [_]
+    (let [n (tree/node-size root)]
+      (when (pos? n)
+        (binding [order/*compare* cmp]
+          (let [node (tree/node-nth root (quot (dec n) 2))]
+            (clojure.lang.MapEntry. (node/-k node) (node/-v node)))))))
+  (percentile [_ pct]
+    (let [n (tree/node-size root)]
+      (when (pos? n)
+        (let [idx (min (dec n) (long (* (/ (double pct) 100.0) n)))]
+          (binding [order/*compare* cmp]
+            (let [node (tree/node-nth root idx)]
+              (clojure.lang.MapEntry. (node/-k node) (node/-v node))))))))
 
   PSplittable
   (split-key [this k]

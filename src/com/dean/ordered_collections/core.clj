@@ -14,14 +14,12 @@
             [com.dean.ordered-collections.tree.priority-queue       :as pq]
             [com.dean.ordered-collections.tree.protocol             :as proto]
             [com.dean.ordered-collections.tree.range-map            :as rmap]
-            [com.dean.ordered-collections.tree.ranked-set           :as ranked]
             [com.dean.ordered-collections.tree.segment-tree         :as segtree]
             [com.dean.ordered-collections.tree.tree                 :as tree])
   (:import  [com.dean.ordered_collections.tree.ordered_map OrderedMap]
             [com.dean.ordered_collections.tree.ordered_set OrderedSet]
             [com.dean.ordered_collections.tree.root INodeCollection IOrderedCollection IBalancedCollection]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Comparators
@@ -671,48 +669,30 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Ranked Set
+;; Rank Operations (work on ordered-set, ordered-map, etc.)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def ranked-set
-  "Create a sorted set with O(log n) positional access.
-
-   In addition to normal set operations:
-   - (nth-element rs i)  -> element at index i, O(log n)
-   - (rank rs x)         -> index of element x, O(log n)
-   - (slice rs i j)      -> elements from i to j-1
-   - (median rs)         -> median element
-   - (percentile rs pct) -> element at percentile
-
-   Example:
-     (def rs (ranked-set [3 1 4 1 5 9 2 6]))
-     (nth-element rs 0)  ; => 1 (smallest)
-     (rank rs 5)         ; => 4"
-  ranked/ranked-set)
-
-(def ranked-set-by
-  "Create a ranked set with a custom comparator."
-  ranked/ranked-set-by)
-
-(def nth-element
-  "Return element at index i in a ranked set. O(log n)."
-  ranked/nth-element)
-
-(def rank
-  "Return the 0-based index of element x in a ranked set. O(log n)."
-  ranked/rank)
+(defn rank
+  "Return the 0-based index of element x, or nil if not present. O(log n).
+   Works on any collection implementing PRanked (ordered-set, ordered-map, etc.)."
+  [coll x]
+  (let [r (proto/rank-of coll x)]
+    (when-not (neg? r) r)))
 
 (def slice
-  "Return elements from index start to end-1. O(log n + k)."
-  ranked/slice)
+  "Return elements from index start (inclusive) to end (exclusive). O(log n + k).
+   Works on any collection implementing PRanked."
+  proto/slice)
 
 (def median
-  "Return the median element of a ranked set. O(log n)."
-  ranked/median)
+  "Return the median element. O(log n).
+   Works on any collection implementing PRanked."
+  proto/median)
 
 (def percentile
-  "Return element at given percentile (0-100). O(log n)."
-  ranked/percentile)
+  "Return element at given percentile (0-100). O(log n).
+   Works on any collection implementing PRanked."
+  proto/percentile)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Range Map

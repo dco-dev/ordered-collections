@@ -3,7 +3,6 @@
             [com.dean.ordered-collections.core :refer [ordered-map ordered-map-by]])
   (:import  [java.util UUID]))
 
-(set! *warn-on-reflection* true)
 
 (deftest smoke-check
   (is (= {} (ordered-map)))

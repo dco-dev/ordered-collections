@@ -2,7 +2,6 @@
   (:require [clojure.test                :refer :all]
             [com.dean.ordered-collections.core :refer [interval-set]]))
 
-(set! *warn-on-reflection* true)
 
 ;; TODO: more
 

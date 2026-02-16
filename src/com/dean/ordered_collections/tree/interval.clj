@@ -2,7 +2,6 @@
   (:require [com.dean.ordered-collections.tree.order :as order])
   (:import  [clojure.lang MapEntry PersistentVector]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Representation

@@ -6,7 +6,6 @@
    - ordered-set, ordered-map
    - ordered-multiset
    - priority-queue
-   - ranked-set
    - fuzzy-set, fuzzy-map
 
    Types NOT currently serializable:
@@ -20,7 +19,6 @@
   (:import [java.io ByteArrayInputStream ByteArrayOutputStream
             ObjectInputStream ObjectOutputStream]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Serialization Helpers
@@ -260,26 +258,6 @@
               (recur (pop pq) (long priority))))))))
   ) ; end comment
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Ranked Set Tests
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(deftest ranked-set-serialization
-  (testing "ranked-set round-trip serialization"
-    (doseq [n cardinalities]
-      (testing (str "cardinality " n)
-        (let [data (rand-longs n (* n 10))
-              original (oc/ranked-set data)
-              restored (round-trip original)]
-          (is (= (count original) (count restored))
-              "count preserved")
-          (is (= (vec original) (vec restored))
-              "elements and order preserved")
-          ;; Verify rank operations work
-          (let [mid-elem (nth (vec (sort data)) (quot n 2))]
-            (is (= (oc/rank original mid-elem)
-                   (oc/rank restored mid-elem))
-                "rank preserved")))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Fuzzy Set/Map Tests
@@ -329,7 +307,6 @@
     (is (= [] (vec (round-trip (oc/ordered-set)))))
     (is (= [] (vec (round-trip (oc/ordered-map)))))
     (is (= [] (vec (round-trip (oc/ordered-multiset [])))))
-    (is (= [] (vec (round-trip (oc/ranked-set)))))
     (is (= [] (vec (round-trip (oc/fuzzy-set [])))))))
 
 (deftest single-element-serialization
@@ -337,7 +314,6 @@
     (is (= [42] (vec (round-trip (oc/ordered-set [42])))))
     (is (= [[1 :a]] (vec (round-trip (oc/ordered-map [[1 :a]])))))
     (is (= [42] (vec (round-trip (oc/ordered-multiset [42])))))
-    (is (= [42] (vec (round-trip (oc/ranked-set [42])))))
     (is (= [42] (vec (round-trip (oc/fuzzy-set [42])))))))
 
 (deftest large-values-serialization

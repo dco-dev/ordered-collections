@@ -6,14 +6,13 @@
             [com.dean.ordered-collections.tree.root]
             [com.dean.ordered-collections.tree.order    :as order]
             [com.dean.ordered-collections.tree.tree     :as tree])
-  (:import  [clojure.lang                RT]
+  (:import  [clojure.lang                RT MapEntry]
             [com.dean.ordered_collections.tree.protocol PIntervalCollection]
             [com.dean.ordered_collections.tree.root     INodeCollection
                                          IBalancedCollection
                                          IOrderedCollection
                                          IIntervalCollection]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Dynamic Environment
@@ -66,8 +65,11 @@
 
   clojure.lang.Indexed
   (nth [_ i]
-    ;; nth doesn't need comparator - only uses subtree sizes
     (node/-kv (tree/node-nth root i)))
+  (nth [_ i not-found]
+    (if (and (>= i 0) (< i (tree/node-size root)))
+      (node/-kv (tree/node-nth root i))
+      not-found))
 
   clojure.lang.MapEquivalence
 

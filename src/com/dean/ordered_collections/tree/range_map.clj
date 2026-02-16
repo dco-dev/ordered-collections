@@ -45,7 +45,6 @@
             [com.dean.ordered_collections.tree.protocol PRangeMap]
             [com.dean.ordered_collections.tree.tree EnumFrame]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Range Utilities

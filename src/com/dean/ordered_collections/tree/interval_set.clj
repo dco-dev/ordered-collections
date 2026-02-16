@@ -14,7 +14,6 @@
                                          IOrderedCollection
                                          IIntervalCollection]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Dynamic Environment
@@ -123,8 +122,11 @@
 
   clojure.lang.Indexed
   (nth [_ i]
-    ;; nth doesn't need comparator - only uses subtree sizes
     (node/-k (tree/node-nth root i)))
+  (nth [_ i not-found]
+    (if (and (>= i 0) (< i (tree/node-size root)))
+      (node/-k (tree/node-nth root i))
+      not-found))
 
   clojure.lang.Seqable
   (seq [_]

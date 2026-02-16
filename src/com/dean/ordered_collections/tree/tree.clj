@@ -8,7 +8,6 @@
             [java.util Comparator]
             [java.util.concurrent ForkJoinPool ForkJoinTask RecursiveTask]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Weight Balanced Functional Binary Interval Tree (Hirai-Yamamoto Tree)
@@ -1719,16 +1718,17 @@
 (defn node-rank
   "Return the rank (sequential position) of a given KEY within the
   ordered tree rooted at n. (Logarithmic Time)"
-  [n k]
-  (let [^Comparator cmp order/*compare*]
-    (loop [n n k k rank (long 0)]
-      (if (leaf? n)
-        nil
-        (let [c (.compare cmp k (-k n))]
-          (cond
-            (zero? c) (+ rank (node-size (-l n)))
-            (neg? c)  (recur (-l n) k rank)
-            :else     (recur (-r n) k (+ 1 rank (node-size (-l n))))))))))
+  ([n k]
+   (node-rank n k order/*compare*))
+  ([n k ^Comparator cmp]
+   (loop [n n k k rank (long 0)]
+     (if (leaf? n)
+       nil
+       (let [c (.compare cmp k (-k n))]
+         (cond
+           (zero? c) (+ rank (node-size (-l n)))
+           (neg? c)  (recur (-l n) k rank)
+           :else     (recur (-r n) k (+ 1 rank (node-size (-l n))))))))))
 
 ;; MAYBE: other splits? <= < > ?
 

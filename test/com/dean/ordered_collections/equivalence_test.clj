@@ -15,7 +15,6 @@
             [com.dean.ordered-collections.core :as oc]
             [com.dean.ordered-collections.tree.protocol :as proto]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Test Scales

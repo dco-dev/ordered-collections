@@ -6,7 +6,6 @@
             [com.dean.ordered-collections.core :refer :all])
   (:import [java.util Collection Set SortedSet]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; OrderedSet Coverage Tests

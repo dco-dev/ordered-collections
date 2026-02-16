@@ -16,7 +16,6 @@
   (:import  [clojure.lang RT Murmur3]
             [java.util Comparator]))
 
-(set! *warn-on-reflection* true)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Multiset Comparator
@@ -102,6 +101,10 @@
   clojure.lang.Indexed
   (nth [_ i]
     (first (node/-k (tree/node-nth root i))))
+  (nth [_ i not-found]
+    (if (and (>= i 0) (< i (tree/node-size root)))
+      (first (node/-k (tree/node-nth root i)))
+      not-found))
 
   clojure.lang.ILookup
   (valAt [this k not-found]

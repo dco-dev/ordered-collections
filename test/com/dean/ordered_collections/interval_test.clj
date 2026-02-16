@@ -3,7 +3,6 @@
             [com.dean.ordered-collections.tree.interval :as interval :refer :all])
   (:import  [clojure.lang MapEntry]))
 
-(set! *warn-on-reflection* true)
 
 (deftest pair-check
   (is (ordered-pair? (MapEntry. 0 1)))
