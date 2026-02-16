@@ -1,12 +1,15 @@
 (ns com.dean.ordered-collections.bench-utils
   "Shared benchmarking infrastructure.
 
-   Provides two approaches:
+   Provides:
    1. Simple bench macro for quick iteration (no external deps)
-   2. Criterium-based bench for rigorous measurement
+   2. Test data generators
+   3. Table printing utilities
+   4. CLI argument parsing helpers
 
    Usage:
-     (:require [com.dean.ordered-collections.bench-utils :as bu])")
+     (:require [com.dean.ordered-collections.bench-utils :as bu])"
+  (:require [clojure.string :as str]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -100,3 +103,46 @@
   [n results]
   (println (apply format (str "%-10d" (apply str (repeat (count results) " %-20s")))
                   n (map format-result results))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; CLI Argument Parsing
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn has-flag?
+  "Check if args contains any of the given flags."
+  [args & flags]
+  (boolean (some (set flags) args)))
+
+(defn parse-sizes
+  "Parse comma-separated sizes string into vector of longs."
+  [s]
+  (mapv #(Long/parseLong (str/trim %)) (str/split s #",")))
+
+(defn get-arg-value
+  "Get the value following an argument flag, or nil if not present."
+  [args flag]
+  (when-let [idx (some #(when (= (nth args %) flag) %) (range (dec (count args))))]
+    (nth args (inc idx))))
+
+(defn parse-standard-args
+  "Parse standard benchmark arguments: --quick, --full, -q, --sizes, --help.
+   Returns map with :sizes (vector), :quick (bool), :help (bool).
+
+   Arguments:
+     args         - command line arguments
+     sizes-quick  - sizes for --quick mode
+     sizes-default - default sizes
+     sizes-full   - sizes for --full mode"
+  [args sizes-quick sizes-default sizes-full]
+  (let [help?  (has-flag? args "--help" "-h")
+        quick? (has-flag? args "--quick" "-q")
+        full?  (has-flag? args "--full")
+        custom (get-arg-value (vec args) "--sizes")]
+    {:help  help?
+     :quick quick?
+     :sizes (cond
+              custom (parse-sizes custom)
+              quick? sizes-quick
+              full?  sizes-full
+              :else  sizes-default)}))

@@ -17,7 +17,7 @@
             [clojure.pprint :as pp]
             [com.dean.ordered-collections.bench-utils :as bu
              :refer [generate-pairs generate-elements generate-lookup-keys
-                     generate-string-keys format-ns]]
+                     generate-string-keys format-ns parse-standard-args]]
             [com.dean.ordered-collections.core :as core]
             [com.dean.ordered-collections.tree.order :as order])
   (:import [java.time Instant LocalDateTime]
@@ -30,6 +30,11 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (def ^:dynamic *quick-mode* false)
+
+;; Size presets for Criterium benchmarks (smaller due to longer measurement time)
+(def sizes-quick   [100000])
+(def sizes-default [100000])
+(def sizes-full    [10000 100000 500000])
 
 (defn timestamp []
   (.format (LocalDateTime/now)
@@ -440,48 +445,44 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn parse-args [args]
-  (loop [args args
-         opts {:sizes [100000] :quick true}]  ; default: quick mode, N=100K
-    (if (empty? args)
-      opts
-      (let [[arg & rest] args]
-        (cond
-          (= arg "--full")
-          (recur rest (assoc opts :sizes [10000 100000 500000] :quick false))
+  (parse-standard-args args sizes-quick sizes-default sizes-full))
 
-          (= arg "--sizes")
-          (let [[sizes-str & rest] rest]
-            (recur rest (assoc opts :sizes (mapv #(Long/parseLong (str/trim %))
-                                                 (str/split sizes-str #",")))))
-
-          :else
-          (do (println (str "Unknown argument: " arg))
-              (recur rest opts)))))))
+(defn print-usage []
+  (println "Usage: lein bench [options]")
+  (println)
+  (println "Options:")
+  (println "  --quick            Quick mode with N=100K (default)")
+  (println "  --full             Full rigor with N=10K,100K,500K")
+  (println "  --sizes N,N,...    Custom sizes (comma-separated)")
+  (println "  --help             Show this help")
+  (println)
+  (println "Output is written to bench-results/<timestamp>.edn"))
 
 (defn -main [& args]
-  (let [opts (parse-args args)
-        output-dir "bench-results"
-        output-file (str output-dir "/" (timestamp) ".edn")]
+  (let [opts (parse-args args)]
+    (if (:help opts)
+      (print-usage)
+      (let [output-dir "bench-results"
+            output-file (str output-dir "/" (timestamp) ".edn")]
+        (println)
+        (println "========================================================================")
+        (println "  Ordered Collections Benchmark Suite")
+        (println "========================================================================")
+        (println)
+        (println "System info:")
+        (doseq [[k v] (system-info)]
+          (println (str "  " (name k) ": " v)))
+        (println)
+        (println (str "Mode: " (if (:quick opts) "quick" "full")))
+        (println (str "Sizes: " (pr-str (:sizes opts))))
+        (println (str "Output: " output-file))
+        (println)
 
-    (println)
-    (println "========================================================================")
-    (println "  Ordered Collections Benchmark Suite")
-    (println "========================================================================")
-    (println)
-    (println "System info:")
-    (doseq [[k v] (system-info)]
-      (println (str "  " (name k) ": " v)))
-    (println)
-    (println (str "Mode: " (if (:quick opts) "quick" "full")))
-    (println (str "Sizes: " (pr-str (:sizes opts))))
-    (println (str "Output: " output-file))
-    (println)
+        (binding [*quick-mode* (:quick opts)]
+          (let [results (run-all-benchmarks (:sizes opts))]
+            (print-summary results)
+            (write-results results output-file opts)))
 
-    (binding [*quick-mode* (:quick opts)]
-      (let [results (run-all-benchmarks (:sizes opts))]
-        (print-summary results)
-        (write-results results output-file opts)))
-
-    (println)
-    (println "Benchmark suite complete.")
+        (println)
+        (println "Benchmark suite complete.")))
     (shutdown-agents)))

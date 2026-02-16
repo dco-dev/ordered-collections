@@ -7,7 +7,8 @@
 
    Tests sequential vs parallel execution at various cardinalities
    to find the crossover point where parallelism becomes beneficial."
-  (:require [com.dean.ordered-collections.core :as oc]
+  (:require [com.dean.ordered-collections.bench-utils :refer [has-flag?]]
+            [com.dean.ordered-collections.core :as oc]
             [com.dean.ordered-collections.tree.tree :as tree]
             [com.dean.ordered-collections.tree.node :as node]
             [com.dean.ordered-collections.tree.order :as order])
@@ -147,7 +148,7 @@
 (defn -main
   "Entry point for lein bench-parallel."
   [& args]
-  (if (some #{"--quick" "-q"} args)
+  (if (has-flag? args "--quick" "-q")
     (quick-bench)
     (run-benchmark))
   (shutdown-agents))

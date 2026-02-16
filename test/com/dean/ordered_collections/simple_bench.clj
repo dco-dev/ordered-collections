@@ -6,13 +6,21 @@
    lein bench instead.
 
    Usage:
-     lein bench-simple             ; Full suite (100 to 500K)
-     (sb/run-quick)                ; REPL: N up to 10K
-     (sb/run-all [100 1000 10000]) ; REPL: custom sizes"
+     lein bench-simple                    ; Default (100 to 100K)
+     lein bench-simple --quick            ; Fast iteration (100 to 10K)
+     lein bench-simple --full             ; Full suite (100 to 1M)
+     lein bench-simple --sizes 1000,10000 ; Custom sizes
+     lein bench-simple --only sets        ; Run only set benchmarks
+     lein bench-simple --only maps,sets   ; Run maps and sets
+
+   Categories for --only:
+     maps, sets, set-ops, intervals, specialty, strings, parallel, memory"
   (:require [clojure.core.reducers :as r]
             [clojure.data.avl :as avl]
+            [clojure.string :as str]
             [com.dean.ordered-collections.bench-utils :as bu
-             :refer [bench format-ns format-result print-header print-row]]
+             :refer [bench format-ns format-result print-header print-row
+                     has-flag? get-arg-value parse-sizes parse-standard-args]]
             [com.dean.ordered-collections.core :as core]
             [com.dean.ordered-collections.tree.node :as node]
             [com.dean.ordered-collections.tree.tree :as tree]
@@ -596,69 +604,119 @@
   (bench-string-map-lookup sizes)
   (bench-string-map-iteration sizes))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Size Presets
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def sizes-quick   [100 1000 10000])
+(def sizes-default [100 1000 10000 100000])
+(def sizes-full    [100 1000 10000 100000 1000000])
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Benchmark Categories
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def categories
+  {:maps      {:title "MAP BENCHMARKS"
+               :fn    run-map-benchmarks}
+   :sets      {:title "SET BENCHMARKS"
+               :fn    run-set-benchmarks}
+   :set-ops   {:title "SET OPERATIONS (union, intersection, difference)"
+               :fn    run-set-operations-benchmarks}
+   :intervals {:title "INTERVAL TREE OPERATIONS"
+               :fn    run-interval-benchmarks}
+   :specialty {:title "SPECIALTY OPERATIONS (rank, split, first/last)"
+               :fn    (fn [sizes]
+                        (run-specialty-benchmarks sizes)
+                        (bench-first-last-access sizes))}
+   :strings   {:title "STRING KEYS (Custom Comparator)"
+               :fn    run-string-benchmarks}
+   :parallel  {:title "PARALLEL FOLD (r/fold)"
+               :fn    run-parallel-benchmarks}
+   :memory    {:title "MEMORY FOOTPRINT"
+               :fn    estimate-memory-footprint}})
+
+(def category-order [:maps :sets :set-ops :intervals :specialty :strings :parallel :memory])
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Main Entry Points
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn print-header-banner [sizes]
+  (println "========================================================================")
+  (println "  Performance Comparison: sorted-map vs data.avl vs ordered-map")
+  (println (str "  JVM: " (System/getProperty "java.version")
+                "  Clojure: " (clojure-version)))
+  (println (str "  " (java.util.Date.)))
+  (println (str "  Sizes: " (str/join ", " (map #(format "%,d" %) sizes))))
+  (println "========================================================================"))
+
+(defn run-categories
+  "Run specified benchmark categories with given sizes."
+  [sizes cats]
+  (print-header-banner sizes)
+  (doseq [cat-key cats
+          :let [{:keys [title fn]} (get categories cat-key)]
+          :when fn]
+    (println)
+    (println "------------------------------------------------------------------------")
+    (println (str "                    " title))
+    (println "------------------------------------------------------------------------")
+    (fn sizes))
+  (println)
+  (println "========================================================================")
+  (println "  Benchmark complete.")
+  (println "========================================================================"))
+
 (defn run-all
   "Run the complete benchmark suite."
-  ([] (run-all [100 1000 10000 100000 500000]))
-  ([sizes]
-   (println "========================================================================")
-   (println "  Performance Comparison: sorted-map vs data.avl vs ordered-map")
-   (println (str "  JVM: " (System/getProperty "java.version")
-                 "  Clojure: " (clojure-version)))
-   (println (str "  " (java.util.Date.)))
-   (println "========================================================================")
-
-   (println)
-   (println "------------------------------------------------------------------------")
-   (println "                           MAP BENCHMARKS")
-   (println "------------------------------------------------------------------------")
-   (run-map-benchmarks sizes)
-
-   (println)
-   (println "------------------------------------------------------------------------")
-   (println "                           SET BENCHMARKS")
-   (println "------------------------------------------------------------------------")
-   (run-set-benchmarks sizes)
-
-   (println)
-   (println "------------------------------------------------------------------------")
-   (println "                    SET OPERATIONS (union, intersection, difference)")
-   (println "------------------------------------------------------------------------")
-   (run-set-operations-benchmarks sizes)
-
-   (println)
-   (println "------------------------------------------------------------------------")
-   (println "                    INTERVAL TREE OPERATIONS")
-   (println "------------------------------------------------------------------------")
-   (run-interval-benchmarks sizes)
-
-   (println)
-   (println "------------------------------------------------------------------------")
-   (println "                    SPECIALTY OPERATIONS (rank, split, first/last)")
-   (println "------------------------------------------------------------------------")
-   (run-specialty-benchmarks sizes)
-   (bench-first-last-access sizes)
-
-   (println)
-   (println "------------------------------------------------------------------------")
-   (println "                    STRING KEYS (Custom Comparator)")
-   (println "------------------------------------------------------------------------")
-   (run-string-benchmarks sizes)
-
-   (println)
-   (println "------------------------------------------------------------------------")
-   (println "                    PARALLEL FOLD (r/fold)")
-   (println "------------------------------------------------------------------------")
-   (run-parallel-benchmarks sizes)
-
-   (println)
-   (println "========================================================================")
-   (println "  Benchmark complete.")
-   (println "========================================================================")))
+  ([] (run-all sizes-default))
+  ([sizes] (run-categories sizes category-order)))
 
 (defn run-quick
   "Run a quick benchmark with smaller sizes for development."
   []
-  (run-all [100 1000 10000]))
+  (run-all sizes-quick))
+
+(defn run-full
+  "Run full benchmark suite including 1M cardinality."
+  []
+  (run-all sizes-full))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; CLI
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn print-usage []
+  (println "Usage: lein bench-simple [options]")
+  (println)
+  (println "Options:")
+  (println "  --quick            Fast iteration (100 to 10K)")
+  (println "  --full             Full suite including 1M")
+  (println "  --sizes N,N,...    Custom sizes (comma-separated)")
+  (println "  --only CATS        Run only specified categories")
+  (println "  --help             Show this help")
+  (println)
+  (println "Categories for --only:")
+  (println "  maps, sets, set-ops, intervals, specialty, strings, parallel, memory")
+  (println)
+  (println "Examples:")
+  (println "  lein bench-simple --quick --only sets")
+  (println "  lein bench-simple --sizes 10000,100000 --only maps,sets")
+  (println "  lein bench-simple --full"))
+
+(defn- parse-categories [s]
+  (mapv keyword (str/split (str/lower-case s) #",")))
+
+(defn parse-args [args]
+  (let [base   (parse-standard-args args sizes-quick sizes-default sizes-full)
+        only   (get-arg-value (vec args) "--only")
+        cats   (if only (parse-categories only) category-order)]
+    (assoc base :categories cats)))
 
 (defn -main [& args]
-  (run-all))
+  (let [{:keys [sizes categories help]} (parse-args args)]
+    (if help
+      (print-usage)
+      (run-categories sizes categories)))
+  (shutdown-agents))

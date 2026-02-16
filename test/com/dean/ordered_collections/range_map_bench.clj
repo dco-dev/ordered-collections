@@ -9,7 +9,8 @@
    This means every modification creates a new structure via path-copying,
    which has inherent overhead but enables safe concurrent reads, undo/history,
    and structural sharing."
-  (:require [com.dean.ordered-collections.core :as oc])
+  (:require [com.dean.ordered-collections.bench-utils :refer [has-flag?]]
+            [com.dean.ordered-collections.core :as oc])
   (:import [com.google.common.collect TreeRangeMap Range]))
 
 
@@ -497,6 +498,6 @@
   (println))
 
 (defn -main [& args]
-  (if (some #{"--quick" "-q"} args)
+  (if (has-flag? args "--quick" "-q")
     (run-quick)
     (run-all)))
