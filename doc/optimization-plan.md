@@ -117,7 +117,7 @@ Based on benchmarks at N=100,000:
 
 Operations not available in sorted-set/sorted-map:
 - `nth` positional access: O(log n)
-- `rank` (ranked-set only): O(log n)
+- `rank`: O(log n)
 - Parallel `r/fold`: ~2x speedup on large collections
 - Interval queries: O(log n + k)
 - Fuzzy/nearest lookup: O(log n)

@@ -7,7 +7,7 @@ A decision guide for choosing between sorted collection implementations.
 | Your Priority | Best Choice |
 |---------------|-------------|
 | Maximum lookup speed | Any (~equal, within 8%) |
-| Need `nth` or `rank` operations | `ordered-map` / `ordered-set` / `ranked-set` |
+| Need `nth` or `rank` operations | `ordered-map` / `ordered-set` |
 | Heavy iteration workloads | `ordered-map` / `ordered-set` |
 | Parallel processing (`r/fold`) | `ordered-map` / `ordered-set` |
 | Set algebra (union, intersection) | `ordered-set` |
@@ -89,20 +89,6 @@ Both map ranges to values, but with different semantics:
 **Use interval-map when:** Ranges can overlap and you want to find ALL ranges containing a point (e.g., "what meetings are happening at 2pm?")
 
 **Use range-map when:** Ranges must not overlap and each point maps to exactly one value (e.g., "which subnet owns this IP?")
-
-### ordered-set vs ranked-set
-
-Both are sorted sets, but ranked-set adds explicit rank operations:
-
-| Feature | ordered-set | ranked-set |
-|---------|-------------|------------|
-| `nth` access | ✓ O(log n) | ✓ O(log n) |
-| `rank-of` element | Via iteration | ✓ O(log n) |
-| Set operations | ✓ Fast | Limited |
-
-**Use ordered-set when:** You need general sorted set operations, set algebra, parallel fold.
-
-**Use ranked-set when:** You specifically need `rank-of` queries ("what position is X in the sorted order?")
 
 ## Workload-Based Recommendations
 

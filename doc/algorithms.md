@@ -169,7 +169,7 @@ Answer: 60
 
 ### rank (element → index): O(log n)
 
-Only available in `ranked-set`. Accumulates left subtree sizes while descending:
+Available in `ordered-set`, `ordered-map`, `fuzzy-set`, and `fuzzy-map`. Accumulates left subtree sizes while descending:
 
 ```
 rank(tree, 60):
@@ -187,7 +187,7 @@ Step 3: 60 == 60, rank += 0 = 4
 Answer: 4 (60 is the 5th element)
 ```
 
-**Note:** `ordered-set` supports O(log n) `nth` but not `rank`. Use `ranked-set` when you need both operations efficiently.
+Both `nth` and `rank` are O(log n) operations available on `ordered-set`, `ordered-map`, `fuzzy-set`, and `fuzzy-map`.
 
 ## Set Operations
 
@@ -515,7 +515,7 @@ Seqnum ensures FIFO ordering among equal priorities.
 | Insert | O(log n) | Path copying |
 | Delete | O(log n) | Path copying |
 | nth | O(log n) | Via subtree weights |
-| rank | O(log n) | `ranked-set` only |
+| rank | O(log n) | `ordered-set`, `ordered-map`, `fuzzy-*` |
 | Split | O(log n) | |
 | Join | O(log n) | Universal primitive |
 | Union | O(m log(n/m+1)) | Work-optimal, fork-join parallel |

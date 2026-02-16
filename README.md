@@ -89,7 +89,6 @@ parallel fold support, and more.
 | `(oc/interval-map coll)` | Map supporting interval overlap queries |
 | `(oc/range-map)` | Non-overlapping ranges (Google Guava TreeRangeMap) |
 | `(oc/segment-tree f identity coll)` | O(log n) range aggregate queries |
-| `(oc/ranked-set coll)` | Sorted set with O(log n) rank and nth |
 | `(oc/priority-queue pairs)` | Priority queue from `[[priority value] ...]` pairs |
 | `(oc/ordered-multiset coll)` | Sorted multiset (allows duplicates) |
 | `(oc/fuzzy-set coll)` | Returns closest element to query |
@@ -385,16 +384,16 @@ Zorp wants to analyze daily sales. Specifically, he needs to answer range querie
 
 ---
 
-### ranked-set
+### Rank and Percentile Operations
 
-A sorted set with O(log n) positional access: `nth`, `rank`, `median`, and percentile queries.
+`ordered-set` and `ordered-map` support O(log n) rank queries: `rank`, `median`, `percentile`, and `slice`. No separate data structure needed—these operations work directly on any ordered collection.
 
 Zorp's loyalty program tracks customer spending. He needs to answer questions like "Who are my top 10 spenders?" and "What percentile is this customer in?" without re-sorting everything constantly.
 
 ```clojure
 ;; Store [total-spent customer-id] pairs so they sort by spending
 (def customer-spending
-  (oc/ranked-set
+  (oc/ordered-set
     [[15420.00 "CUST-0042"]   ; Krix, the methane baron
      [8730.50  "CUST-0117"]   ; Anonymous (pays in nitrogen credits)
      [45200.00 "CUST-0001"]   ; The Mayor's office
@@ -407,8 +406,8 @@ Zorp's loyalty program tracks customer spending. He needs to answer questions li
 (last customer-spending)
 ;; => [52100.0 "CUST-0007"]  -- Big Toe Tony, of course
 
-;; Top 3 spenders
-(take-last 3 customer-spending)
+;; Top 3 spenders (using slice from the end)
+(oc/slice customer-spending 4 7)
 ;; => ([15420.0 "CUST-0042"] [45200.0 "CUST-0001"] [52100.0 "CUST-0007"])
 
 ;; What's the median spending level?
@@ -417,12 +416,16 @@ Zorp's loyalty program tracks customer spending. He needs to answer questions li
 
 ;; A customer wants to know: "Am I in the top 25%?"
 (let [spending [8730.50 "CUST-0117"]
-      rank (oc/rank customer-spending spending)
-      percentile (* 100.0 (/ rank (count customer-spending)))]
-  (println "You're at the" (int percentile) "percentile!")
-  (> percentile 75))
+      r (oc/rank customer-spending spending)
+      pct (* 100.0 (/ r (count customer-spending)))]
+  (println "You're at the" (int pct) "percentile!")
+  (> pct 75))
 ;; You're at the 14 percentile!
 ;; => false
+
+;; What spending level is at the 90th percentile?
+(oc/percentile customer-spending 90)
+;; => [52100.0 "CUST-0007"]  -- Big Toe Tony sets the bar
 ```
 
 "Big Toe Tony," Zorp sighs. "He bought every color of the Void Runner. Every. Color. The man has 47 feet."

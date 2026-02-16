@@ -159,7 +159,6 @@ Measured with clj-memory-meter at N=100,000:
 | `fuzzy-set` / `fuzzy-map` | Nearest-neighbor lookup |
 | `range-map` | Non-overlapping ranges (Guava-style) |
 | `segment-tree` | O(log n) range aggregates |
-| `ranked-set` | Explicit rank/percentile operations |
 
 ### Primitive Specialization (ordered-collections only)
 
