@@ -159,7 +159,7 @@
   (equiv [this o]
     (with-ordered-map this
       (cond
-        (identical? this o) 0
+        (identical? this o) true
         (.isCompatible this o) (and (= (.count this) (.count ^clojure.lang.Counted o))
                                     (zero? (tree/node-map-compare root (.getRoot ^INodeCollection o))))
         (map? o) (.equiv ^clojure.lang.IPersistentCollection (into (empty o) (tree/node-vec root :accessor :kv)) o)
@@ -187,6 +187,10 @@
               (do (vreset! seen-first true) entry)))
           first-entry
           root))))
+
+  clojure.lang.IKVReduce
+  (kvreduce [this f init]
+    (tree/node-reduce-kvs f init root))
 
   clojure.core.reducers.CollFold
   (coll-fold [this n combinef reducef]
@@ -317,5 +321,12 @@
 ;; Literal Representation
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defmethod print-method OrderedMap [m w]
-  ((get (methods print-method) clojure.lang.IPersistentMap) m w))
+(defmethod print-method OrderedMap [^OrderedMap m ^java.io.Writer w]
+  (.write w "#ordered/map [")
+  (let [s (seq m)]
+    (when s
+      (print-method (vec (first s)) w)
+      (doseq [e (rest s)]
+        (.write w " ")
+        (print-method (vec e) w))))
+  (.write w "]"))

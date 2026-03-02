@@ -161,7 +161,7 @@
   (equiv [this o]
     (with-interval-map this
       (cond
-        (identical? this o) 0
+        (identical? this o) true
         (.isCompatible this o) (and (= (.count this) (.count ^clojure.lang.Counted o))
                                     (zero? (tree/node-map-compare root (.getRoot ^INodeCollection o))))
         true     (throw (ex-info "unsupported comparison: " {:this this :o o})))))
@@ -202,5 +202,13 @@
 ;; Literal Representation
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defmethod print-method IntervalMap [m w]
-  ((get (methods print-method) clojure.lang.IPersistentMap) m w))
+(defmethod print-method IntervalMap [^IntervalMap m ^java.io.Writer w]
+  (.write w "#ordered/interval-map [")
+  (let [s (seq m)]
+    (when s
+      (let [[k v] (first s)]
+        (print-method [(vec k) v] w))
+      (doseq [[k v] (rest s)]
+        (.write w " ")
+        (print-method [(vec k) v] w))))
+  (.write w "]"))

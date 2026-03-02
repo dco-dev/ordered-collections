@@ -114,7 +114,13 @@
     (with-interval-set this
       (cond
         (identical? this that)    true
-        (.isCompatible this that) (tree/node-subset? root (.getRoot ^INodeCollection that)) ;; Grr. reverse args of tree/subset
+        (.isCompatible this that) (tree/node-subset? root (.getRoot ^INodeCollection that))
+        true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
+  (disjoint? [this that]
+    (with-interval-set this
+      (cond
+        (identical? this that)    (zero? (tree/node-size root))
+        (.isCompatible this that) (tree/node-disjoint? root (.getRoot ^INodeCollection that))
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
 
   clojure.lang.IMeta
@@ -255,5 +261,6 @@
 ;; Literal Representation
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defmethod print-method IntervalSet [s w]
-  ((get (methods print-method) clojure.lang.IPersistentSet) s w))
+(defmethod print-method IntervalSet [^IntervalSet s ^java.io.Writer w]
+  (.write w "#ordered/interval-set ")
+  (print-method (vec s) w))

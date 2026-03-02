@@ -107,8 +107,15 @@
     (with-ordered-set this
       (cond
         (identical? this that)    true
-        (.isCompatible this that) (tree/node-subset? root (.getRoot ^OrderedSet that)) ;; Grr. reverse args of tree/subset
+        (.isCompatible this that) (tree/node-subset? root (.getRoot ^OrderedSet that))
         (.isSimilar this that)    (clojure.set/subset? that (into #{} this))
+        true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
+  (disjoint? [this that]
+    (with-ordered-set this
+      (cond
+        (identical? this that)    (zero? (tree/node-size root))
+        (.isCompatible this that) (tree/node-disjoint? root (.getRoot ^OrderedSet that))
+        (.isSimilar this that)    (empty? (clojure.set/intersection (into #{} this) that))
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
 
   clojure.lang.IMeta
@@ -405,8 +412,9 @@
 ;; Literal Representation
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defmethod print-method OrderedSet [s w]
-  ((get (methods print-method) clojure.lang.IPersistentSet) s w))
+(defmethod print-method OrderedSet [^OrderedSet s ^java.io.Writer w]
+  (.write w "#ordered/set ")
+  (print-method (vec s) w))
 
 
 
