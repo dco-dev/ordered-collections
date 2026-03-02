@@ -102,6 +102,15 @@
      (superset? (ordered-set [1 2 3]) (ordered-set [1 2]))  ; true"
   proto/superset?)
 
+(def disjoint?
+  "True if s1 and s2 share no elements.
+   Short-circuits on the first common element found.
+
+   Examples:
+     (disjoint? (ordered-set [1 2 3]) (ordered-set [4 5 6]))  ; true
+     (disjoint? (ordered-set [1 2 3]) (ordered-set [3 4 5]))  ; false"
+  proto/disjoint?)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Ordered Set
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
