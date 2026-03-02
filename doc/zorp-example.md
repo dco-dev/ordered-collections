@@ -505,6 +505,278 @@ Night Bot interjects: "Flash sale conversion rate: 34.7%. Customer regret index:
 
 ---
 
+## Chapter 8: The Inventory
+
+*Demonstrates: `ordered-map` — a persistent sorted map that's a drop-in replacement for `sorted-map`. Keys stay sorted, enabling efficient range queries with `subseq`. Use it anywhere you need fast lookup AND ordered traversal.*
+
+The perpetual darkness means nobody can see your shoes, which paradoxically makes everyone *obsessed* with having the freshest ones. "It's about knowing," Zorp explains to confused off-world visitors. "Knowing you're dripping."
+
+Zorp's inventory is chaos. Shipments arrive from Earth (8-month delay), Mars (3 weeks), and the Jovian moons (2 days, but they only make sandals). He needs to track thousands of SKUs, look them up fast, and always know what's in stock.
+
+```clojure
+;; Zorp's inventory: SKU -> {:name, :size, :quantity, :price}
+(def inventory
+  (oc/ordered-map
+    {"PLT-001" {:name "Shadow Walker 9000" :size 10 :quantity 45 :price 299.99}
+     "PLT-002" {:name "Dark Side Dunks"    :size 11 :quantity 12 :price 450.00}
+     "PLT-003" {:name "Void Runner"        :size 9  :quantity 0  :price 175.50}
+     "JUP-017" {:name "Europa Ice Grip"    :size 10 :quantity 88 :price 225.00}
+     "MRS-042" {:name "Olympus Max"        :size 12 :quantity 33 :price 380.00}}))
+
+;; Fast lookup
+(inventory "PLT-002")
+;; => {:name "Dark Side Dunks", :size 11, :quantity 12, :price 450.00}
+
+;; The ordered-map keeps keys sorted, so Zorp can grab a range efficiently
+;; All Plutonian models (SKUs starting with PLT):
+(subseq inventory >= "PLT" < "PLU")
+;; => (["PLT-001" {...}] ["PLT-002" {...}] ["PLT-003" {...}])
+
+;; New shipment arrives! Immutable update, Zorp's accountant loves the audit trail
+(def inventory' (update-in inventory ["PLT-003" :quantity] + 50))
+```
+
+"The sorted keys," Zorp muses, stroking his antenna, "they let me slice the catalog by manufacturer prefix. Very satisfying."
+
+---
+
+## Chapter 9: The Shift Schedule
+
+*Demonstrates: `interval-map` — associates values with intervals and supports O(log n + k) overlap queries. Query any point or range to find all overlapping intervals. Unlike range-map, intervals CAN overlap.*
+
+Zorp's store is open during "business hours"—but on the dark side of Pluto, time is meaningless. So he defines shifts by arbitrary time units (PTU: Pluto Time Units). He needs to quickly answer: "Who's working at PTU 4500?"
+
+```clojure
+(def shift-schedule
+  (oc/interval-map
+    {[0 2000]     "Glorm (morning shift)"
+     [2000 4000]  "Blixxa (afternoon shift)"
+     [4000 6000]  "Zorp (evening shift)"
+     [6000 8000]  "Night Bot 3000 (graveyard)"
+     [1800 2200]  "Krix Jr. (overlap coverage)"}))
+
+;; Customer calls at PTU 4500. Who picks up?
+(shift-schedule 4500)
+;; => ("Zorp (evening shift)")
+
+;; During shift change at PTU 2000, who's available?
+(shift-schedule 2000)
+;; => ("Glorm (morning shift)" "Blixxa (afternoon shift)" "Krix Jr. (overlap coverage)")
+
+;; Query a range: who works any time between PTU 1900-2100?
+(shift-schedule [1900 2100])
+;; => ("Glorm (morning shift)" "Blixxa (afternoon shift)" "Krix Jr. (overlap coverage)")
+```
+
+"The interval map," Zorp explains to his new hire, "handles the overlaps automatically. Krix Jr. wanted 'creative scheduling.' Now I can just query any moment and know who's supposed to be here." (Krix Jr. is the son of Krix the methane baron—nepotism is alive and well on Pluto.)
+
+---
+
+## Chapter 10: The Discount Tiers
+
+*Demonstrates: `range-map` with `assoc` and `assoc-coalescing` — a map from non-overlapping ranges to values. When you insert a new range, overlapping portions are automatically carved out. Use `get-entry` to find which range contains a point, and `range-remove` to carve out holes.*
+
+Zorp's discount system is based on purchase amount. Different ranges get different discounts, and ranges can't overlap—each credit amount maps to exactly one discount tier.
+
+```clojure
+(def discount-tiers
+  (-> (oc/range-map)
+      (assoc [0 100]      :no-discount)
+      (assoc [100 500]    :bronze-5-percent)
+      (assoc [500 1000]   :silver-10-percent)
+      (assoc [1000 5000]  :gold-15-percent)
+      (assoc [5000 50000] :platinum-20-percent)))
+
+;; Customer's cart is 750 credits
+(discount-tiers 750)
+;; => :silver-10-percent
+
+;; Edge case: exactly 1000 credits (ranges are [lo, hi) half-open)
+(discount-tiers 1000)
+;; => :gold-15-percent
+
+;; Zorp runs a flash sale: 8% off for purchases 200-400 credits
+;; This automatically splits the bronze tier!
+(def flash-sale-tiers
+  (assoc discount-tiers [200 400] :flash-sale-8-percent))
+
+(oc/ranges flash-sale-tiers)
+;; => ([[0 100] :no-discount]
+;;     [[100 200] :bronze-5-percent]      ; auto-trimmed!
+;;     [[200 400] :flash-sale-8-percent]  ; inserted
+;;     [[400 500] :bronze-5-percent]      ; auto-trimmed!
+;;     [[500 1000] :silver-10-percent]
+;;     ...)
+
+;; Coalescing: merge adjacent ranges with the same value
+(-> (oc/range-map {[0 100] :a})
+    (oc/assoc-coalescing [100 200] :a)  ; merges!
+    oc/ranges)
+;; => ([[0 200] :a])
+
+;; Get entry: find which range contains a point
+(oc/get-entry discount-tiers 750)
+;; => [[500 1000] :silver-10-percent]
+
+;; Remove a range (trims overlapping ranges)
+(oc/range-remove discount-tiers [300 600])
+;; => bronze trimmed to [100 300), silver trimmed to [600 1000)
+```
+
+"Before the range-map," Zorp recalls darkly, "I had seventeen overlapping discount codes."
+
+---
+
+## Chapter 11: The Daily Ledger
+
+*Demonstrates: `segment-tree` with `query` — answer range aggregate queries like "what is the sum/min/max from index a to b?" in O(log n), with O(log n) updates. Works with any associative operation.*
+
+Zorp wants to analyze daily sales. Specifically, he needs to answer range queries like "What were total sales from day 50 to day 75?" and update individual days as sales come in—all in logarithmic time.
+
+```clojure
+;; Daily sales for the first quarter (90 days)
+(def daily-sales
+  (oc/segment-tree + 0  ; operation: +, identity: 0
+    (into {} (for [day (range 1 91)]
+               [day (+ 1000 (rand-int 500))]))))  ; 1000-1500 credits/day
+
+;; Total sales for days 1-30 (first month)
+(oc/query daily-sales 1 30)
+;; => ~37500
+
+;; Big sale day! Update day 45 with actual figure
+(def daily-sales' (assoc daily-sales 45 8500))
+
+;; Query again - the tree updates in O(log n)
+(oc/query daily-sales' 40 50)
+;; => includes the 8500 spike
+
+;; Zorp also tracks minimum daily sales to identify slow days
+(def min-daily-sales
+  (oc/segment-tree min Long/MAX_VALUE
+    (into {} (for [day (range 1 91)]
+               [day (+ 1000 (rand-int 500))]))))
+
+;; Worst day in the second month?
+(oc/query min-daily-sales 31 60)
+;; => ~1000-1050
+```
+
+"The segment tree," Zorp tells his accountant (a sentient calculator from Neptune), "gives me range sums instantly. Quarterly reports used to take hours. Now? Logarithmic time."
+
+---
+
+## Chapter 12: The Leaderboard
+
+*Demonstrates: `ordered-set` with `rank`, `median`, `percentile`, and `slice` — O(log n) rank-based operations. No separate data structure needed; these work directly on any ordered collection.*
+
+Zorp's loyalty program tracks customer spending. He needs to answer questions like "Who are my top 10 spenders?" and "What percentile is this customer in?" without re-sorting everything constantly.
+
+```clojure
+;; Store [total-spent customer-id] pairs so they sort by spending
+(def customer-spending
+  (oc/ordered-set
+    [[15420.00 "CUST-0042"]   ; Krix, the methane baron
+     [8730.50  "CUST-0117"]   ; Anonymous (pays in nitrogen credits)
+     [45200.00 "CUST-0001"]   ; The Mayor's office
+     [3200.00  "CUST-0233"]   ; First-time buyer
+     [12800.00 "CUST-0089"]   ; Repeat customer
+     [52100.00 "CUST-0007"]   ; "Big Toe" Tony
+     [9999.99  "CUST-0404"]])) ; Suspicious round number
+
+;; Who's the biggest spender?
+(last customer-spending)
+;; => [52100.0 "CUST-0007"]  -- Big Toe Tony, of course
+
+;; Top 3 spenders (using slice from the end)
+(oc/slice customer-spending 4 7)
+;; => ([15420.0 "CUST-0042"] [45200.0 "CUST-0001"] [52100.0 "CUST-0007"])
+
+;; What's the median spending level?
+(oc/median customer-spending)
+;; => [12800.0 "CUST-0089"]
+
+;; A customer wants to know: "Am I in the top 25%?"
+(let [spending [8730.50 "CUST-0117"]
+      r (oc/rank customer-spending spending)
+      pct (* 100.0 (/ r (count customer-spending)))]
+  (println "You're at the" (int pct) "percentile!")
+  (> pct 75))
+;; You're at the 14 percentile!
+;; => false
+
+;; What spending level is at the 90th percentile?
+(oc/percentile customer-spending 90)
+;; => [52100.0 "CUST-0007"]  -- Big Toe Tony sets the bar
+```
+
+"Big Toe Tony," Zorp sighs. "He bought every color of the Void Runner. Every. Color. The man has 47 feet."
+
+---
+
+## Chapter 13: The Repair Queue
+
+*Demonstrates: `priority-queue` — a persistent priority queue with O(log n) push/peek/pop. Elements are `[priority value]` pairs, ordered by priority (min-heap by default).*
+
+Shoes break. It happens. Zorp offers repair services, but some repairs are more urgent than others. A customer's only pair? Rush job. Seventh pair of limited editions? They can wait.
+
+```clojure
+(def repair-queue
+  (oc/priority-queue
+    [[1 {:customer "CUST-0042" :issue "Sole detachment, only pair"}]
+     [5 {:customer "CUST-0007" :issue "Scuff marks, has 46 other pairs"}]
+     [2 {:customer "CUST-0117" :issue "Lace replacement, formal event tomorrow"}]
+     [3 {:customer "CUST-0233" :issue "Squeaky heel"}]
+     [1 {:customer "CUST-0089" :issue "Zipper stuck, only winter boots"}]]))
+
+;; Who's first? (lowest priority number = most urgent)
+(peek repair-queue)
+;; => [1 {:customer "CUST-0042" :issue "Sole detachment, only pair"}]
+
+;; Process both priority-1 jobs, then see who's next
+(-> repair-queue pop pop peek)
+;; => [2 {:customer "CUST-0117" :issue "Lace replacement, formal event tomorrow"}]
+
+;; Add a new urgent repair
+(def repair-queue' (conj repair-queue [0 {:customer "VIP" :issue "Emergency!"}]))
+(peek repair-queue')
+;; => [0 {:customer "VIP" :issue "Emergency!"}]
+```
+
+"Big Toe Tony's scuff marks," Zorp mutters, "can wait until the heat death of the universe."
+
+---
+
+## Chapter 14: The Reservation System
+
+*Demonstrates: `ordered-set` with `union`, `intersection`, `difference` — fast set algebra with parallel divide-and-conquer for large sets. Combined with `subseq` and `nearest`, these operations make ordered-set a powerful tool for resource allocation.*
+
+Zorp's hottest releases require a reservation system. Customers select time slots to pick up their shoes. Each slot can only be used once.
+
+```clojure
+(def all-slots
+  (oc/ordered-set (range 100 200)))  ; slots 100-199 available today
+
+(def reserved-slots
+  (oc/ordered-set [105 110 115 120 125 142 143 144 150 175 188]))
+
+;; Available slots = all-slots - reserved-slots
+(def available (oc/difference all-slots reserved-slots))
+
+(count available)
+;; => 89 slots still open
+
+;; Customer wants the earliest available slot at or after 140
+(first (subseq available >= 140))
+;; => 140 (it's available!)
+
+;; VIP customer wants to know: are ANY slots between 170-180 open?
+(seq (subseq available >= 170 < 180))
+;; => (170 171 172 173 174 176 177 178 179)  -- plenty! (175 was reserved)
+```
+
+---
+
 ## Epilogue
 
 Closing time. Kevin stands on the counter, backed by boots, loafers, sneakers, and one determined pair of orthopedic insoles. Three years of organizing have led to this moment.
@@ -522,3 +794,7 @@ Zorp stares at the assembled footwear for a long moment. "I'll read your proposa
 Glorm sighs—a sigh containing the entire history of retail-labor-inventory relations -- and clocks out.
 
 Krix Jr. posts a photo. Caption: "no cap this store is unhinged lol. still didn't buy anything tho."
+
+---
+
+*Zorp's Sneaker Emporium is a registered trademark of Zorp Enterprises, LLC (Pluto Division). No actual Plutonians were harmed in the making of this documentation. Big Toe Tony's foot count verified by the Pluto Bureau of Standards; foot #23 (Reginald) declined comment. Kevin remains under investigation by the Jovian Commerce Commission for sentience without a license.*
