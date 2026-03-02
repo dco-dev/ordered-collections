@@ -21,7 +21,9 @@
   (subset? [this that]
     "Return true if every element of this is also in that.")
   (superset? [this that]
-    "Return true if every element of that is also in this."))
+    "Return true if every element of that is also in this.")
+  (disjoint? [this that]
+    "Return true if this and that share no elements."))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Exclusive Association Protocol

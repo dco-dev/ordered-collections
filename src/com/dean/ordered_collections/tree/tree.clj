@@ -1431,6 +1431,22 @@
                           :else     (and (subset? r1 r2) (node-find n2 k1 cmp) (subset? l1 n2)))))))))]
       (or (leaf? sub) (boolean (subset? sub super))))))
 
+(defn node-disjoint?
+  "Return true if the two trees share no elements.
+   Short-circuits on the first common element found.
+   Complexity: O(m log(n/m + 1)) where m <= n."
+  [n1 n2]
+  (cond
+    (leaf? n1) true
+    (leaf? n2) true
+    :else
+    (kvlr [k _ l r] n1
+      (let [[bl present br] (node-split n2 k)]
+        (if present
+          false
+          (and (node-disjoint? l bl)
+               (node-disjoint? r br)))))))
+
 (def node-set-compare (partial node-compare :k))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
