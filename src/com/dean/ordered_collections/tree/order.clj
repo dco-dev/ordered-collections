@@ -99,6 +99,16 @@
   "Specialized comparator for String keys. Uses String.compareTo directly."
   (->StringComparator))
 
+(defn default-comparator?
+  "Returns true if cmp is one of the built-in comparators whose ordering
+   is equivalent to clojure.core/compare for its element type.
+   Used to determine if a collection can safely round-trip through EDN."
+  [cmp]
+  (or (instance? NormalComparator cmp)
+      (instance? LongComparator cmp)
+      (instance? StringComparator cmp)
+      (instance? DoubleComparator cmp)))
+
 (def ^:dynamic ^Comparator *compare* normal-compare)
 
 (defn compare ^long [x y]
