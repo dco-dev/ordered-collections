@@ -14,7 +14,7 @@
 
 **Note**: Results will vary by system. Relative performance ratios are more meaningful than absolute times.
 
-**Reproducibility**: Run `(require '[com.dean.ordered-collections.criterium-bench :as cb])` then `(cb/run-all :sizes [500000] :quick true)` to reproduce these benchmarks.
+**Reproducibility**: Run `(require '[com.dean.ordered-collections.bench-runner :as br])` then `(br/run-all-benchmarks [500000])` to reproduce these benchmarks.
 
 ## Libraries Compared
 
