@@ -388,20 +388,22 @@
     (let [pairs (mapv (fn [k] [k (str k)]) (range n))
           elems (range n)
           measure (fn [create-fn]
-                    (System/gc) (Thread/sleep 100)
-                    (let [rt   (Runtime/getRuntime)
-                          _    (System/gc)
-                          mem0 (.totalMemory rt)
-                          free0 (.freeMemory rt)
-                          coll (create-fn)
-                          _    (System/gc)
-                          mem1 (.totalMemory rt)
-                          free1 (.freeMemory rt)
-                          used0 (- mem0 free0)
-                          used1 (- mem1 free1)]
-                      ;; Force reference to coll to prevent GC
-                      (when (nil? coll) (println "nil"))
-                      (/ (double (- used1 used0)) n)))
+                    (let [rt    (Runtime/getRuntime)
+                          holder (volatile! nil)]
+                      ;; Measure baseline
+                      (System/gc) (Thread/sleep 200)
+                      (System/gc) (Thread/sleep 100)
+                      (let [used0 (- (.totalMemory rt) (.freeMemory rt))]
+                        ;; Create and retain collection
+                        (vreset! holder (create-fn))
+                        ;; Measure with collection alive — do NOT GC here
+                        ;; as that could collect internal structure
+                        (System/gc) (Thread/sleep 100)
+                        (let [used1 (- (.totalMemory rt) (.freeMemory rt))
+                              bpe   (/ (double (- used1 used0)) n)]
+                          ;; Keep strong reference alive past measurement
+                          (assert (some? @holder))
+                          bpe))))
           sm-bpe  (measure #(into (sorted-map) pairs))
           avl-bpe (measure #(into (avl/sorted-map) pairs))
           om-bpe  (measure #(core/ordered-map pairs))
