@@ -1159,46 +1159,6 @@
 ;;   present = nil if k not found, or (k v) if found
 ;;   R       = tree of all elements > k
 ;;
-;; EXAMPLE: split tree at key 5
-;;
-;;            ,---,
-;;            | 4 |                          L (keys < 5)      R (keys > 5)
-;;            :---:
-;;           :     :                              ,---,           ,---,
-;;      ,---:       :---,                         | 4 |           | 7 |
-;;      | 2 |       | 7 |        split(5)         :---:           :---:
-;;      :---:       :---:       ─────────►       :     :         :     :
-;;     :     :     :     :                   ,--:   :--,     ,--:       :--,
-;;  ,-:   :-,  ,-:   :-,                     |2 |   |3 |     |6 |       |8 |
-;;  |1 |  |3 | |6 |  |8 |                    '--'   '--'     '--'       '--'
-;;  '--'  '--' '--'  '--'
-;;     └────┬───┘                            plus: present = nil (5 not in tree)
-;;       ,-:   :-,
-;;       |5:val|                             If 5 were present, present = (5, val)
-;;       '-----'
-;;
-;; ALGORITHM (recursive):
-;;
-;;   split(node, k):
-;;     if node is leaf: return (nil, nil, nil)
-;;
-;;     compare k with node.key:
-;;       k = node.key  →  (node.left, (k,v), node.right)
-;;       k < node.key  →  (ll, p, lr) = split(node.left, k)
-;;                        return (ll, p, concat3(node.key, node.val, lr, node.right))
-;;       k > node.key  →  (rl, p, rr) = split(node.right, k)
-;;                        return (concat3(node.key, node.val, node.left, rl), p, rr)
-;;
-;; VISUAL: split(tree, 3) where 3 < 4
-;;
-;;            ,---,
-;;            | 4 |
-;;            :---:                         split left subtree at 3:
-;;           :     :                           (L', present, R') = split([2], 3)
-;;      ,---:       :---,
-;;      | 2 |       | 7 |                   Then rebuild:
-;;      '---'       '---'                     L = L'
-;;                                            R = concat3(4, v, R', [7])
 ;;
 ;; COMPLEXITY: O(log n) — each recursive call descends one level
 ;;
