@@ -159,6 +159,109 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Range Map
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest range-map-tagged-literal-format
+  (testing "pr-str produces #ordered/range-map tag"
+    (let [rm (oc/range-map [[[0 10] :a] [[20 30] :b]])]
+      (is (clojure.string/starts-with? (pr-str rm) "#ordered/range-map ")))))
+
+(deftest range-map-round-trip
+  (testing "read-string round-trip"
+    (let [rm (oc/range-map [[[0 10] :a] [[20 30] :b]])]
+      (is (= (set (seq rm)) (set (seq (round-trip rm)))))))
+  (testing "clojure.edn round-trip"
+    (let [rm (oc/range-map [[[0 10] :a] [[20 30] :b]])]
+      (is (= (count rm) (count (edn-round-trip rm))))))
+  (testing "empty range-map"
+    (let [rm (oc/range-map)]
+      (is (= rm (round-trip rm))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Priority Queue
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest priority-queue-tagged-literal-format
+  (testing "pr-str produces #ordered/priority-queue tag"
+    (let [pq (oc/priority-queue [[1 :a] [3 :c] [2 :b]])]
+      (is (clojure.string/starts-with? (pr-str pq) "#ordered/priority-queue ")))))
+
+(deftest priority-queue-round-trip
+  (testing "read-string round-trip"
+    (let [pq (oc/priority-queue [[1 :a] [3 :c] [2 :b]])]
+      (is (= (vec (seq pq)) (vec (seq (round-trip pq)))))))
+  (testing "clojure.edn round-trip"
+    (let [pq (oc/priority-queue [[1 :a] [3 :c] [2 :b]])]
+      (is (= (vec (seq pq)) (vec (seq (edn-round-trip pq)))))))
+  (testing "empty priority-queue"
+    (let [pq (oc/priority-queue [])]
+      (is (= 0 (count (round-trip pq)))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Ordered Multiset
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest ordered-multiset-tagged-literal-format
+  (testing "pr-str produces #ordered/multiset tag"
+    (let [ms (oc/ordered-multiset [3 1 2 1])]
+      (is (clojure.string/starts-with? (pr-str ms) "#ordered/multiset ")))))
+
+(deftest ordered-multiset-round-trip
+  (testing "read-string round-trip"
+    (let [ms (oc/ordered-multiset [3 1 4 1 5])]
+      (is (= (vec (seq ms)) (vec (seq (round-trip ms)))))))
+  (testing "clojure.edn round-trip"
+    (let [ms (oc/ordered-multiset [1 2 2 3])]
+      (is (= (vec (seq ms)) (vec (seq (edn-round-trip ms)))))))
+  (testing "empty multiset"
+    (let [ms (oc/ordered-multiset [])]
+      (is (= 0 (count (round-trip ms)))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Custom Comparator Guarding
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest custom-comparator-prints-unreadable
+  (testing "ordered-set with custom comparator prints unreadable form"
+    (let [s (oc/ordered-set-by > [3 1 2])]
+      (is (clojure.string/starts-with? (pr-str s) "#<OrderedSet "))))
+  (testing "ordered-map with custom comparator prints unreadable form"
+    (let [m (oc/ordered-map-by > [[3 :c] [1 :a] [2 :b]])]
+      (is (clojure.string/starts-with? (pr-str m) "#<OrderedMap "))))
+  (testing "priority-queue with custom comparator prints unreadable form"
+    (let [pq (oc/priority-queue [[1 :a] [3 :c]] :comparator >)]
+      (is (clojure.string/starts-with? (pr-str pq) "#<PriorityQueue "))))
+  (testing "ordered-multiset with custom comparator prints unreadable form"
+    (let [ms (oc/ordered-multiset-by > [3 1 2])]
+      (is (clojure.string/starts-with? (pr-str ms) "#<OrderedMultiset ")))))
+
+(deftest unreadable-forms-throw-on-read
+  (testing "unreadable forms cannot be read back"
+    (let [s (oc/ordered-set-by > [3 1 2])]
+      (is (thrown? Exception (read-string (pr-str s)))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Non-Round-Trippable Types (always unreadable)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest non-round-trippable-types-print-unreadable
+  (testing "FuzzySet prints unreadable form"
+    (let [fs (oc/fuzzy-set [1 5 10 20])]
+      (is (clojure.string/starts-with? (pr-str fs) "#<FuzzySet "))))
+  (testing "FuzzyMap prints unreadable form"
+    (let [fm (oc/fuzzy-map {1 :a 5 :b 10 :c})]
+      (is (clojure.string/starts-with? (pr-str fm) "#<FuzzyMap "))))
+  (testing "SegmentTree prints unreadable form"
+    (let [st (oc/segment-tree + 0 {0 10 1 20 2 30})]
+      (is (clojure.string/starts-with? (pr-str st) "#<SegmentTree ")))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Functional Verification After Round-Trip
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
