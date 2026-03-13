@@ -448,7 +448,7 @@
   Supports O(log n) push/peek/pop operations, plus parallel fold.
 
   Options:
-    :comparator - priority comparator (default: < for min-heap)
+    :comparator - priority comparator (default: compare, natural ordering)
 
   Examples:
     (priority-queue [[1 :urgent] [5 :low] [3 :medium]])
