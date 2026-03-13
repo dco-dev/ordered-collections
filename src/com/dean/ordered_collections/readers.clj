@@ -27,12 +27,30 @@
   [coll]
   (oc/interval-map coll))
 
+(defn range-map
+  "Reader function for #ordered/range-map [[[lo hi] v] ...]"
+  [coll]
+  (oc/range-map coll))
+
+(defn priority-queue
+  "Reader function for #ordered/priority-queue [[priority value] ...]"
+  [coll]
+  (oc/priority-queue coll))
+
+(defn ordered-multiset
+  "Reader function for #ordered/multiset [...]"
+  [coll]
+  (oc/ordered-multiset coll))
+
 (def readers
   "Map of tag symbols to reader functions.
    Pass to clojure.edn/read-string as the :readers option:
 
      (clojure.edn/read-string {:readers readers} s)"
-  {'ordered/set          ordered-set
-   'ordered/map          ordered-map
-   'ordered/interval-set interval-set
-   'ordered/interval-map interval-map})
+  {'ordered/set            ordered-set
+   'ordered/map            ordered-map
+   'ordered/interval-set   interval-set
+   'ordered/interval-map   interval-map
+   'ordered/range-map      range-map
+   'ordered/priority-queue priority-queue
+   'ordered/multiset       ordered-multiset})
