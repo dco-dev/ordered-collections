@@ -292,6 +292,15 @@
   "Return the aggregate over the entire tree. O(1) time."
   proto/aggregate)
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Literal Representation
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defmethod print-method SegmentTree [^SegmentTree st ^java.io.Writer w]
+  (.write w "#<SegmentTree ")
+  (print-method (into {} (seq st)) w)
+  (.write w ">"))
+
 ;; Convenience constructors for common operations
 
 (defn sum-tree

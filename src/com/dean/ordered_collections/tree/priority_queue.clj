@@ -246,15 +246,16 @@
   "Create a priority queue from [priority value] pairs.
 
   Options:
-    :comparator - priority comparator (default: < for min-heap)
+    :comparator - priority comparator (default: compare, natural ordering)
 
   Examples:
     (priority-queue [[1 :a] [3 :c] [2 :b]])           ; min-heap
     (priority-queue [[1 :a] [3 :c]] :comparator >)    ; max-heap"
-  [pairs & {:keys [comparator] :or {comparator clojure.core/compare}}]
-  (let [base-cmp (if (instance? Comparator comparator)
-                   comparator
-                   (order/compare-by comparator))
+  [pairs & {:keys [comparator]}]
+  (let [base-cmp (cond
+                   (nil? comparator)                order/normal-compare
+                   (instance? Comparator comparator) comparator
+                   :else                             (order/compare-by comparator))
         pq-cmp (make-pq-comparator base-cmp)
         empty-pq (PriorityQueue. (node/leaf) pq-cmp 0 {})]
     (push-all empty-pq pairs)))
@@ -264,10 +265,19 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmethod print-method PriorityQueue [^PriorityQueue pq ^java.io.Writer w]
-  (.write w "#PriorityQueue[")
-  (when-let [s (seq pq)]
-    (print-method (first s) w)
-    (doseq [x (rest s)]
-      (.write w " ")
-      (print-method x w)))
-  (.write w "]"))
+  (let [base-cmp (.-priority-cmp ^PriorityQueueComparator (.cmp pq))]
+    (if (order/default-comparator? base-cmp)
+      (do (.write w "#ordered/priority-queue [")
+          (when-let [s (seq pq)]
+            (print-method (first s) w)
+            (doseq [x (rest s)]
+              (.write w " ")
+              (print-method x w)))
+          (.write w "]"))
+      (do (.write w "#<PriorityQueue [")
+          (when-let [s (seq pq)]
+            (print-method (first s) w)
+            (doseq [x (rest s)]
+              (.write w " ")
+              (print-method x w)))
+          (.write w "]>")))))

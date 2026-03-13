@@ -395,5 +395,6 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmethod print-method FuzzyMap [m ^java.io.Writer w]
-  (.write w "#FuzzyMap")
-  (print-method (into {} (seq m)) w))
+  (.write w "#<FuzzyMap ")
+  (print-method (into {} (seq m)) w)
+  (.write w ">"))

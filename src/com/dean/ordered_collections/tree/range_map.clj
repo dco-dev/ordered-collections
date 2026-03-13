@@ -425,3 +425,18 @@
      ;; [0 100]:a becomes [0 25):a and [75 100):a"
   [rm rng]
   (proto/range-remove rm rng))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Literal Representation
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defmethod print-method RangeMap [^RangeMap m ^java.io.Writer w]
+  (.write w "#ordered/range-map [")
+  (let [s (seq m)]
+    (when s
+      (let [[k v] (first s)]
+        (print-method [(vec k) v] w))
+      (doseq [[k v] (rest s)]
+        (.write w " ")
+        (print-method [(vec k) v] w))))
+  (.write w "]"))

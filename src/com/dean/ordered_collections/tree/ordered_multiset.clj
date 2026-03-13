@@ -319,10 +319,18 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmethod print-method OrderedMultiset [^OrderedMultiset ms ^java.io.Writer w]
-  (.write w "#OrderedMultiset[")
-  (when-let [s (seq ms)]
-    (print-method (first s) w)
-    (doseq [x (rest s)]
-      (.write w " ")
-      (print-method x w)))
-  (.write w "]"))
+  (if (order/default-comparator? (.base-cmp ms))
+    (do (.write w "#ordered/multiset [")
+        (when-let [s (seq ms)]
+          (print-method (first s) w)
+          (doseq [x (rest s)]
+            (.write w " ")
+            (print-method x w)))
+        (.write w "]"))
+    (do (.write w "#<OrderedMultiset [")
+        (when-let [s (seq ms)]
+          (print-method (first s) w)
+          (doseq [x (rest s)]
+            (.write w " ")
+            (print-method x w)))
+        (.write w "]>"))))

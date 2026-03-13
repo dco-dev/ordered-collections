@@ -322,11 +322,21 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmethod print-method OrderedMap [^OrderedMap m ^java.io.Writer w]
-  (.write w "#ordered/map [")
-  (let [s (seq m)]
-    (when s
-      (print-method (vec (first s)) w)
-      (doseq [e (rest s)]
-        (.write w " ")
-        (print-method (vec e) w))))
-  (.write w "]"))
+  (if (order/default-comparator? (.getCmp ^IOrderedCollection m))
+    (do (.write w "#ordered/map [")
+        (let [s (seq m)]
+          (when s
+            (print-method (vec (first s)) w)
+            (doseq [e (rest s)]
+              (.write w " ")
+              (print-method (vec e) w))))
+        (.write w "]"))
+    (do (.write w "#<OrderedMap {")
+        (let [s (seq m)]
+          (when s
+            (let [[k v] (first s)]
+              (print-method k w) (.write w " ") (print-method v w))
+            (doseq [[k v] (rest s)]
+              (.write w ", ")
+              (print-method k w) (.write w " ") (print-method v w))))
+        (.write w "}>"))))

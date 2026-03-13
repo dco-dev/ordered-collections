@@ -351,5 +351,6 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmethod print-method FuzzySet [s ^java.io.Writer w]
-  (.write w "#FuzzySet")
-  (print-method (vec (seq s)) w))
+  (.write w "#<FuzzySet ")
+  (print-method (vec (seq s)) w)
+  (.write w ">"))
