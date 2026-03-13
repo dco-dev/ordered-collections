@@ -14,7 +14,7 @@
                                   [com.clojure-goes-fast/clj-memory-meter "0.3.0"]
                                   [com.google.guava/guava "33.0.0-jre"]]
                    :jvm-opts ["-Djdk.attach.allowAttachSelf"
-                                    "-XX:+EnableDynamicAgentLoading"]}}
+                              "-XX:+EnableDynamicAgentLoading"]}}
 
   :plugins [[lein-codox "0.10.8"]
             [lein-ancient "0.7.0"]
