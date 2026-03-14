@@ -1,4 +1,4 @@
-(ns com.dean.ordered-collections.tree.interop
+(ns com.dean.ordered-collections.types.interop
   "Protocol extensions for interoperability with standard Clojure collections.
 
    Extends ordered-collections protocols to:

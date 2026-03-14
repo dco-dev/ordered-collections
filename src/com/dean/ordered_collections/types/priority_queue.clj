@@ -1,4 +1,4 @@
-(ns com.dean.ordered-collections.tree.priority-queue
+(ns com.dean.ordered-collections.types.priority-queue
   "Persistent priority queue implemented using weight-balanced trees.
 
   A priority queue maps priorities to values. Each element is a [priority value]

@@ -1,4 +1,4 @@
-(ns com.dean.ordered-collections.tree.range-map
+(ns com.dean.ordered-collections.types.range-map
   "A map from non-overlapping ranges to values.
 
    Unlike IntervalMap (which allows overlapping intervals), RangeMap enforces

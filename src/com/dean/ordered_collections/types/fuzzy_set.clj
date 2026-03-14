@@ -1,4 +1,4 @@
-(ns com.dean.ordered-collections.tree.fuzzy-set
+(ns com.dean.ordered-collections.types.fuzzy-set
   "A set that returns the closest element to a query.
 
    When looking up a value, returns the element in the set that is closest

@@ -1,4 +1,4 @@
-(ns com.dean.ordered-collections.tree.ordered-multiset
+(ns com.dean.ordered-collections.types.ordered-multiset
   "Persistent sorted multiset (bag) implemented using weight-balanced trees.
 
   Unlike ordered-set, allows duplicate elements. Elements with the same

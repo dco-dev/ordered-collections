@@ -1,4 +1,4 @@
-(ns com.dean.ordered-collections.tree.fuzzy-map
+(ns com.dean.ordered-collections.types.fuzzy-map
   "A map that returns the value associated with the closest key.
 
    When looking up a key, returns the value for the key in the map that is
@@ -7,7 +7,7 @@
    Tie-breaking: When two keys are equidistant, use :< to prefer the
    smaller key, or :> to prefer the larger key."
   (:require [clojure.core.reducers       :as r :refer [coll-fold]]
-            [com.dean.ordered-collections.tree.fuzzy-set :as fuzzy]
+            [com.dean.ordered-collections.types.fuzzy-set :as fuzzy]
             [com.dean.ordered-collections.tree.node     :as node]
             [com.dean.ordered-collections.tree.order    :as order]
             [com.dean.ordered-collections.protocol      :as proto :refer [PRanked]]

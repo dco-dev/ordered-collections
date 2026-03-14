@@ -15,7 +15,7 @@
                      gen-int-map-entries gen-non-empty-int-map-entries
                      gen-test-symbol
                      ->ts ->hs ->os ->tm ->om]]
-            [com.dean.ordered-collections.tree.interop]
+            [com.dean.ordered-collections.types.interop]
             [com.dean.ordered-collections.protocol :as proto]))
 
 

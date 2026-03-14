@@ -1,4 +1,4 @@
-(ns com.dean.ordered-collections.tree.segment-tree
+(ns com.dean.ordered-collections.types.segment-tree
   "A segment tree for efficient range aggregate queries.
 
    Supports O(log n) point updates and O(log n) range queries for any

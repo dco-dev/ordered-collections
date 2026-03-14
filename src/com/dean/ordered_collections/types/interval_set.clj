@@ -1,4 +1,4 @@
-(ns com.dean.ordered-collections.tree.interval-set
+(ns com.dean.ordered-collections.types.interval-set
   (:require [clojure.core.reducers       :as r :refer [coll-fold]]
             [clojure.set]
             [com.dean.ordered-collections.tree.interval :as interval]

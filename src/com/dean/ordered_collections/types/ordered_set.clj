@@ -1,4 +1,4 @@
-(ns com.dean.ordered-collections.tree.ordered-set
+(ns com.dean.ordered-collections.types.ordered-set
   (:require [clojure.core.reducers       :as r :refer [coll-fold]]
             [clojure.set]
             [com.dean.ordered-collections.tree.node     :as node]
