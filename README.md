@@ -5,7 +5,7 @@
 Fast, complete ordered collections. Drop-in replacements for
 `sorted-set` and `sorted-map` — with O(log n) positional access,
 parallel fold, and specialized collections for problems you didn't know
-you could solve:
+you could solve efficiently:
 
 - **Interval maps** for overlap queries ("what's scheduled at 3pm?")
 - **Range maps** for non-overlapping regions ("which subnet owns this IP?")
@@ -13,7 +13,7 @@ you could solve:
 - **Fuzzy collections** for nearest-neighbor lookup ("snap 9.3 to the closest valid size")
 - **Priority queues**, **multisets**, and more
 
-All built from scratch from an extensible weight-balanced tree platform and shared
+All built from a fast, modular, extensible weight-balanced tree platform with shared
 foundation for splitting, joining, and parallel operations.
 
 ![tests](https://github.com/dco-dev/ordered-collections/actions/workflows/clojure.yml/badge.svg)
@@ -65,33 +65,32 @@ hood — and in the new operations described below.
 ## Performance
 
 Faster than both `sorted-set` and `data.avl` at every cardinality measured.
-Set algebra is the standout — Adams' split-based algorithm with fork-join
-parallelism delivers order-of-magnitude gains even at modest sizes.
+Set algebra is the standout — Adams' split-based algorithm delivers
+order-of-magnitude gains even at modest sizes.
 
 ### vs sorted-set (speedup)
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Construction | **2.3x** | **2.2x** | **1.9x** |
-| Lookup | 1.3x | 1.4x | 1.1x |
-| Union | **9.8x** | **7.2x** | **5.3x** |
-| Intersection | **6.7x** | **5.2x** | **3.4x** |
-| Difference | **7.8x** | **6.1x** | **3.3x** |
-| Fold | **6.8x** | **13.9x** | — |
+| Construction | **2.4x** | **2.1x** | **2.2x** |
+| Lookup | 1.2x | 1.1x | 1.1x |
+| Union | **9.3x** | **10.7x** | **7.1x** |
+| Intersection | **7.2x** | **7.7x** | **5.1x** |
+| Difference | **8.6x** | **12.7x** | **6.4x** |
+| Fold | **4.4x** | **14.7x** | **11.5x** |
 
 ### vs data.avl (speedup)
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **7.5x** | **5.4x** | **3.2x** |
-| Intersection | **4.8x** | **3.8x** | **2.1x** |
-| Difference | **5.1x** | **3.1x** | **2.5x** |
-| Split | **2.7x** | **3.5x** | **4.2x** |
-| Fold | 1.2x | **3.3x** | — |
-| Construction | 1.2x | 1.2x | **1.8x** |
+| Union | **6.1x** | **10.3x** | **7.4x** |
+| Intersection | **5.1x** | **5.2x** | **4.2x** |
+| Difference | **5.5x** | **7.0x** | **4.2x** |
+| Split | **3.1x** | **3.7x** | **3.8x** |
+| Fold | 1.4x | **5.0x** | **3.9x** |
+| Construction | 1.1x | 1.0x | **1.6x** |
 
-*N=10K/100K: [Criterium](https://github.com/hugoduncan/criterium) (60 samples).
-N=500K: informal bench (10 iterations).
+*[Criterium](https://github.com/hugoduncan/criterium) at all sizes.
 See [Benchmarks](doc/benchmarks.md) for full results.*
 
 ### Beyond speed
@@ -109,7 +108,7 @@ See [Benchmarks](doc/benchmarks.md) for full results.*
 
 ## How It Works
 
-The core is a **weight-balanced binary tree**.  Each node stores its subtree size, enabling O(log n) positional access and efficient parallel decomposition.
+The core is a **weight-balanced binary tree**.  Each node knows its subtree size, enabling O(log n) positional access and efficient parallel decomposition.
 
 **Split and join** are the fundamental primitives — splitting at a key produces two trees in O(log n); joining is also O(log n). Set operations, subrange extraction, and parallel fold all reduce to split/join. Set operations use Adams' divide-and-conquer algorithm (1992) extended with the parallel join-based approach from Blelloch, Ferizovic & Sun (2016).
 
@@ -294,14 +293,29 @@ All collection types implement `CollFold` for efficient `r/fold`:
 ```
 $ lein test
 
-Ran 421 tests containing 466,000+ assertions.
+Ran 430 tests containing 466,000+ assertions.
 0 failures, 0 errors.
 ```
 
 The test suite includes generative tests via `test.check` and equivalence
 tests against `sorted-set`, `sorted-map`, and `clojure.data.avl`.
-Benchmarks use [Criterium](https://github.com/hugoduncan/criterium) for
-statistically rigorous measurements.
+
+### Benchmarks
+
+```
+$ lein bench                  # Criterium, N=100K (~3 min)
+$ lein bench --full           # Criterium, N=10K,100K,500K (~13 min)
+$ lein bench --readme --full  # README tables only (~5 min)
+$ lein bench --sizes 50000    # Custom sizes
+
+$ lein bench-simple           # Quick iteration bench (100 to 100K)
+$ lein bench-simple --full    # Full suite (100 to 1M)
+$ lein bench-range-map        # Range-map vs Guava TreeRangeMap
+$ lein bench-parallel         # Parallel threshold crossover analysis
+```
+
+[Criterium](https://github.com/hugoduncan/criterium) results are written to
+`bench-results/<timestamp>.edn`.
 
 ---
 
