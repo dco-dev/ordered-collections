@@ -1,4 +1,4 @@
-(defproject com.dean/ordered-collections "0.2.0"
+(defproject com.dean/ordered-collections "0.2.0-SNAPSHOT"
   :description "Persistent Weight-Balanced Sorted Collections for Clojure"
   :author       "Dan Lentz"
   :url "http://github.com/dco-dev/ordered-collections"
