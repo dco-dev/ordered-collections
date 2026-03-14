@@ -1629,7 +1629,10 @@
                      (node-map-merge r1 r merge-fn))))))
 
 (defn node-map-merge-parallel
-  "Parallel map merge. Uses fork-join parallelism for large trees."
+  "Parallel map merge using ForkJoinPool.
+
+   Algorithm: Split T1 at T2's root key, recursively merge subtrees,
+   resolve collisions with merge-fn. Fork-join parallelism for large trees."
   [n1 n2 merge-fn]
   (let [cmp order/*compare*
         join *t-join*]
@@ -1640,7 +1643,6 @@
                 :else (binding [order/*compare* cmp *t-join* join]
                         (kvlr [ak av l r] n2
                           (let [[l1 x r1] (node-split n1 ak)
-                                ;; x is (list k v) when key exists, nil otherwise
                                 val (if x (merge-fn ak av (second x)) av)]
                             (node-concat3 ak val
                               (merge-seq l1 l)
@@ -1663,12 +1665,15 @@
                     (binding [order/*compare* cmp *t-join* join]
                       (kvlr [ak av l r] n2
                         (let [[l1 x r1] (node-split n1 ak)
-                              val (if x (merge-fn ak av (second x)) av)
-                              left-future (future (merge-par l1 l))
-                              right-result (merge-par r1 r)
-                              left-result @left-future]
-                          (node-concat3 ak val left-result right-result))))))))]
-      (merge-par n1 n2))))
+                              val (if x (merge-fn ak av (second x)) av)]
+                          (fork-join [left-result (merge-par l1 l)
+                                      right-result (merge-par r1 r)]
+                            (node-concat3 ak val left-result right-result)))))))))]
+      (if (ForkJoinTask/inForkJoinPool)
+        (merge-par n1 n2)
+        (.invoke fork-join-pool
+          (proxy [RecursiveTask] []
+            (compute [] (merge-par n1 n2))))))))
 
 (def node-map-compare (partial node-compare :kv))
 
