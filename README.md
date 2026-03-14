@@ -100,7 +100,7 @@ See [Benchmarks](doc/benchmarks.md) for full results.*
 | `nth` / rank | — | O(log n) | O(log n) |
 | `nearest` / subrange | — | O(log n) | O(log n) |
 | `split` | — | O(log n) | O(log n) |
-| Parallel `r/fold` | Sequential | Sequential | **Fork-join** |
+| Parallel `r/fold` | Sequential | Sequential | **Parallel** |
 | Intervals / ranges / segments | — | — | **Built-in** |
 
 ---
