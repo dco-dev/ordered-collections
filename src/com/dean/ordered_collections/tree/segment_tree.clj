@@ -39,7 +39,8 @@
   (:require [com.dean.ordered-collections.tree.node     :as node]
             [com.dean.ordered-collections.tree.order    :as order]
             [com.dean.ordered-collections.tree.protocol :as proto]
-            [com.dean.ordered-collections.tree.tree     :as tree])
+            [com.dean.ordered-collections.tree.tree     :as tree]
+            [com.dean.ordered-collections.tree.util     :refer [defalias]])
   (:import  [clojure.lang ILookup Associative IPersistentCollection Seqable
              Counted IFn IMeta IObj MapEntry Murmur3]
             [com.dean.ordered_collections.tree.protocol PRangeAggregate]))
@@ -275,7 +276,7 @@
          (reduce (fn [n [k v]] (tree/node-add n k v)) (node/leaf) coll)
          op identity creator cmp {})))))
 
-(def query
+(defalias query
   "Query the aggregate over index range [lo, hi] inclusive.
    O(log n) time.
 
@@ -285,7 +286,7 @@
      (query st 1 2)  ; => 50"
   proto/aggregate-range)
 
-(def update-val
+(defalias update-val
   "Update the value at index k. O(log n) time.
 
    Example:
@@ -294,7 +295,7 @@
      (query st' 0 2)  ; => 140"
   proto/update-val)
 
-(def update-fn
+(defalias update-fn
   "Update the value at index k by applying f to the current value.
    O(log n) time.
 
@@ -304,7 +305,7 @@
      (query st' 0 2)  ; => 80"
   proto/update-fn)
 
-(def aggregate
+(defalias aggregate
   "Return the aggregate over the entire tree. O(1) time."
   proto/aggregate)
 

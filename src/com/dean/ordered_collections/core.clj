@@ -17,7 +17,8 @@
             [com.dean.ordered-collections.tree.protocol             :as proto]
             [com.dean.ordered-collections.tree.range-map            :as rmap]
             [com.dean.ordered-collections.tree.segment-tree         :as segtree]
-            [com.dean.ordered-collections.tree.tree                 :as tree])
+            [com.dean.ordered-collections.tree.tree                 :as tree]
+            [com.dean.ordered-collections.tree.util                 :refer [defalias]])
   (:import  [com.dean.ordered_collections.tree.ordered_map OrderedMap]
             [com.dean.ordered_collections.tree.ordered_set OrderedSet]
             [com.dean.ordered_collections.tree.root INodeCollection IOrderedCollection IBalancedCollection]))
@@ -27,22 +28,22 @@
 ;; Comparators
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def long-compare
+(defalias long-compare
   "Specialized java.util.Comparator for Long keys.
    Uses Long/compare directly for ~15-25% faster comparisons than default."
   order/long-compare)
 
-(def double-compare
+(defalias double-compare
   "Specialized java.util.Comparator for Double keys.
    Uses Double/compare directly for faster numeric comparisons."
   order/double-compare)
 
-(def string-compare
+(defalias string-compare
   "Specialized java.util.Comparator for String keys.
    Uses String.compareTo directly for faster string comparisons."
   order/string-compare)
 
-(def compare-by
+(defalias compare-by
   "Given a predicate that defines a total order (e.g., <), return a java.util.Comparator.
    Example: (compare-by <) returns a comparator for ascending order."
   order/compare-by)
@@ -51,7 +52,7 @@
 ;; Set Algebra
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def union
+(defalias union
   "Return a set that is the union of the input sets.
 
    For ordered-sets: Uses Adams' divide-and-conquer algorithm with parallel
@@ -64,7 +65,7 @@
      (union s1 s2 s3)                                  ; multiple sets"
   proto/union)
 
-(def intersection
+(defalias intersection
   "Return a set that is the intersection of the input sets.
 
    For ordered-sets: Uses Adams' divide-and-conquer algorithm with parallel
@@ -76,7 +77,7 @@
      (intersection (ordered-set [1 2 3]) (ordered-set [2 3 4]))  ; #{2 3}"
   proto/intersection)
 
-(def difference
+(defalias difference
   "Return a set that is s1 without elements in s2.
 
    For ordered-sets: Uses Adams' divide-and-conquer algorithm with parallel
@@ -88,7 +89,7 @@
      (difference (ordered-set [1 2 3]) (ordered-set [2]))  ; #{1 3}"
   proto/difference)
 
-(def subset?
+(defalias subset?
   "True if s1 is a subset of s2 (every element of s1 is in s2).
 
    Examples:
@@ -96,14 +97,14 @@
      (subset? (ordered-set [1 4]) (ordered-set [1 2 3]))  ; false"
   proto/subset?)
 
-(def superset?
+(defalias superset?
   "True if s1 is a superset of s2 (s1 contains every element of s2).
 
    Examples:
      (superset? (ordered-set [1 2 3]) (ordered-set [1 2]))  ; true"
   proto/superset?)
 
-(def disjoint?
+(defalias disjoint?
   "True if s1 and s2 share no elements.
    Short-circuits on the first common element found.
 
@@ -331,7 +332,7 @@
   ([^java.util.Comparator comparator coll]
    (ordered-map* comparator coll)))
 
-(def assoc-new
+(defalias assoc-new
   "Associate key with value only if key is not already present.
    Returns the new collection with the key added, or the original
    collection unchanged if the key already exists.
@@ -341,7 +342,7 @@
      (assoc-new m :existing-key :v) ; => m (unchanged)"
   proto/assoc-new)
 
-(def ordered-merge-with
+(defalias ordered-merge-with
   "Merge ordered maps with a function to resolve conflicts.
    When the same key appears in multiple maps, (f key val-in-result val-in-latter) is called.
    Uses parallel divide-and-conquer for large maps (threshold: 10000 elements).
@@ -387,7 +388,7 @@
                  coll))
        cmp alloc nil {}))))
 
-(def overlapping
+(defalias overlapping
   "Return all intervals overlapping the given point or interval.
    Works with interval-set and interval-map.
 
@@ -400,7 +401,7 @@
      (overlapping imap 5)           ; entries for intervals containing 5"
   proto/overlapping)
 
-(def span
+(defalias span
   "Return [min-start max-end] covering all intervals, or nil if empty.
    Works with interval-set and interval-map.
 
@@ -428,7 +429,7 @@
   [pairs & opts]
   (apply pq/priority-queue pairs opts))
 
-(def push
+(defalias push
   "Add an element to a priority queue with the given priority.
   (push pq priority value) => new-pq
 
@@ -436,40 +437,40 @@
     (push pq 1 :urgent)"
   pq/push)
 
-(def push-all
+(defalias push-all
   "Add multiple [priority value] pairs to a priority queue.
   (push-all pq [[p1 v1] [p2 v2]]) => new-pq"
   pq/push-all)
 
-(def peek-min
+(defalias peek-min
   "Return [priority value] of the minimum element.
   (peek-min pq) => [priority value] or nil"
   pq/peek-min)
 
-(def peek-val
+(defalias peek-val
   "Return just the value (not priority) of the minimum element.
   (peek-val pq) => value or nil
 
   Note: (peek-min pq) returns [priority value]."
   pq/peek-val)
 
-(def pop-min
+(defalias pop-min
   "Remove the minimum-priority element.
   Returns the queue unchanged if empty.
   (pop-min pq) => new-pq"
   pq/pop-min)
 
-(def peek-max
+(defalias peek-max
   "Return [priority value] of the maximum element.
   (peek-max pq) => [priority value] or nil"
   pq/peek-max)
 
-(def peek-max-val
+(defalias peek-max-val
   "Return just the value of the maximum element.
   (peek-max-val pq) => value or nil"
   pq/peek-max-val)
 
-(def pop-max
+(defalias pop-max
   "Remove the maximum-priority element.
   Returns the queue unchanged if empty.
   (pop-max pq) => new-pq"
@@ -500,27 +501,27 @@
   [comparator coll]
   (multiset/ordered-multiset-by comparator coll))
 
-(def multiplicity
+(defalias multiplicity
   "Return the number of occurrences of x in a multiset.
   (multiplicity ms x) => count"
   multiset/multiplicity)
 
-(def disj-one
+(defalias disj-one
   "Remove one occurrence of x from a multiset.
   (disj-one ms x) => new-ms"
   multiset/disj-one)
 
-(def disj-all
+(defalias disj-all
   "Remove all occurrences of x from a multiset.
   (disj-all ms x) => new-ms"
   multiset/disj-all)
 
-(def distinct-elements
+(defalias distinct-elements
   "Return a lazy seq of distinct elements in sorted order.
   (distinct-elements ms) => seq"
   multiset/distinct-elements)
 
-(def element-frequencies
+(defalias element-frequencies
   "Return a map of {element -> count} for all elements.
   (element-frequencies ms) => map"
   multiset/element-frequencies)
@@ -649,18 +650,18 @@
         {}))))
 
 ;; Re-export fuzzy-specific functions via protocol
-(def fuzzy-nearest
+(defalias fuzzy-nearest
   "Find the nearest element/entry and its distance.
    For fuzzy-set: (fuzzy-nearest fs query) => [element distance]
    For fuzzy-map: (fuzzy-nearest fm query) => [key value distance]"
   proto/nearest-with-distance)
 
-(def fuzzy-exact-contains?
+(defalias fuzzy-exact-contains?
   "Check if the fuzzy collection contains exactly the given element/key.
    Unlike regular lookup, this does not do fuzzy matching."
   proto/exact-contains?)
 
-(def fuzzy-exact-get
+(defalias fuzzy-exact-get
   "Get the value for exactly the given key (no fuzzy matching).
    Only for fuzzy-map."
   proto/exact-get)
@@ -677,17 +678,17 @@
   (let [r (proto/rank-of coll x)]
     (when-not (neg? r) r)))
 
-(def slice
+(defalias slice
   "Return elements from index start (inclusive) to end (exclusive). O(log n + k).
    Works on any collection implementing PRanked."
   proto/slice)
 
-(def median
+(defalias median
   "Return the median element. O(log n).
    Works on any collection implementing PRanked."
   proto/median)
 
-(def percentile
+(defalias percentile
   "Return element at given percentile (0-100). O(log n).
    Works on any collection implementing PRanked."
   proto/percentile)
@@ -696,7 +697,7 @@
 ;; Range Map
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def range-map
+(defalias range-map
   "Create a map from non-overlapping ranges to values.
 
    Unlike interval-map, ranges never overlap. Inserting a range removes
@@ -711,19 +712,19 @@
      (assoc rm [5 25] :c)  ; splits existing ranges"
   rmap/range-map)
 
-(def ranges
+(defalias ranges
   "Return seq of [range value] pairs from a range-map."
   rmap/ranges)
 
-(def spanning-range
+(defalias spanning-range
   "Return [lo hi] spanning all ranges in a range-map, or nil if empty."
   rmap/spanning-range)
 
-(def gaps
+(defalias gaps
   "Return a seq of [lo hi) ranges that have no mapping in a range-map."
   rmap/gaps)
 
-(def assoc-coalescing
+(defalias assoc-coalescing
   "Insert range with coalescing. Adjacent ranges with the same value
    are automatically merged. Equivalent to Guava's putCoalescing.
 
@@ -737,7 +738,7 @@
      ;; => single range [0 200) :a"
   rmap/assoc-coalescing)
 
-(def get-entry
+(defalias get-entry
   "Return [range value] for the range containing point x, or nil.
    Equivalent to Guava's getEntry(K).
 
@@ -745,7 +746,7 @@
      (get-entry rm 50) ;; => [[0 100] :a]"
   rmap/get-entry)
 
-(def range-remove
+(defalias range-remove
   "Remove all mappings in the given range [lo hi).
    Any overlapping ranges are trimmed; ranges fully contained are removed.
    Equivalent to Guava's remove(Range).
@@ -759,7 +760,7 @@
 ;; Segment Tree
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def segment-tree
+(defalias segment-tree
   "Create a segment tree for O(log n) range aggregate queries.
 
    Arguments:
@@ -772,31 +773,31 @@
      (query st 1 3)  ; => 90 (sum of indices 1,2,3)"
   segtree/segment-tree)
 
-(def sum-tree
+(defalias sum-tree
   "Create a segment tree for range sums."
   segtree/sum-tree)
 
-(def min-tree
+(defalias min-tree
   "Create a segment tree for range minimum queries."
   segtree/min-tree)
 
-(def max-tree
+(defalias max-tree
   "Create a segment tree for range maximum queries."
   segtree/max-tree)
 
-(def query
+(defalias query
   "Query aggregate over [lo, hi] inclusive. O(log n)."
   segtree/query)
 
-(def aggregate
+(defalias aggregate
   "Return aggregate over entire segment tree. O(1)."
   segtree/aggregate)
 
-(def update-val
+(defalias update-val
   "Update value at index k. O(log n)."
   segtree/update-val)
 
-(def update-fn
+(defalias update-fn
   "Update value at index k by applying f. O(log n)."
   segtree/update-fn)
 
