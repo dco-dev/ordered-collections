@@ -1,10 +1,8 @@
 # Algorithms
 
-This document describes the algorithms used in this library.
+## Weight-Balanced Trees
 
-## Core Data Structure: Weight-Balanced Trees
-
-Each node stores: key, value, left child, right child, and subtree weight.
+Each node stores a key, value, left and right children, and **subtree weight** (= 1 + size(left) + size(right)). Specialized node types exist for performance: `LongKeyNode` (unboxed `long` key), `DoubleKeyNode` (unboxed `double` key), and `IntervalNode` (additional max-endpoint field for interval augmentation).
 
 ```
         ┌─────────────────┐
@@ -26,78 +24,40 @@ Each node stores: key, value, left child, right child, and subtree weight.
  wt:1   wt:1          wt:1   wt:1
 ```
 
-**Weight = 1 + left.weight + right.weight.** Leaves have weight 0 (represented as nil/sentinel).
-
-The weight field enables O(log n) positional access (`nth`): to find the i-th element, compare i against the left subtree's weight and recurse accordingly.
+Leaves are a sentinel value (weight 0). The weight field serves double duty: it *is* the balance invariant and it enables O(log n) positional access.
 
 ## Balance Invariant
 
-Using Hirai-Yamamoto parameters (δ=3, γ=2):
+Hirai-Yamamoto parameters (δ=3, γ=2):
 
 ```
-size(left) + 1 ≤ δ × (size(right) + 1)
-size(right) + 1 ≤ δ × (size(left) + 1)
+weight(left)  + 1 ≤ δ × (weight(right) + 1)
+weight(right) + 1 ≤ δ × (weight(left)  + 1)
 ```
 
-No subtree can be more than 3× the size of its sibling. When an operation violates this, we rebalance with rotations.
+No subtree can be more than 3× its sibling's weight. When violated, `stitch-wb` applies a single or double rotation:
 
-**Balanced example:**
-```
-       [50]
-      wt: 7
-     /     \
-  [25]     [75]
-  wt:3     wt:3
-
-Left: 3, Right: 3
-Check: 3+1 ≤ 3×(3+1) → 4 ≤ 12 ✓
-```
-
-**Unbalanced example:**
-```
-       [50]
-      wt: 9
-     /     \
-  [25]     [75]
-  wt:7     wt:1
-
-Left: 7, Right: 1
-Check: 7+1 ≤ 3×(1+1) → 8 ≤ 6 ✗
-```
-
-## Rotations
-
-**Single right rotation** — when the left subtree is heavy and its left child is the cause:
+- **Single rotation** when the heavy child's *outer* subtree dominates (checked via γ)
+- **Double rotation** when the heavy child's *inner* subtree dominates
 
 ```
-BEFORE:                         AFTER:
-       [C]                           [A]
-      /   \                         /   \
-    [A]    z     ───────►          x    [C]
-   /   \         rotate-R              /   \
-  x    [B]                           [B]    z
+Single right:                Double right:
+       [C]       [A]              [C]           [B]
+      /   \     /   \            /   \         /   \
+    [A]    z  x    [C]         [A]    z      [A]   [C]
+   /   \          /   \       /   \         /  \   /  \
+  x    [B]      [B]    z    w    [B]       w   x  y   z
+                                /   \
+                               x     y
 ```
 
-**Double rotation** — when the left subtree is heavy but its *right* child is the cause:
-
-```
-BEFORE:              STEP 1:              AFTER:
-     [C]                [C]                  [B]
-    /   \              /   \                /   \
-  [A]    z    →      [B]    z    →       [A]   [C]
- /   \              /   \               /  \   /  \
-w    [B]          [A]    y             w   x  y   z
-    /   \        /   \
-   x     y      w     x
-```
-
-The γ parameter determines when to use single vs double rotation.
+Hirai & Yamamoto (2011) proved using Coq that (δ=3, γ=2) is the unique integer parameter pair guaranteeing O(log n) height and correct rebalancing for all insert/delete sequences. Height bound: ≤ log₃/₂ n ≈ 1.71 log₂ n.
 
 ## Split and Join
 
-These two operations are the foundation for everything else.
+Everything reduces to these two primitives.
 
-**Split** divides a tree at a key into three parts: left (keys < pivot), found (key = pivot or nil), right (keys > pivot).
+**Split** divides a tree at a key into (left, found, right):
 
 ```
 split(tree, 50):
@@ -118,178 +78,143 @@ split(tree, 50):
 [10]
 ```
 
-**Join** combines two trees where all keys in left < all keys in right:
+**Join** (`node-concat3`) combines two trees with a pivot key, rebalancing as needed. When the trees are similarly sized, the pivot becomes the root directly. When one side is much heavier, join walks down the heavy side until it finds a subtree of comparable weight, inserts the pivot there, and rebalances upward.
 
 ```
 join(left, 50, right):
 
- LEFT           RIGHT
-  [25]           [75]
-  /  \           /  \
-[10] [30]     [60] [90]
-
-            ↓
-
-          [50]
-         /    \
-      [25]    [75]
-      /  \    /  \
-    [10][30][60][90]
+ LEFT           RIGHT             [50]
+  [25]           [75]            /    \
+  /  \           /  \    →    [25]    [75]
+[10] [30]     [60] [90]      /  \    /  \
+                            [10][30][60][90]
 ```
 
-Both operations are O(log n). The key insight: split and join preserve balance with only O(log n) rebalancing work.
+**Join without pivot** (`node-concat2`) extracts the greatest element from the left tree and uses it as the pivot for `node-concat3`. Used by intersection and difference when the split key is absent.
 
-## Positional Access: nth and rank
-
-Weight-balanced trees store subtree sizes, enabling efficient positional operations.
-
-### nth (index → element): O(log n)
-
-```
-nth(tree, 4):  Find 5th element (0-indexed)
-
-         [50, wt:7]
-        /          \
-   [25, wt:3]    [75, wt:3]
-     /   \         /   \
-   [10] [30]    [60]  [90]
-   wt:1 wt:1    wt:1  wt:1
-
-Step 1: i=4, left.weight=3
-        4 >= 3, so go right, i = 4 - 3 - 1 = 0
-
-Step 2: at [75], i=0, left.weight=1
-        0 < 1, so go left
-
-Step 3: at [60], i=0, left.weight=0
-        0 == 0, return 60
-
-Answer: 60
-```
-
-### rank (element → index): O(log n)
-
-Available in `ordered-set`, `ordered-map`, `fuzzy-set`, and `fuzzy-map`. Accumulates left subtree sizes while descending:
-
-```
-rank(tree, 60):
-
-         [50, wt:7]         rank = 0
-        /          \
-   [25, wt:3]    [75, wt:3]
-     /   \         /   \
-   [10] [30]    [60]  [90]
-
-Step 1: 60 > 50, rank += left.weight + 1 = 3 + 1 = 4
-Step 2: 60 < 75, keep rank = 4, go left
-Step 3: 60 == 60, rank += 0 = 4
-
-Answer: 4 (60 is the 5th element)
-```
-
-Both `nth` and `rank` are O(log n) operations available on `ordered-set`, `ordered-map`, `fuzzy-set`, and `fuzzy-map`.
-
-## Set Operations
-
-Union, intersection, and difference use Adams' divide-and-conquer approach, built on split and join:
-
-```
-intersection(A, B):
-  if empty(A) or empty(B): return empty
-
-  (left-B, found, right-B) = split(B, root(A).key)
-
-  left-result  = intersection(left(A), left-B)   ─┐
-  right-result = intersection(right(A), right-B) ─┴─ parallel!
-
-  if found:
-    return join(left-result, root(A).key, right-result)
-  else:
-    return concat(left-result, right-result)
-```
-
-The two recursive calls are independent and execute in parallel via fork-join. This is why the divide-and-conquer structure is powerful: parallelism falls out naturally.
-
-**Visual example:**
-
-```
-A = {1, 3, 5, 7, 9}         B = {2, 3, 5, 8}
-
-Split B at 5 (root of A):
-  left-B  = {2, 3}
-  found   = true (5 ∈ B)
-  right-B = {8}
-
-Recurse on (left-A, left-B) and (right-A, right-B)
-Join results with 5 in the middle
-
-Result = {3, 5}
-```
-
-Complexity: O(m log(n/m + 1)) where m ≤ n. This is **work-optimal**: it matches the information-theoretic lower bound. When m << n, it's nearly O(m); when m ≈ n, it's O(n). The naive approach of inserting m elements one-by-one would be O(m log n), which is worse when m is large.
+Both split and join are O(log n). The key property of weight-balanced trees: weight composes trivially — `weight(join(L, k, R)) = weight(L) + 1 + weight(R)` — so no auxiliary recomputation (height, color) is needed after joining. This gives WBTs lower constant factors for split/join than AVL or red-black trees.
 
 ## The Join-Based Paradigm
 
-A key insight from Blelloch et al.: **join is the universal primitive**. All tree operations reduce to split and join:
+All tree operations reduce to split and join (Adams 1992, Blelloch et al. 2016):
 
 | Operation | Implementation |
 |-----------|----------------|
-| insert(k) | split at k, join with new node |
+| insert(k, v) | split at k, join with new node |
 | delete(k) | split at k, join left and right |
-| union(A,B) | split B at root(A), recurse, join |
-| intersect(A,B) | split B at root(A), recurse, join if found |
-| difference(A,B) | split B at root(A), recurse, concat |
+| union(A, B) | split A at root(B), recurse on halves, join |
+| intersection(A, B) | split A at root(B), recurse, join if found, concat if not |
+| difference(A, B) | split A at root(B), recurse, concat halves |
 
-This unification means:
-- Balance logic lives only in `join`
-- All operations inherit O(log n) balancing automatically
-- Parallel algorithms follow naturally: the recursive calls on left and right subtrees are independent and can execute concurrently via fork-join
+Balance logic lives only in join. All operations inherit O(log n) balancing automatically.
 
-## Parallel Construction
+## Set Operations
 
-Building a tree from a collection uses fork-join parallelism:
+Union, intersection, and difference use Adams' divide-and-conquer:
 
 ```
-Input: [10, 25, 30, 50, 60, 75, 90]
+union(T₁, T₂):
+  if T₁ empty: return T₂
+  if T₂ empty: return T₁
+  (k, v) = root(T₂)
+  (L₁, _, R₁) = split(T₁, k)
+  return join(union(L₁, left(T₂)), k, v, union(R₁, right(T₂)))
 
-Step 1: Partition into chunks (via r/fold)
-  Chunk A: [10, 25, 30]    Chunk B: [50, 60, 75, 90]
+intersection(T₁, T₂):
+  if T₁ empty or T₂ empty: return ∅
+  (k, v) = root(T₂)
+  (L₁, present, R₁) = split(T₁, k)
+  L = intersection(L₁, left(T₂))
+  R = intersection(R₁, right(T₂))
+  if present: return join(L, k, v, R)
+  else:       return concat(L, R)
 
-Step 2: Build subtrees in parallel
-  Thread 1:              Thread 2:
-      [25]                   [60]
-      /  \                   /  \
-   [10]  [30]             [50]  [75]
-                                   \
-                                   [90]
-
-Step 3: Merge via union (which uses split + join)
-                [50]
-               /    \
-            [25]    [75]
-            /  \    /  \
-         [10][30][60] [90]
+difference(T₁, T₂):
+  if T₁ empty: return ∅
+  if T₂ empty: return T₁
+  (k, _) = root(T₂)
+  (L₁, _, R₁) = split(T₁, k)
+  return concat(difference(L₁, left(T₂)), difference(R₁, right(T₂)))
 ```
 
-This achieves O(n) work with O(n/p + log² n) span, compared to O(n log n) for sequential insertion.
+**Work complexity:** O(m log(n/m + 1)) where m ≤ n. This is information-theoretically optimal — it matches the comparison-based lower bound. When m ≪ n (e.g., merging a small set into a large one), this approaches O(m log n). When m ≈ n, it's O(n). The naive element-by-element insertion approach is always O(m log n), which is worse when m is large.
+
+### Parallelism
+
+The two recursive calls in each operation are independent. The implementation forks the left recursion as a `ForkJoinTask` and computes the right recursion inline, then joins:
+
+```
+fork-join:
+  left-task  = fork(union(L₁, left(T₂)))   ← submitted to ForkJoinPool
+  right-result = union(R₁, right(T₂))       ← computed inline
+  left-result  = left-task.join()            ← wait for fork
+  return join(left-result, k, v, right-result)
+```
+
+Two thresholds control granularity:
+- **`+parallel-threshold+` = 210,000**: when the combined subtree size falls below this, switch to sequential recursion (fork overhead exceeds benefit)
+- **`+sequential-cutoff+` = 64**: below this, use direct linear merge
+
+Span is O(log² n), giving near-linear speedup on many cores (Blelloch et al. 2016).
+
+## Positional Access
+
+Weight at each node enables O(log n) index operations without any additional data structure.
+
+### nth (index → element)
+
+```
+nth(tree, i):
+  left-size = weight(left)
+  if i < left-size:  recurse into left
+  if i == left-size: return this node
+  else:              recurse into right with i' = i - left-size - 1
+```
+
+### rank (element → index)
+
+Accumulate left subtree sizes while descending:
+
+```
+rank(tree, key):
+  acc = 0
+  if key < node.key: recurse left, keep acc
+  if key = node.key: return acc + weight(left)
+  if key > node.key: acc += weight(left) + 1, recurse right
+```
+
+### Derived operations
+
+- **slice(start, end)**: split-at start, split-at (end - start) on the right half
+- **median**: nth at ⌊n/2⌋
+- **percentile(p)**: nth at ⌊n × p / 100⌋
+
+All O(log n). Available on `ordered-set`, `ordered-map`, `fuzzy-set`, `fuzzy-map`.
+
+## Nearest (Floor / Ceiling)
+
+`ordered-set` and `ordered-map` implement directional nearest-neighbor via tree descent:
+
+| Test | Meaning |
+|------|---------|
+| `:<=` | floor — greatest element ≤ k |
+| `:<` | predecessor — greatest element < k |
+| `:>=` | ceiling — least element ≥ k |
+| `:>` | successor — least element > k |
+
+Standard BST descent with candidate tracking. O(log n).
 
 ## Parallel Fold
 
-The same split capability enables parallel aggregation:
+Collections implement `clojure.core.reducers/CollFold`. The tree is recursively split at the root: left and right subtrees are reduced in parallel via `ForkJoinPool`, results combined with the user's combining function.
 
-```
-         [50]               Fork:
-        /    \                Thread 1 → fold [10,25,30]
-     [25]    [75]             Thread 2 → fold [60,75,90]
-     /  \    /  \           Join:
-   [10][30][60][90]           combine(result1, result2)
-```
+Threshold: **`+fold-parallel-threshold+` = 8,192** (below this, sequential reduce).
 
-When a subtree exceeds a threshold size, `r/fold` submits it to a worker thread. This gives ~2x speedup on large collections.
+Span: O(n/p + log² n) where p = number of processors.
 
 ## Interval Tree Augmentation
 
-For interval queries, each node stores an additional field: the maximum endpoint in its subtree.
+`IntervalNode` adds a field `z`: the maximum right endpoint in the subtree. This is maintained during rotations — each node's `z` is the max of its own interval's endpoint and its children's `z` values.
 
 ```
       ┌─────────────────────┐
@@ -310,82 +235,69 @@ For interval queries, each node stores an additional field: the maximum endpoint
 max:2 max:6         max:10 max:15
 ```
 
-The max-end field enables efficient pruning: if `max-end < query-point`, no intervals in that subtree can overlap the query.
+### Query algorithm
 
-### Query Algorithm
+The implementation supports both point queries and interval-vs-interval overlap queries. Given a query interval `i`:
 
 ```
-find-overlapping(node, point):
-  if node is leaf: return []
+search(node, i):
+  if leaf: return
 
-  results = []
-  [lo, hi] = node.interval
+  # Search right if query's endpoint ≥ node's start point
+  if b(i) >= a(node.key):
+    search(right, i)
 
-  # Check this node
-  if lo <= point < hi:
-    results.add(node.interval)
+  # Check current node for intersection
+  if intersects?(i, node.key):
+    collect(node)
 
-  # Prune left subtree if max-end too small
-  if left.max-end > point:
-    results.addAll(find-overlapping(left, point))
-
-  # Prune right subtree if all intervals start after point
-  if point >= lo:  # some right intervals might overlap
-    results.addAll(find-overlapping(right, point))
-
-  return results
+  # Search left only if query's start ≤ max endpoint in left subtree
+  if a(i) <= left.z:
+    search(left, i)
 ```
+
+`intersects?` checks for any common point between two intervals (overlap, containment in either direction). The `z` field enables pruning: if `left.z < a(query)`, no interval in the left subtree can overlap the query.
 
 Complexity: O(log n + k) where k = number of matching intervals.
 
-## Range Map: Non-Overlapping Intervals
+Point queries are a special case: a point `p` is treated as the interval `[p, p]`.
 
-`range-map` enforces that ranges never overlap. When inserting a new range, overlapping portions of existing ranges are carved out.
+## Range Map
 
-### Carving Algorithm (assoc)
+`range-map` enforces non-overlapping ranges. Each point maps to exactly one value. Ranges are half-open: `[lo, hi)`.
+
+### Insert (assoc)
+
+Inserting `[25, 75) → :new` into a tree containing `[0, 100) → :a`:
 
 ```
-Insert [25, 75) into:
-    ┌──────────────────────────────────────────┐
-    │               [0, 100) → :a              │
-    └──────────────────────────────────────────┘
+Step 1: Find all ranges overlapping [25, 75)
+  → [[0, 100) → :a]
 
-Step 1: Find overlapping ranges
-    overlap = [[0,100) → :a]
+Step 2: Remove overlapping ranges from tree
 
-Step 2: Remove overlapping ranges
-    (empty tree)
-
-Step 3: Add back trimmed portions outside [25, 75)
-    [0, 25) → :a     [75, 100) → :a
+Step 3: Re-insert trimmed portions outside [25, 75)
+  → [0, 25) → :a,  [75, 100) → :a
 
 Step 4: Insert new range
-    [0, 25) → :a   [25, 75) → :new   [75, 100) → :a
+  → [0, 25) → :a,  [25, 75) → :new,  [75, 100) → :a
 ```
 
-### Coalescing Algorithm (assoc-coalescing)
+### Coalescing insert (assoc-coalescing)
 
-When inserting, check for adjacent ranges with the same value and merge them:
+When adjacent ranges have the same value, merge them:
 
 ```
-Before: [0, 50) → :a    [50, 100) → :a
-        ─────────────────────────────────
-        Two separate ranges
-
+Before: [0, 50) → :a    [50, 100) → :a   (two ranges)
 Insert [100, 150) → :a with coalescing:
-
-Step 1: Find adjacent-left: [50, 100) → :a (ends at 100, same value)
-Step 2: Find adjacent-right: none
-Step 3: Merge: remove [50, 100), insert [50, 150) → :a
-
-After:  [0, 50) → :a    [50, 150) → :a
+After:  [0, 50) → :a    [50, 150) → :a   (adjacent merged)
 ```
 
 Complexity: O(k log n) where k = number of overlapping/adjacent ranges.
 
-## Segment Tree: Range Aggregates
+## Segment Tree
 
-Each node stores a pre-computed aggregate of its entire subtree, enabling O(log n) range queries.
+Each `AggregateNode` stores a pre-computed aggregate (`agg`) of its entire subtree under a user-specified associative operation. Created via a custom node constructor that computes `agg = op(left.agg, op(value, right.agg))` at every node.
 
 ```
                 ┌─────────────┐
@@ -397,139 +309,93 @@ Each node stores a pre-computed aggregate of its entire subtree, enabling O(log 
     ┌──────┴──────┐         ┌──────┴──────┐
     │ key: 1      │         │ key: 4      │
     │ val: 20     │         │ val: 50     │
-    │ agg: 30 ◄───────      │ agg: 80 ◄───────
-    └──────┬──────┘   │     └──────┬──────┘   │
-           │          │            │          │
-    ┌──────┴──────┐   │     ┌──────┴──────┐   │
-    │ key: 0      │   │     │ key: 5      │   │
-    │ val: 10     │   │     │ val: 30     │   │
-    │ agg: 10     │   │     │ agg: 30     │   │
-    └─────────────┘   │     └─────────────┘   │
-                      │                       │
-           10 + 20 = 30              50 + 30 = 80
+    │ agg: 30     │         │ agg: 80     │
+    └──────┬──────┘         └──────┬──────┘
+           │                       │
+    ┌──────┴──────┐         ┌──────┴──────┐
+    │ key: 0      │         │ key: 5      │
+    │ val: 10     │         │ val: 30     │
+    │ agg: 10     │         │ agg: 30     │
+    └─────────────┘         └─────────────┘
 ```
 
-### Range Query Algorithm
+### Range query
+
+Two implementations: `query-range` (basic) and `query-range-fast` (uses subtree bounds to short-circuit).
 
 ```
-query(node, lo, hi):
-  if node is leaf: return identity
+query-range-fast(node, lo, hi):
+  if leaf: return identity
 
-  k = node.key
+  # Find subtree's actual key range
+  l-lo = min key in left subtree (or node.key if left is leaf)
+  r-hi = max key in right subtree (or node.key if right is leaf)
 
   # Entire subtree outside range
-  if subtree.max < lo or subtree.min > hi:
-    return identity
+  if r-hi < lo or l-lo > hi: return identity
 
-  # Entire subtree inside range - use pre-computed aggregate!
-  if lo <= subtree.min and subtree.max <= hi:
-    return node.agg
+  # Entire subtree inside range → use pre-computed aggregate!
+  if lo ≤ l-lo and r-hi ≤ hi: return node.agg
 
-  # Partial overlap - recurse
-  left-result  = query(left, lo, hi)
-  right-result = query(right, lo, hi)
-  this-result  = if lo <= k <= hi then node.val else identity
-
-  return op(left-result, op(this-result, right-result))
+  # Partial overlap → recurse
+  L = query-range-fast(left, lo, hi)
+  V = node.val if lo ≤ node.key ≤ hi, else identity
+  R = query-range-fast(right, lo, hi)
+  return op(L, op(V, R))
 ```
 
-The key insight: when a subtree is entirely within the query range, we use its pre-computed aggregate instead of visiting all nodes.
+The key optimization: when a subtree is entirely within the query range, return its `agg` directly instead of recursing. This gives O(log n) for both queries and updates.
 
-Complexity: O(log n) for both queries and updates.
+## Fuzzy Lookup
 
-## Fuzzy Lookup: Nearest Neighbor
-
-Fuzzy collections find the closest element when an exact match doesn't exist.
+Fuzzy collections find the closest element by distance. The algorithm uses split:
 
 ```
-Query: find nearest to 7 in {1, 5, 10, 20}
+find-nearest(tree, query):
+  (left, exact, right) = split(tree, query)
 
-Step 1: Split at query point
-   FLOOR (≤7)          CEILING (≥7)
-      [5]                  [10]
-      /                       \
-    [1]                      [20]
+  if exact: return exact
 
-Step 2: Find candidates
-   floor   = 5  (rightmost in left tree)
-   ceiling = 10 (leftmost in right tree)
+  floor   = greatest(left)    ← O(log n)
+  ceiling = least(right)      ← O(log n)
 
-Step 3: Compare distances
-   |7 - 5|  = 2
-   |7 - 10| = 3
-
-   Return 5 (closer)
+  return argmin(|query - floor|, |query - ceiling|)
 ```
 
-When equidistant, the tiebreaker (`:< `or `:>`) determines preference.
+When equidistant, a configurable tiebreaker (`:< ` or `:>`) determines preference. The `distance-fn` is also configurable (defaults to numeric absolute difference).
 
-**Invariant:** The nearest element by distance is always a sort-order neighbor (floor or ceiling). This allows O(log n) lookup via split.
+**Invariant:** The nearest element by distance is always a sort-order neighbor (floor or ceiling), so split gives us the only two candidates. O(log n).
 
-Complexity: O(log n).
+## Handling Duplicates
 
-## Handling Duplicates: Sequence Numbers
+`ordered-multiset` and `priority-queue` allow duplicate keys by appending an internal sequence counter.
 
-Both `ordered-multiset` and `priority-queue` allow duplicate values. They distinguish duplicates using an internal sequence counter.
+**Multiset** stores `[value, seqnum]` pairs. Comparison: first by value, then by seqnum. This gives stable insertion order for equal values and FIFO behavior on removal.
 
-### Multiset Entry Structure
-
-```
-Logical view: [3, 1, 4, 1, 5, 1]  (three 1s)
-
-Internal storage: [value, seqnum] pairs
-  [1, 0]  ← first 1 inserted
-  [1, 3]  ← second 1 inserted (seqnum 3)
-  [1, 5]  ← third 1 inserted (seqnum 5)
-  [3, 1]
-  [4, 2]
-  [5, 4]
-```
-
-Comparison: first by value, then by seqnum. This provides:
-- Stable insertion order for equal values
-- O(log n) operations (each entry is unique)
-- FIFO behavior for duplicates
-
-### Priority Queue Entry Structure
-
-```
-Entries: [priority, seqnum, value]
-
-Insert order: push(5, :a), push(3, :b), push(5, :c)
-
-Internal storage:
-  [3, 1, :b]  ← lowest priority first
-  [5, 0, :a]  ← first 5 inserted
-  [5, 2, :c]  ← second 5 inserted
-
-peek returns :b (priority 3)
-```
-
-Seqnum ensures FIFO ordering among equal priorities.
+**Priority queue** stores `[priority, seqnum, value]` triples. Sorted by priority first, then seqnum. `peek` returns the minimum-priority element; among equal priorities, the earliest inserted.
 
 ## Complexity Summary
 
 | Operation | Time | Notes |
 |-----------|------|-------|
 | Lookup | O(log n) | All collections |
-| Insert | O(log n) | Path copying |
-| Delete | O(log n) | Path copying |
-| nth | O(log n) | Via subtree weights |
-| rank | O(log n) | `ordered-set`, `ordered-map`, `fuzzy-*` |
-| Split | O(log n) | |
+| Insert / Delete | O(log n) | Persistent (path copying) |
+| nth / rank | O(log n) | Via subtree weights |
+| median / percentile | O(log n) | Via nth |
+| nearest (floor/ceiling) | O(log n) | Ordered sets and maps |
+| Split (by key or index) | O(log n) | |
 | Join | O(log n) | Universal primitive |
-| Union | O(m log(n/m+1)) | Work-optimal, fork-join parallel |
-| Intersection | O(m log(n/m+1)) | Work-optimal, fork-join parallel |
-| Difference | O(m log(n/m+1)) | Work-optimal, fork-join parallel |
-| Batch construction | O(n) | Via parallel fold + union |
+| Union / Intersection / Difference | O(m log(n/m+1)) | Work-optimal, fork-join parallel |
 | Parallel fold | O(n/p + log²n) | p = processors |
-| Interval query | O(log n + k) | k = result size |
+| Interval query | O(log n + k) | k = result count |
 | Range-map assoc | O(k log n) | k = overlapping ranges |
 | Segment-tree query | O(log n) | Pre-computed aggregates |
 | Fuzzy lookup | O(log n) | Split + floor/ceiling |
 
 ## References
 
-- Adams (1993): "Efficient sets—a balancing act" — divide-and-conquer set operations
-- Hirai & Yamamoto (2011): "Balancing Weight-Balanced Trees" — correct δ/γ parameters
-- Blelloch et al. (2016): "Just Join for Parallel Ordered Sets" — parallel algorithms, work-optimality proof
+- Adams (1992): "Implementing Sets Efficiently in a Functional Language" — split/join paradigm, divide-and-conquer set operations
+- Adams (1993): "Efficient sets—a balancing act" — elegant functional pearls treatment
+- Hirai & Yamamoto (2011): "Balancing Weight-Balanced Trees" — Coq-verified (δ=3, γ=2) parameters
+- Blelloch, Ferizovic & Sun (2016): "Just Join for Parallel Ordered Sets" — work-optimality proof, parallel algorithms
+- Sun, Ferizovic & Blelloch (2018): "PAM: Parallel Augmented Maps" — augmented tree framework (interval/segment trees)
