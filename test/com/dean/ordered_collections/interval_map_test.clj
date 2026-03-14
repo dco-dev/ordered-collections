@@ -1,6 +1,6 @@
 (ns com.dean.ordered-collections.interval-map-test
   (:require [clojure.test       :refer :all]
-            [com.dean.ordered-collections.core :refer [interval-map]]))
+            [com.dean.ordered-collections.core :refer [interval-map span]]))
 
 
 
@@ -160,3 +160,22 @@
       (is (= [:x7 :x5 :x3 :x6]                 (x [8 9.5])))
       (is (= [:x7 :x3 :x6]                     (x [9 9])))
       (is (= [:x7 :x3 :x6]                     (x [9 9.5]))))))
+
+(deftest span-test
+  (testing "empty interval-map"
+    (is (nil? (span (interval-map)))))
+
+  (testing "single interval"
+    (is (= [1 5] (span (interval-map {[1 5] :a})))))
+
+  (testing "non-overlapping intervals"
+    (is (= [1 15] (span (interval-map {[1 5] :a [10 15] :b})))))
+
+  (testing "interval with max-end not in last-sorted interval"
+    (is (= [1 100] (span (interval-map {[1 100] :wide [50 60] :narrow})))))
+
+  ;; span of the fixture from interval-query-check: [0 5] to [9 9] → [0 9]
+  (testing "span of fixture intervals"
+    (let [x (interval-map {[1 3] :x1 [4 7] :x2 [8 9] :x3 [0 5] :x4
+                           [6 8] :x5 [9 9] :x6 [3 9] :x7 [4 5] :x8})]
+      (is (= [0 9] (span x))))))

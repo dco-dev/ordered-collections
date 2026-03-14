@@ -1,6 +1,6 @@
 (ns com.dean.ordered-collections.interval-set-test
   (:require [clojure.test                :refer :all]
-            [com.dean.ordered-collections.core :refer [interval-set]]))
+            [com.dean.ordered-collections.core :refer [interval-set span]]))
 
 
 ;; TODO: more
@@ -41,3 +41,23 @@
       (is (= 1 (count (x (- greatest 0.5)))))
       (is (= (seq x) (x [0 greatest])))
       (is (= size (count (x [0 greatest])))))))
+
+(deftest span-test
+  (testing "empty interval-set"
+    (is (nil? (span (interval-set)))))
+
+  (testing "single interval"
+    (is (= [1 5] (span (interval-set [[1 5]])))))
+
+  (testing "single point interval"
+    (is (= [3 3] (span (interval-set [[3 3]])))))
+
+  (testing "non-overlapping intervals"
+    (is (= [1 15] (span (interval-set [[1 5] [10 15]])))))
+
+  (testing "overlapping intervals"
+    (is (= [1 15] (span (interval-set [[1 5] [3 8] [10 15]])))))
+
+  (testing "interval with max-end not in last-sorted interval"
+    ;; [1 100] sorts first but has the largest endpoint
+    (is (= [1 100] (span (interval-set [[1 100] [50 60]]))))))

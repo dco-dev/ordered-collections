@@ -56,9 +56,7 @@
         (map node/-kv found))))
   (span [this]
     (when-not (node/leaf? root)
-      (let [first-interval (node/-k (tree/node-least root))
-            last-interval (node/-k (tree/node-greatest root))]
-        [(first first-interval) (second last-interval)])))
+      [(first (node/-k (tree/node-least root))) (node/-z root)]))
 
   clojure.lang.IMeta
   (meta [_]

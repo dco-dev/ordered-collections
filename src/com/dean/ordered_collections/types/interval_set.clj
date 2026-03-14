@@ -57,9 +57,7 @@
         (map node/-k found))))
   (span [this]
     (when-not (node/leaf? root)
-      (let [first-interval (node/-k (tree/node-least root))
-            last-interval (node/-k (tree/node-greatest root))]
-        [(first first-interval) (second last-interval)])))
+      [(first (node/-k (tree/node-least root))) (node/-z root)]))
 
   PExtensibleSet
   (intersection [this that]
