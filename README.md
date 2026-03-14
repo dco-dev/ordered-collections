@@ -173,8 +173,8 @@ Operations that `sorted-set` and `sorted-map` don't provide — at any collectio
 ```clojure
 (def s (oc/ordered-set [1 2 3 4 5]))
 
-(oc/split-key s 3)  ;=> [#{1 2} 3 #{4 5}]    O(log n)
-(oc/split-at s 2)   ;=> [#{1 2} #{3 4 5}]     O(log n)
+(oc/split-key 3 s)  ;=> [#{1 2} 3 #{4 5}]    O(log n)
+(oc/split-at 2 s)   ;=> [#{1 2} #{3 4 5}]     O(log n)
 
 ;; subrange returns a collection, not a seq
 (oc/subrange s :>= 2 :<= 4)  ;=> #{2 3 4}
