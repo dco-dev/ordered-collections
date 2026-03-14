@@ -14,14 +14,14 @@
     (let [pq (oc/priority-queue [[42 :val]])]
       (is (= 1 (count pq)))
       (is (= [42 :val] (peek pq)))
-      (is (= :val (oc/peek-val pq)))
+      (is (= :val (oc/peek-min-val pq)))
       (is (= 0 (count (pop pq))))))
 
   (testing "Multiple elements - min heap"
     (let [pq (oc/priority-queue [[3 :c] [1 :a] [4 :d] [1 :a2] [5 :e]])]
       (is (= 5 (count pq)))
       (is (= [1 :a] (peek pq)))
-      (is (= :a (oc/peek-val pq)))
+      (is (= :a (oc/peek-min-val pq)))
       ;; seq returns [priority value] pairs in order
       (is (= [[1 :a] [1 :a2] [3 :c] [4 :d] [5 :e]] (vec (seq pq))))))
 
@@ -39,7 +39,7 @@
                  (oc/push 1 :one))]
       (is (= 4 (count pq)))
       (is (= [1 :one] (peek pq)))
-      (is (= :one (oc/peek-val pq)))))
+      (is (= :one (oc/peek-min-val pq)))))
 
   (testing "Pop sequence"
     (let [pq (oc/priority-queue [[5 :e] [2 :b] [8 :h] [1 :a] [3 :c]])]
@@ -54,7 +54,7 @@
                           [[3 :c] [1 :a] [2 :b]])]
       (is (= 3 (count pq)))
       (is (= [1 :a] (peek pq)))
-      (is (= :a (oc/peek-val pq))))))
+      (is (= :a (oc/peek-min-val pq))))))
 
 (deftest priority-queue-max-operations
   (testing "peek-max and pop-max"
