@@ -267,6 +267,10 @@
   (cons [this k]
     (new FuzzySet (tree/node-add root k k cmp tree/node-create-weight-balanced) cmp distance-fn tiebreak _meta))
 
+  Object
+  (toString [this]
+    (pr-str this))
+
   clojure.lang.IHashEq
   (hasheq [this]
     ;; Must match APersistentSet: sum of hasheq(element), then mixCollHash

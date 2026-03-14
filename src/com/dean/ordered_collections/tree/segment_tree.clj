@@ -202,6 +202,10 @@
     (and (instance? SegmentTree that)
          (= (seq this) (seq that))))
 
+  Object
+  (toString [this]
+    (pr-str this))
+
   clojure.lang.IHashEq
   (hasheq [this]
     (Murmur3/mixCollHash

@@ -229,6 +229,10 @@
                   (tree/entry-seq-reverse lt))
             (tree/entry-seq-reverse lt))))))
 
+  Object
+  (toString [this]
+    (pr-str this))
+
   clojure.lang.IHashEq
   (hasheq [this]
     ;; Must match APersistentMap: sum of hasheq(MapEntry) for each entry, then mixCollHash

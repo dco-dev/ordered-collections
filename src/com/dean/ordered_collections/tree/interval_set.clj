@@ -252,6 +252,10 @@
                    sentinel root)]
       (if (identical? result sentinel) (f) result)))
 
+  Object
+  (toString [this]
+    (pr-str this))
+
   clojure.lang.IHashEq
   (hasheq [this]
     (Murmur3/mixCollHash

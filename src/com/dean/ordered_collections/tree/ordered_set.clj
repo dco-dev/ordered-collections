@@ -307,6 +307,10 @@
   (cons [this k]
     (new OrderedSet (tree/node-add root k k cmp tree/node-create-weight-balanced) cmp alloc stitch _meta))
 
+  Object
+  (toString [this]
+    (pr-str this))
+
   clojure.lang.IHashEq
   (hasheq [this]
     ;; Must match APersistentSet: sum of hasheq(element), then mixCollHash

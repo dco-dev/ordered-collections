@@ -290,6 +290,10 @@
   (without [this k]
     (new FuzzyMap (tree/node-remove root k cmp tree/node-create-weight-balanced) cmp distance-fn tiebreak _meta))
 
+  Object
+  (toString [this]
+    (pr-str this))
+
   clojure.lang.IHashEq
   (hasheq [this]
     ;; Must match APersistentMap: sum of hasheq(MapEntry) for each entry, then mixCollHash
