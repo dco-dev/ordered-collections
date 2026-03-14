@@ -891,21 +891,3 @@
   [coll test k]
   (proto/nearest coll test k))
 
-(defn rank-of
-  "Return the 0-based index of element x in sorted order, or -1 if not present.
-
-   Complexity: O(log n)
-
-   Compatible with clojure.data.avl/rank-of.
-
-   Example:
-     (rank-of (ordered-set [10 20 30 40 50]) 30)
-     ;=> 2
-
-     (rank-of (ordered-set [10 20 30 40 50]) 25)
-     ;=> -1
-
-     (rank-of (ordered-map [[1 :a] [3 :b] [5 :c]]) 3)
-     ;=> 1"
-  [coll x]
-  (proto/rank-of coll x))

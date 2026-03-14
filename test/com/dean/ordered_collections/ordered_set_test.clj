@@ -283,20 +283,20 @@
       (is (= [2 1] (nearest s :<= [2 1])))
       (is (= [2 2] (nearest s :> [2 1]))))))
 
-(deftest rank-of-test
-  (testing "rank-of on ordered-set"
+(deftest rank-test
+  (testing "rank on ordered-set"
     (let [s (ordered-set [10 20 30 40 50])]
-      (is (= 0 (rank-of s 10)))
-      (is (= 2 (rank-of s 30)))
-      (is (= 4 (rank-of s 50)))
-      (is (= -1 (rank-of s 25)))
-      (is (= -1 (rank-of s 5)))
-      (is (= -1 (rank-of s 100)))))
+      (is (= 0 (rank s 10)))
+      (is (= 2 (rank s 30)))
+      (is (= 4 (rank s 50)))
+      (is (nil? (rank s 25)))
+      (is (nil? (rank s 5)))
+      (is (nil? (rank s 100)))))
 
-  (testing "rank-of on ordered-map"
+  (testing "rank on ordered-map"
     (let [m (ordered-map [[1 :a] [3 :b] [5 :c] [7 :d] [9 :e]])]
-      (is (= 0 (rank-of m 1)))
-      (is (= 2 (rank-of m 5)))
-      (is (= 4 (rank-of m 9)))
-      (is (= -1 (rank-of m 2)))
-      (is (= -1 (rank-of m 10))))))
+      (is (= 0 (rank m 1)))
+      (is (= 2 (rank m 5)))
+      (is (= 4 (rank m 9)))
+      (is (nil? (rank m 2)))
+      (is (nil? (rank m 10))))))
