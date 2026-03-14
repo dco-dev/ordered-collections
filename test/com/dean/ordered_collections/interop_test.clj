@@ -16,7 +16,7 @@
                      gen-test-symbol
                      ->ts ->hs ->os ->tm ->om]]
             [com.dean.ordered-collections.tree.interop]
-            [com.dean.ordered-collections.tree.protocol :as proto]))
+            [com.dean.ordered-collections.protocol :as proto]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

@@ -18,7 +18,7 @@
                      rand-longs rand-ints rand-strings rand-map-entries
                      ->ss ->as ->os ->los ->sm ->am ->om
                      assert-eq with-iterations]]
-            [com.dean.ordered-collections.tree.protocol :as proto]))
+            [com.dean.ordered-collections.protocol :as proto]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; PART 1: SET EQUIVALENCE TESTS

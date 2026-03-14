@@ -9,7 +9,7 @@
    This allows protocol functions like union, intersection, nearest, etc.
    to work with standard Clojure sorted collections."
   (:require [clojure.set :as set]
-            [com.dean.ordered-collections.tree.protocol :as proto]))
+            [com.dean.ordered-collections.protocol :as proto]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

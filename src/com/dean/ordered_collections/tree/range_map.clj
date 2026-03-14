@@ -38,11 +38,11 @@
    - Version ranges in dependency resolution"
   (:require [com.dean.ordered-collections.tree.node     :as node]
             [com.dean.ordered-collections.tree.order    :as order]
-            [com.dean.ordered-collections.tree.protocol :as proto]
+            [com.dean.ordered-collections.protocol      :as proto]
             [com.dean.ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang ILookup Associative IPersistentCollection Seqable
              Counted IFn IMeta IObj MapEntry Murmur3]
-            [com.dean.ordered_collections.tree.protocol PRangeMap]
+            [com.dean.ordered_collections.protocol PRangeMap]
             [com.dean.ordered_collections.tree.tree EnumFrame]))
 
 

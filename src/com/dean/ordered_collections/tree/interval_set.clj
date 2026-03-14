@@ -4,11 +4,11 @@
             [com.dean.ordered-collections.tree.interval :as interval]
             [com.dean.ordered-collections.tree.node     :as node]
             [com.dean.ordered-collections.tree.order    :as order]
-            [com.dean.ordered-collections.tree.protocol :as proto]
+            [com.dean.ordered-collections.protocol      :as proto]
             [com.dean.ordered-collections.tree.root]
             [com.dean.ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang                RT Murmur3]
-            [com.dean.ordered_collections.tree.protocol PExtensibleSet PIntervalCollection]
+            [com.dean.ordered_collections.protocol PExtensibleSet PIntervalCollection]
             [com.dean.ordered_collections.tree.root     INodeCollection
                                          IBalancedCollection
                                          IOrderedCollection

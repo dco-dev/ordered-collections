@@ -1,4 +1,4 @@
-(ns com.dean.ordered-collections.tree.protocol
+(ns com.dean.ordered-collections.protocol
   (:refer-clojure :exclude [split-at subrange]))
 
 

@@ -14,11 +14,11 @@
             [com.dean.ordered-collections.tree.ordered-multiset     :as multiset]
             [com.dean.ordered-collections.tree.ordered-set          :refer [->OrderedSet]]
             [com.dean.ordered-collections.tree.priority-queue       :as pq]
-            [com.dean.ordered-collections.tree.protocol             :as proto]
             [com.dean.ordered-collections.tree.range-map            :as rmap]
             [com.dean.ordered-collections.tree.segment-tree         :as segtree]
             [com.dean.ordered-collections.tree.tree                 :as tree]
-            [com.dean.ordered-collections.tree.util                 :refer [defalias]])
+            [com.dean.ordered-collections.protocol                  :as proto]
+            [com.dean.ordered-collections.util                      :refer [defalias]])
   (:import  [com.dean.ordered_collections.tree.ordered_map OrderedMap]
             [com.dean.ordered_collections.tree.ordered_set OrderedSet]
             [com.dean.ordered_collections.tree.root INodeCollection IOrderedCollection IBalancedCollection]))

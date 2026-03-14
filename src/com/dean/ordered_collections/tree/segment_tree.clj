@@ -38,12 +38,12 @@
      (query st 1 3)     ; => 160 (20 + 100 + 40)"
   (:require [com.dean.ordered-collections.tree.node     :as node]
             [com.dean.ordered-collections.tree.order    :as order]
-            [com.dean.ordered-collections.tree.protocol :as proto]
             [com.dean.ordered-collections.tree.tree     :as tree]
-            [com.dean.ordered-collections.tree.util     :refer [defalias]])
+            [com.dean.ordered-collections.protocol      :as proto]
+            [com.dean.ordered-collections.util          :refer [defalias]])
   (:import  [clojure.lang ILookup Associative IPersistentCollection Seqable
              Counted IFn IMeta IObj MapEntry Murmur3]
-            [com.dean.ordered_collections.tree.protocol PRangeAggregate]))
+            [com.dean.ordered_collections.protocol PRangeAggregate]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

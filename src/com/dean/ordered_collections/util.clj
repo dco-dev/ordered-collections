@@ -1,4 +1,4 @@
-(ns com.dean.ordered-collections.tree.util)
+(ns com.dean.ordered-collections.util)
 
 (defmacro defalias
   "Define a var as an alias for another var, copying :arglists from the source.
