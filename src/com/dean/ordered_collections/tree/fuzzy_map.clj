@@ -172,7 +172,7 @@
     (with-fuzzy-map this
       (cond
         (identical? this o) 0
-        (.isCompatible this o) (tree/node-compare root (.getRoot ^FuzzyMap o))
+        (.isCompatible this o) (tree/node-map-compare root (.getRoot ^FuzzyMap o))
         (.isSimilar this o) (.compareTo ^Comparable (into (empty o) this) o)
         true (throw (ex-info "unsupported comparison: " {:this this :o o})))))
 
@@ -278,7 +278,7 @@
         (identical? this o) true
         (not (instance? clojure.lang.Counted o)) false
         (not= (tree/node-size root) (.count ^clojure.lang.Counted o)) false
-        (.isCompatible this o) (zero? (tree/node-compare root (.getRoot ^FuzzyMap o)))
+        (.isCompatible this o) (zero? (tree/node-map-compare root (.getRoot ^FuzzyMap o)))
         (.isSimilar this o) (.equiv ^clojure.lang.IPersistentCollection (into (empty o) this) o)
         :else false)))
 
