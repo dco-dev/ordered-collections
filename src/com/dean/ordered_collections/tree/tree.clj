@@ -1675,7 +1675,31 @@
           (proxy [RecursiveTask] []
             (compute [] (merge-par n1 n2))))))))
 
-(def node-map-compare (partial node-compare :kv))
+(defn node-map-compare
+  "Compare two map trees element-by-element. Keys are compared using
+   the bound *compare* comparator; on key equality, values are compared
+   using clojure.lang.Util/compare to handle arbitrary value types."
+  [n1 n2]
+  (let [^java.util.Comparator cmp order/*compare*]
+    (loop [e1 (node-enumerator n1 nil)
+           e2 (node-enumerator n2 nil)]
+      (let [info1 (enum-frame-extract e1)
+            info2 (enum-frame-extract e2)]
+        (cond
+          (and (nil? info1) (nil? info2))  0
+          (nil? info1)                     -1
+          (nil? info2)                      1
+          :else
+          (let [[x1 _ r1 ee1] info1
+                [x2 _ r2 ee2] info2
+                kc (.compare cmp (-k x1) (-k x2))]
+            (if-not (zero? kc)
+              kc
+              (let [vc (clojure.lang.Util/compare (-v x1) (-v x2))]
+                (if-not (zero? vc)
+                  vc
+                  (recur (node-enumerator r1 ee1)
+                         (node-enumerator r2 ee2)))))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Fundamental Vector Operations
