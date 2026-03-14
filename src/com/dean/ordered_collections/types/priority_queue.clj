@@ -165,7 +165,7 @@
     (when-not (node/leaf? root)
       (let [[p _ v] (node/-k (tree/node-least root))]
         [p v])))
-  (peek-val [_]
+  (peek-min-val [_]
     (when-not (node/leaf? root)
       (let [[_ _ v] (node/-k (tree/node-least root))]
         v)))
@@ -216,10 +216,10 @@
   [pq]
   (proto/peek-min pq))
 
-(defn peek-val
+(defn peek-min-val
   "Return just the value of the minimum element, or nil if empty. O(log n)."
   [pq]
-  (proto/peek-val pq))
+  (proto/peek-min-val pq))
 
 (defn pop-min
   "Remove and return a new queue without the minimum-priority element. O(log n).

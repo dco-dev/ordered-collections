@@ -141,7 +141,7 @@
   (push     [pq priority value] "Add element with given priority.")
   (push-all [pq pairs]          "Add multiple [priority value] pairs.")
   (peek-min [pq]                "Return [priority value] of min element, or nil.")
-  (peek-val [pq]                "Return just the value of min element, or nil.")
+  (peek-min-val [pq]            "Return just the value of min element, or nil.")
   (pop-min  [pq]                "Remove min element. Returns queue unchanged if empty.")
   (peek-max [pq]                "Return [priority value] of max element, or nil.")
   (peek-max-val [pq]            "Return just the value of max element, or nil.")

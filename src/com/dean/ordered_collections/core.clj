@@ -447,12 +447,12 @@
   (peek-min pq) => [priority value] or nil"
   pq/peek-min)
 
-(defalias peek-val
+(defalias peek-min-val
   "Return just the value (not priority) of the minimum element.
-  (peek-val pq) => value or nil
+  (peek-min-val pq) => value or nil
 
   Note: (peek-min pq) returns [priority value]."
-  pq/peek-val)
+  pq/peek-min-val)
 
 (defalias pop-min
   "Remove the minimum-priority element.
