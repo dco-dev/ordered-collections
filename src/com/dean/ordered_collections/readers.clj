@@ -7,40 +7,13 @@
    For use with clojure.edn/read-string, pass `readers` as the :readers option."
   (:require [com.dean.ordered-collections.core :as oc]))
 
-(defn ordered-set
-  "Reader function for #ordered/set [...]"
-  [coll]
-  (oc/ordered-set coll))
-
-(defn ordered-map
-  "Reader function for #ordered/map [[k v] ...]"
-  [coll]
-  (oc/ordered-map coll))
-
-(defn interval-set
-  "Reader function for #ordered/interval-set [...]"
-  [coll]
-  (oc/interval-set coll))
-
-(defn interval-map
-  "Reader function for #ordered/interval-map [[k v] ...]"
-  [coll]
-  (oc/interval-map coll))
-
-(defn range-map
-  "Reader function for #ordered/range-map [[[lo hi] v] ...]"
-  [coll]
-  (oc/range-map coll))
-
-(defn priority-queue
-  "Reader function for #ordered/priority-queue [[priority value] ...]"
-  [coll]
-  (oc/priority-queue coll))
-
-(defn ordered-multiset
-  "Reader function for #ordered/multiset [...]"
-  [coll]
-  (oc/ordered-multiset coll))
+(def ordered-set      oc/ordered-set)
+(def ordered-map      oc/ordered-map)
+(def interval-set     oc/interval-set)
+(def interval-map     oc/interval-map)
+(def range-map        oc/range-map)
+(def priority-queue   oc/priority-queue)
+(def ordered-multiset oc/ordered-multiset)
 
 (def readers
   "Map of tag symbols to reader functions.
