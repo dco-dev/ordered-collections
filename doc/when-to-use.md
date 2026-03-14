@@ -1,397 +1,86 @@
-# When to Use ordered-collections
+# When to Use Which Collection
 
-A decision guide for choosing between sorted collection implementations.
+## Decision Matrix
 
-## Quick Decision Matrix
+| You need... | Use |
+|-------------|-----|
+| Drop-in `sorted-set`/`sorted-map` replacement | `ordered-set` / `ordered-map` |
+| Fast set algebra (union, intersection, difference) | `ordered-set` / `ordered-map` |
+| O(log n) nth, rank, median, percentile | `ordered-set` / `ordered-map` |
+| O(log n) `last` | `ordered-set` / `ordered-map` |
+| Parallel `r/fold` | `ordered-set` / `ordered-map` |
+| Overlapping interval queries ("what's scheduled at 3pm?") | `interval-set` / `interval-map` |
+| Non-overlapping range allocation ("which subnet owns this IP?") | `range-map` |
+| Range aggregate queries ("total sales from day 10 to 50?") | `segment-tree` |
+| Snap to closest value by distance | `fuzzy-set` / `fuzzy-map` |
+| Floor/ceiling (directional nearest) | `ordered-set` / `ordered-map` via `nearest` |
+| Min-heap / max-heap with persistent undo | `priority-queue` |
+| Sorted bag with duplicates | `ordered-multiset` |
+| Zero dependencies, basic sorted access only | `sorted-set` / `sorted-map` |
+| ClojureScript | `clojure.data.avl` |
+| Transient batch mutation | `clojure.data.avl` |
 
-| Your Priority | Best Choice |
-|---------------|-------------|
-| Maximum lookup speed | Any (~equal, within 8%) |
-| Need `nth` or `rank` operations | `ordered-map` / `ordered-set` |
-| Heavy iteration workloads | `ordered-map` / `ordered-set` |
-| Parallel processing (`r/fold`) | `ordered-map` / `ordered-set` |
-| Set algebra (union, intersection) | `ordered-set` |
-| Overlapping interval queries | `interval-map` / `interval-set` |
-| Non-overlapping range allocation | `range-map` (Guava TreeRangeMap) |
-| Range aggregate queries (sum/max/min) | `segment-tree` |
-| Nearest-neighbor lookups | `fuzzy-map` / `fuzzy-set` |
-| Priority queue / heap operations | `priority-queue` |
-| Sorted set with duplicates | `ordered-multiset` |
-| Minimal dependencies | `sorted-map` / `sorted-set` |
-| Batch construction | `ordered-map` / `ordered-set` (parallel) |
-| First/last element access | `ordered-set` (~92,000x faster at N=500K) |
-
-## Detailed Comparison
-
-### Clojure Built-ins: sorted-map / sorted-set
-
-**Best for:**
-- Simple sorted storage with fast lookup
-- Applications where you only need basic get/assoc/dissoc
-- Minimizing dependencies
-- Maximum lookup performance
-
-**Limitations:**
-- No `nth` operation (requires O(n) conversion to vector)
-- No rank queries
-- `r/fold` falls back to sequential reduce
-- `clojure.set` operations are O(n) linear scans
-
-**Choose when:** Lookup dominates your workload and you don't need rank/nth or parallel fold.
-
-### data.avl
-
-**Best for:**
-- O(log n) rank access via `nth` (same as ordered-collections)
-- Transient support for batch mutations
-- Fastest pure iteration
-- Well-tested, mature library (Clojure contrib)
-
-**Limitations:**
-- No parallel fold
-- Split operations slower than ordered-collections
-- No interval tree support
-
-**Choose when:** You need transient support or fastest pure iteration.
-
-### ordered-collections (this library)
-
-**Best for:**
-- Fast construction via parallel fold (2.4x faster than sorted-set, 1.6x faster than data.avl)
-- First/last element access (~92,000x faster at N=500K than sorted-set)
-- Parallel aggregation via `r/fold` (14.8x faster than sorted-set, 3.2x faster than data.avl at N=500K)
-- Efficient set algebra (union, intersection, difference) — 5-10x faster
-- Split operations (3x faster than data.avl)
-- Interval/range overlap queries
-- Applications needing both map and interval functionality
-
-**Limitations:**
-- Sequential insert ~1.5x slower than sorted-map (use batch construction instead)
-- Pure iteration slower than data.avl (data.avl is fastest at iteration)
-- Additional dependency
-
-**Choose when:** You need fast construction, parallel processing, set operations, or interval queries.
-
-## Choosing Between Similar Data Structures
+## Choosing Between Similar Collections
 
 ### interval-map vs range-map
 
-Both map ranges to values, but with different semantics:
+Both map ranges to values. The difference is whether ranges can overlap.
 
-| Feature | interval-map | range-map |
-|---------|--------------|-----------|
-| Overlapping ranges | ✓ Allowed | ✗ Not allowed |
-| Point query returns | All overlapping values | Single value |
-| Insert behavior | Adds to collection | Carves out overlaps |
-| Coalescing | N/A | Optional via `assoc-coalescing` |
-| Use case | Meeting schedules, event logs | IP allocation, memory regions |
+| | interval-map | range-map |
+|--|--|--|
+| Overlapping ranges | Yes | No — inserting carves out overlaps |
+| Point query returns | All overlapping values | Exactly one value |
+| Use case | Schedules, event logs, genomic annotations | IP subnets, memory regions, discount tiers |
 
-**Use interval-map when:** Ranges can overlap and you want to find ALL ranges containing a point (e.g., "what meetings are happening at 2pm?")
+```clojure
+;; interval-map: "what meetings overlap 2pm?"
+(def schedule (oc/interval-map {[9 12] "standup" [11 15] "workshop"}))
+(schedule 11)  ;=> ("standup" "workshop")   ← both
 
-**Use range-map when:** Ranges must not overlap and each point maps to exactly one value (e.g., "which subnet owns this IP?")
-
-## Workload-Based Recommendations
-
-### Read-Heavy API Cache
-
-```
-Pattern: Many lookups, few updates
-Recommendation: ordered-map or sorted-map (equal performance)
-
-Reasoning: Lookup performance is within 8%. ordered-map adds
-parallel construction and nth/rank if needed later.
+;; range-map: "which tier is 750 credits?"
+(def tiers (oc/range-map {[0 500] :bronze [500 5000] :gold}))
+(tiers 750)    ;=> :gold                    ← exactly one
 ```
 
-### Analytics Pipeline
+### ordered-set vs fuzzy-set
 
-```
-Pattern: Build once, aggregate many times
-Recommendation: ordered-set + r/fold
+Both support nearest-neighbor, but with different semantics.
 
-Reasoning: Parallel construction is 25% faster. Parallel fold
-provides 2.3x speedup on aggregation.
-```
+| | ordered-set + `nearest` | fuzzy-set |
+|--|--|--|
+| Exact match | Returns element | Returns element |
+| No exact match | Must specify direction (`:<=`, `:>=`, `:<`, `:>`) | Automatically returns closest by distance |
+| Equidistant | N/A (direction chosen) | Configurable tiebreak (`:< ` or `:>`) |
+| Use case | Floor/ceiling lookups | Snapping to nearest bucket |
 
-### Real-Time Leaderboard
+```clojure
+;; ordered-set: explicit direction
+(oc/nearest sizes :<= 11.3)  ;=> 11.0  (floor)
+(oc/nearest sizes :>= 11.3)  ;=> 11.5  (ceiling)
 
-```
-Pattern: Frequent updates + rank queries
-Recommendation: ordered-map
-
-Reasoning: Only weight-balanced trees provide O(log n) rank.
-sorted-map would require O(n) traversal for rank.
-```
-
-### Time-Series Database
-
-```
-Pattern: Range queries, sliding windows
-Recommendation: ordered-map with subseq
-
-Reasoning: Native Sorted support enables efficient range
-queries. Split operations enable efficient window trimming.
+;; fuzzy-set: automatic closest
+(def sizes (oc/fuzzy-set [6 7 8 9 10 11 12 13]))
+(sizes 11.3)                 ;=> 11    (closest by distance)
 ```
 
-### Meeting Scheduler
+### segment-tree vs reduce over subrange
 
-```
-Pattern: Overlap detection, conflict checking
-Recommendation: interval-map
+Both answer "aggregate over a range." The tradeoff is query speed vs update speed.
 
-Reasoning: No other sorted collection handles interval
-overlap queries efficiently. This is the only option.
-```
+| | segment-tree | subrange + reduce |
+|--|--|--|
+| Query | O(log n) | O(k) where k = range size |
+| Update | O(log n) | O(1) (assoc) |
+| Use case | Many queries, moderate updates | Few queries, many updates |
 
-### Approximate Matching / Nearest Lookup
+### priority-queue vs (first (ordered-set ...))
 
-```
-Pattern: Find closest value when exact match doesn't exist
-Recommendation: fuzzy-set / fuzzy-map
-
-Reasoning: Fuzzy collections return the nearest element
-by distance when exact match fails. O(log n) nearest lookup.
-```
-
-### Resource Allocation (IP Blocks, Memory Regions)
-
-```
-Pattern: Non-overlapping ranges, automatic splitting on insert
-Recommendation: range-map
-
-Reasoning: range-map enforces non-overlap—inserting a range
-automatically carves out space from existing ranges. Use
-assoc-coalescing to merge adjacent same-value ranges.
-```
-
-### Range Aggregate Queries
-
-```
-Pattern: "Sum/max/min of values from index A to B" with updates
-Recommendation: segment-tree
-
-Reasoning: O(log n) range queries AND O(log n) updates.
-Linear scan would be O(n) per query.
-```
-
-### Task Scheduling / Priority Processing
-
-```
-Pattern: Always process highest/lowest priority item next
-Recommendation: priority-queue
-
-Reasoning: O(log n) insert, O(1) peek, O(log n) pop.
-Persistent—safe for backtracking or undo.
-```
-
-### Counting with Duplicates
-
-```
-Pattern: Track frequency of sorted elements
-Recommendation: ordered-multiset
-
-Reasoning: Unlike ordered-set, allows duplicate values.
-Maintains sort order with O(log n) operations.
-```
-
-### ETL Deduplication
-
-```
-Pattern: Build large set, check membership
-Recommendation: ordered-set (build) → persistent (query)
-
-Reasoning: Parallel construction is faster. Once built,
-lookup performance is comparable.
-```
-
-## Performance by Operation
-
-### Construction (smaller is better)
-
-```
-N = 500,000 elements (parallel fold construction)
-
-sorted-set:    1.0x (baseline)  ████████████████████████
-data.avl:      0.68x            █████████████████
-ordered-set:   0.42x            ██████████  ← 2.4x FASTER
-```
-
-**Verdict:** ordered-set is 2.4x faster than sorted-set and 1.6x faster than data.avl.
-
-### Lookup (smaller is better)
-
-```
-10,000 random lookups on N = 500,000
-
-sorted-map:    1.0x (baseline)  ████
-data.avl:      1.1x             ████▌
-ordered-map:   1.08x            ████▎
-```
-
-**Verdict:** Nearly equivalent. Within 8% — rarely matters in practice.
-
-### First/Last Access (smaller is better)
-
-```
-1,000 last calls on N = 500,000
-
-sorted-set:    1.0x (baseline)  ████████████████████████████████████████
-data.avl:      1.33x            █████████████████████████████████████████████████████
-ordered-set:   0.000011x        ▏  ← ~92,000x FASTER (O(log n) vs O(n))
-```
-
-**Verdict:** ordered-set provides O(log n) endpoint access via SortedSet interface.
-
-### Iteration (smaller is better)
-
-```
-reduce over N = 500,000
-
-sorted-set:    1.0x (baseline)  ████████████████████████████
-data.avl:      0.18x            █████   ← FASTEST
-ordered-set:   0.29x            ████████
-```
-
-**Verdict:** ordered-set 3.4x faster than sorted-set. data.avl is fastest at pure iteration.
-
-### Parallel Fold (smaller is better)
-
-```
-r/fold over N = 500,000
-
-sorted-set:    1.0x (sequential fallback)  ████████████████████████████████
-data.avl:      0.22x (sequential fallback) ███████
-ordered-set:   0.068x (true parallel)      ██   ← 14.8x faster than sorted-set
-```
-
-**Verdict:** Only ordered-collections parallelizes. 14.8x faster than sorted-set, 3.2x faster than data.avl.
-
-### Set Operations (smaller is better)
-
-```
-Union/Intersection/Difference of two 500K-element sets
-
-sorted-set union:         1.0x  ████████████████████████████████
-data.avl union:           1.29x █████████████████████████████████████████
-ordered-set union:        0.13x ████   ← 7.6x FASTER (vs sorted-set)
-
-sorted-set intersection:  1.0x  ████████████████████████████████
-data.avl intersection:    0.81x ██████████████████████████
-ordered-set intersection: 0.16x █████  ← 6.2x FASTER (vs sorted-set)
-
-sorted-set difference:    1.0x  ████████████████████████████████
-data.avl difference:      0.68x ██████████████████████
-ordered-set difference:   0.14x ████   ← 7.3x FASTER (vs sorted-set)
-```
-
-**Verdict:** ordered-set 5-10x faster on set algebra via parallel divide-and-conquer.
-
-### Split (smaller is better)
-
-```
-100 splits on N = 500,000
-
-data.avl:      1.0x (baseline)  ██████████
-ordered-set:   0.32x            ███
-```
-
-**Verdict:** ordered-set 3x faster on splits.
-
-## Memory Comparison
-
-All implementations use similar memory per entry:
-
-| Implementation | Bytes per entry (approx) |
-|----------------|--------------------------|
-| sorted-map | 40-48 |
-| data.avl | 48-56 |
-| ordered-map | 48-56 |
-
-The slight overhead in ordered-map comes from storing subtree weights.
+Both give you the minimum element. `priority-queue` allows duplicate priorities with FIFO ordering and stores `[priority value]` pairs. `ordered-set` is a full sorted set.
 
 ## API Compatibility
 
-### Full Clojure Compatibility
+All collections support standard Clojure interfaces: `get`, `assoc`, `dissoc`, `seq`, `rseq`, `count`, `reduce`, `into`, `=`, `hash`, `meta`.
 
-All ordered-collections types support:
-- `get`, `assoc`, `dissoc`, `contains?`
-- `seq`, `rseq`, `first`, `last`
-- `count`, `empty`, `empty?`
-- `=`, `hash`
-- `meta`, `with-meta`
-- `reduce`, `into`
-- `nth` (for sets)
+`ordered-set` and `ordered-map` additionally implement `java.util.SortedSet`/`java.util.Map`, `clojure.lang.Sorted` (`subseq`, `rsubseq`), and `clojure.core.reducers/CollFold`.
 
-### Full clojure.lang.Sorted Compatibility
-
-ordered-map and ordered-set support:
-- `subseq`, `rsubseq`
-- `comparator`
-- `.seqFrom`, `.entryKey`, `.seq`
-
-### Java Interop
-
-- `java.util.Map` (ordered-map)
-- `java.util.Set` / `java.util.SortedSet` (ordered-set)
-- `java.io.Serializable`
-- `java.lang.Comparable`
-- `java.util.Iterator` / `Iterable`
-
-## Migration Guide
-
-### From sorted-map
-
-```clojure
-;; Before
-(sorted-map :a 1 :b 2)
-(sorted-map-by > :a 1 :b 2)
-
-;; After
-(require '[com.dean.ordered-collections.core :as oc])
-(oc/ordered-map {:a 1 :b 2})
-(oc/ordered-map-by > {:a 1 :b 2})
-```
-
-### From sorted-set
-
-```clojure
-;; Before
-(sorted-set 1 2 3)
-(sorted-set-by > 1 2 3)
-
-;; After
-(oc/ordered-set [1 2 3])
-(oc/ordered-set-by > [1 2 3])
-```
-
-### From data.avl
-
-```clojure
-;; Before
-(require '[clojure.data.avl :as avl])
-(avl/sorted-map :a 1 :b 2)
-(avl/nth my-map 5)
-
-;; After
-(oc/ordered-map {:a 1 :b 2})
-(nth my-map 5)  ; same API
-```
-
-## Summary
-
-**Use ordered-collections when:**
-1. You need fast batch construction (2.4x faster than sorted-set, 1.6x faster than data.avl)
-2. You need first/last element access (~92,000x faster at N=500K than sorted-set)
-3. You need `nth` or `rank` operations
-4. You need parallel fold (`r/fold`) — 14.8x faster than sorted-set, 3.2x faster than data.avl
-5. You perform set algebra (union, intersection, difference) — 5-10x faster
-6. You need interval/overlap queries
-7. You need efficient split operations — 3x faster
-
-**Stick with sorted-map/sorted-set when:**
-1. You want zero dependencies
-2. You're doing mostly sequential inserts (1.5x faster than ordered-*)
-3. You don't need any advanced features
-
-**Consider data.avl when:**
-1. Pure iteration performance is paramount (data.avl is fastest at iteration)
-2. You need transient support for batch mutations
+For migration guides, see [vs clojure.data.avl](vs-clojure-data-avl.md). For performance details, see [Performance Analysis](perf-analysis.md). For the full library comparison, see [Competitive Analysis](competitive-analysis.md).
