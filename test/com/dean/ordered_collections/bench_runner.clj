@@ -2,8 +2,8 @@
   "Benchmark runner with EDN output for permanent record keeping.
 
    Usage:
-     lein bench                  # Default: quick mode, N=100K (~5-10 min)
-     lein bench --full           # Full rigor, N=10K,100K,500K (~60 min)
+     lein bench                  # Default: N=100K (~5 min)
+     lein bench --full           # N=10K,100K,500K (~20-30 min)
      lein bench --sizes 50000    # Custom sizes
 
    Output is written to bench-results/<timestamp>.edn"
@@ -29,10 +29,6 @@
 ;; Configuration
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def ^:dynamic *quick-mode* false)
-
-;; Size presets for Criterium benchmarks (smaller due to longer measurement time)
-(def sizes-quick   [100000])
 (def sizes-default [100000])
 (def sizes-full    [10000 100000 500000])
 
@@ -45,12 +41,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmacro bench-expr
-  "Run benchmark and return results map. Uses quick-benchmark* or benchmark*
-   based on *quick-mode*."
+  "Run benchmark using Criterium quick-benchmark* and return results map."
   [& body]
-  `(let [results# (if *quick-mode*
-                    (crit/quick-benchmark* (fn [] ~@body) {})
-                    (crit/benchmark* (fn [] ~@body) {}))]
+  `(let [results# (crit/quick-benchmark* (fn [] ~@body) {})]
      {:mean-ns     (long (* 1e9 (first (:mean results#))))
       :stddev-ns   (long (* 1e9 (first (:variance results#))))
       :lower-q-ns  (long (* 1e9 (first (:lower-q results#))))
@@ -362,6 +355,22 @@
 
     @results))
 
+(defn run-readme-benchmarks
+  "Run only the benchmarks used in README tables (~5 min for 3 sizes)."
+  [sizes]
+  (let [results (atom {})]
+    (doseq [n sizes]
+      (println)
+      (println (str "===== N = " n " ====="))
+      (print "  set-construction") (swap! results assoc-in [n :set-construction] (bench-set-construction n)) (println)
+      (print "  set-lookup") (swap! results assoc-in [n :set-lookup] (bench-set-lookup n)) (println)
+      (print "  set-union") (swap! results assoc-in [n :set-union] (bench-set-union n)) (println)
+      (print "  set-intersection") (swap! results assoc-in [n :set-intersection] (bench-set-intersection n)) (println)
+      (print "  set-difference") (swap! results assoc-in [n :set-difference] (bench-set-difference n)) (println)
+      (print "  set-fold") (swap! results assoc-in [n :set-fold] (bench-set-fold n)) (println)
+      (print "  split") (swap! results assoc-in [n :split] (bench-split n)) (println))
+    @results))
+
 (defn run-all-benchmarks
   "Run all benchmarks comprehensively."
   [sizes]
@@ -445,17 +454,19 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn parse-args [args]
-  (parse-standard-args args sizes-quick sizes-default sizes-full))
+  (let [base (parse-standard-args args sizes-default sizes-default sizes-full)]
+    (assoc base :readme (bu/has-flag? args "--readme"))))
 
 (defn print-usage []
   (println "Usage: lein bench [options]")
   (println)
   (println "Options:")
-  (println "  --quick            Quick mode with N=100K (default)")
-  (println "  --full             Full rigor with N=10K,100K,500K")
+  (println "  --readme           README table benchmarks only (~5 min for --full)")
+  (println "  --full             N=10K,100K,500K")
   (println "  --sizes N,N,...    Custom sizes (comma-separated)")
   (println "  --help             Show this help")
   (println)
+  (println "Default: N=100K (~3 min)")
   (println "Output is written to bench-results/<timestamp>.edn"))
 
 (defn -main [& args]
@@ -463,7 +474,8 @@
     (if (:help opts)
       (print-usage)
       (let [output-dir "bench-results"
-            output-file (str output-dir "/" (timestamp) ".edn")]
+            output-file (str output-dir "/" (timestamp) ".edn")
+            runner (if (:readme opts) run-readme-benchmarks run-all-benchmarks)]
         (println)
         (println "========================================================================")
         (println "  Ordered Collections Benchmark Suite")
@@ -473,15 +485,15 @@
         (doseq [[k v] (system-info)]
           (println (str "  " (name k) ": " v)))
         (println)
-        (println (str "Mode: " (if (:quick opts) "quick" "full")))
+        (when (:readme opts)
+          (println "Mode: README tables only"))
         (println (str "Sizes: " (pr-str (:sizes opts))))
         (println (str "Output: " output-file))
         (println)
 
-        (binding [*quick-mode* (:quick opts)]
-          (let [results (run-all-benchmarks (:sizes opts))]
-            (print-summary results)
-            (write-results results output-file opts)))
+        (let [results (runner (:sizes opts))]
+          (print-summary results)
+          (write-results results output-file opts))
 
         (println)
         (println "Benchmark suite complete.")))
