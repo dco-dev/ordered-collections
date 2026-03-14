@@ -4,7 +4,11 @@
             [clojure.math.combinatorics   :as combo]
             [clojure.set                  :as set]
             [clojure.test                 :refer :all]
-            [com.dean.ordered-collections.core  :refer :all]))
+            [clojure.test.check.clojure-test :refer [defspec]]
+            [clojure.test.check.generators :as gen]
+            [clojure.test.check.properties :as prop]
+            [com.dean.ordered-collections.core  :refer :all]
+            [com.dean.ordered-collections.test-utils :as tu]))
 
 
 ;; TODO: more coverage
@@ -300,3 +304,29 @@
       (is (= 4 (rank m 9)))
       (is (nil? (rank m 2)))
       (is (nil? (rank m 10))))))
+
+(deftest disjoint?-test
+  (testing "disjoint sets"
+    (is (disjoint? (ordered-set [1 2 3]) (ordered-set [4 5 6])))
+    (is (disjoint? (ordered-set [1 3 5]) (ordered-set [2 4 6]))))
+
+  (testing "overlapping sets"
+    (is (not (disjoint? (ordered-set [1 2 3]) (ordered-set [3 4 5]))))
+    (is (not (disjoint? (ordered-set [1 2 3]) (ordered-set [1 2 3])))))
+
+  (testing "empty sets"
+    (is (disjoint? (ordered-set) (ordered-set)))
+    (is (disjoint? (ordered-set) (ordered-set [1 2 3])))
+    (is (disjoint? (ordered-set [1 2 3]) (ordered-set))))
+
+  (testing "single element"
+    (is (not (disjoint? (ordered-set [5]) (ordered-set [5]))))
+    (is (disjoint? (ordered-set [5]) (ordered-set [6])))))
+
+(defspec prop-disjoint-iff-empty-intersection 100
+  (prop/for-all [xs tu/gen-int-set
+                 ys tu/gen-int-set]
+    (let [os1 (tu/->os xs)
+          os2 (tu/->os ys)]
+      (= (disjoint? os1 os2)
+         (empty? (intersection os1 os2))))))
