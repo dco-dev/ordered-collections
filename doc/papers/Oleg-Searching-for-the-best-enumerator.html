@@ -1,0 +1,476 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+"http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head><title>Searching for the best enumerator</title><meta name="description" content="Discussion of various ways of
+traversing a collection, stressing the most complex and general case"><meta name="AuthorAddress" content="oleg-at-okmij.org"><meta name="Date-Revision-yyyymmdd" content="20110504"><meta name="Date-Creation-yyyymmdd" content="20001009"><link rel="start" href="index.html" title="Scheme Hash"><link rel="contents" href="index.html"><link rel="prev" href="util.html"><link rel="next" href="callcc-calc-page.html"></head><body bgcolor="#FFFFFF">
+
+<div align="center" class="navbar">  <a href="util.html">previous</a> &nbsp; <a href="callcc-calc-page.html">next</a> &nbsp; <a href="index.html">contents</a> &nbsp; <a href="index.html">top</a>
+<hr></div>
+<h1 align=center>General ways to traverse collections</h1>
+
+<p>This article analyzes various ways of traversing a collection.
+We pay a particular attention to the most complex and general case of
+enumerating only a subset of a collection and performing actions that
+depend on the previously seen elements.  We also discuss generators
+such as those in Icon and Python. A proposal is made for a convenient
+generic enumerator, which could be used, for example, in a truly
+functional database interface.</p>
+
+<p>This article was originally written in April 2000.  Its
+analysis of enumerators has since been researched further and extended
+to other languages. The pages [<a href="#generators">generators</a>] and [<a href="#iteratees">iteratees</a>] are the
+latest presentations on this topic.  The proposal for a convenient and
+generic enumerator first suggested here has been tested in
+practice. We implemented the left-fold enumerator to access
+ (object-)relational databases in a functional way [<a href="#database-access">database-access</a>]. This interface has been used in a production
+environment.  The generic-left-fold-based interface underlies the
+Collection SRFI. It was also used in a TIFF library [<a href="#TIFF">TIFF</a>],
+and even in other languages [<a href="#nonrec-fold-stream">nonrec-fold-stream</a>].</p>
+
+<p>This present article also demonstrates a non-trivial use of
+call/cc -- to invert a traversal &quot;inside out.&quot; In this application,
+call/cc <em>cannot</em> be replaced with a simple throw/catch
+construction. Later on the inversion procedure was extended to the
+most general enumerator [<a href="#inversion-src">inversion-src</a>]. It
+turns out that with a small modification, we can perform the iteration
+inversion in languages without first-class continuations, e.g.,
+Haskell [<a href="#nonrec-fold-stream">nonrec-fold-stream</a>].</p>
+<div>
+<ol><li><a href="#Introduction">Introduction</a>
+<li><a href="#Early">Early termination and inversion of a for-each enumerator</a>
+<li><a href="#Generators">Generators in Icon, Python, and Scheme</a>
+<li><a href="#Cursors">Cursors, enumerators, and lazy lists</a>
+<li><a href="#Groping for the best enumerator">Groping for the best enumerator</a>
+<li><a href="#Finalization">Finalization problem: reclaiming resources after enumeration</a>
+<li><a href="#Conclusions">Conclusions</a>
+<li><a href="#References">References</a>
+</ol>
+</div>
+
+<p>
+<hr></p>
+<br>&nbsp;<a name="Introduction">&nbsp;</a>
+<h2>Introduction</h2>
+
+<p>Suppose we have a collection with a <code>for-each</code>-type
+enumerator: a file system directory, an XML document, a suffix tree,
+or a &quot;dynamic&quot; collection that is the result of executing a <code>SELECT</code> DBMS/ODBC statement. We wish to obtain the first
+10 elements of the collection that satisfy a certain criterion:
+contain specific keywords, sound alike, etc.</p>
+
+<p>For the purpose of this example, let us consider a collection
+of numbers of the form <code>65537x+5 mod 1997</code>; The selection
+criterion is divisibility by 7. To make the problem less trivial, let
+the collection be represented by a treap [<a href="#Treap">Treap</a>]. We will not use the full power of the treap in this example: what
+matters to us is that the treap is an advanced collection and that it
+implements a <code>for-each</code> enumerator. A more general example is
+given in  [<a href="#inversion-src">inversion-src</a>].</p>
+
+<p>A word about terminology is in order, as it is rather
+confusing.  We will call a <code>for-each</code>-type procedure
+<strong>enumerator</strong>. Note the active suffix <em>OR</em>. It is
+this procedure that takes a collection and a handler, and applies the
+handler to each element of the collection in turn. The handler itself
+will be called an <strong>iteratee</strong>, because it is
+<em>being</em> applied -- by an active entity, the enumeratOR.
+Enumerator is presumably privy to the internals of a collection; it
+knows how to fetch elements in some (specified) order, and knows when
+to stop. A handler does not have this knowledge, nor is it supposed
+to. The job of an iteratee is to do something with the current
+element, irrespective of how this current element was obtained.</p>
+<br>&nbsp;<a name="Early">&nbsp;</a>
+<h2>Early termination and inversion of a <code>for-each</code> enumerator</h2>
+
+<p>We will first consider the most straightforward implementation:
+it will be our baseline. The complete code for this and the following
+examples is given in [<a href="#enumerators-src">enumerators-src</a>].</p>
+<pre>     (define (get-good-numbers-dumb treap count-max)
+       (let ((count 0) (result '()))
+         ((treap 'for-each-ascending)
+           (lambda (key-value)
+             (let ((x (car key-value)))
+               (and (&lt; count count-max) (good-value? x)
+                 (begin
+                   (set! count (+ 1 count))
+                   (set! result (cons x result)))))))
+         (reverse result)))
+     
+     (cerr (time (get-good-numbers-dumb treap pagesize)) nl)
+         23 ms real time
+         20 ms cpu time (20 user, 0 system)
+         1 collection accounting for 0 ms cpu time (0 user, 0 system)
+         171136 bytes allocated
+         no minor faults
+         no major faults
+     (42 49 56 63 70 112 119 126 133 140)
+</pre>Assignments are prominent in this solution: they are necessary to
+advance the state. The latter must be represented by global (to the
+iteratee) variables, which can persists from one invocation of the
+iteratee to another.
+<p>A smarter approach is to escape from the enumerator when we are done</p>
+<pre>     (define (get-good-numbers-cc treap count-max)
+       (let ((count 0) (result '()))
+         (call-with-current-continuation
+           (lambda (escape)
+             ((treap 'for-each-ascending)
+               (lambda (key-value)
+                 (let ((x (car key-value)))
+                   (and (good-value? x)
+                     (begin
+                       (set! count (+ 1 count))
+                       (set! result (cons x result))
+                       (if (&gt;= count count-max)
+                         (escape #f)))))))))
+         (reverse result)))
+     
+     (cerr (time (get-good-numbers-cc treap pagesize)) nl)
+         2 ms real time
+         0 ms cpu time (0 user, 0 system)
+         no collections
+         15416 bytes allocated
+         no minor faults
+         no major faults
+     (42 49 56 63 70 112 119 126 133 140)
+</pre>
+<p>Let us take a different turn: view a collection as if it was a
+<em>lazy list</em>. Lazy list is a promise, which when applied
+returns <code>'()</code> or <code>(cons value lazy-list)</code>
+<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<code>data LazyList a = Promise (Nil | (Cons a (LazyList a)))</code></p>
+<pre>     (define (treap-&gt;lazy-list treap)
+       (delay
+         (call-with-current-continuation
+           (lambda (k-main)
+             ((treap 'for-each-ascending)
+               (lambda (key-value)
+                 ; (cerr &quot;\nIn treap-&gt;lazy-list's iteratee: &quot; key-value &quot;\n&quot;)
+                 (call-with-current-continuation
+                   (lambda (k-reenter)
+                     (let ((x (car key-value)))
+                       (k-main (cons x
+                           (delay
+                             (call-with-current-continuation
+                               (lambda (k-new-main)
+                                 (set! k-main k-new-main)
+                                 (k-reenter #f)))))))))))
+             (k-main '())))))
+</pre>With this in mind, we can do<pre>     (define lazy-treap-list (treap-&gt;lazy-list treap))
+     
+     (define (get-good-numbers-ll lazy-treap-list count-max)
+       (let loop ((count 0) (llst lazy-treap-list) (result '()))
+         (cond
+           ((or (&gt;= count count-max) (fnull? llst)) (reverse result))
+           ((good-value? (fcar llst))
+             (loop (+ 1 count) (fcdr llst) (cons (fcar llst) result)))
+           (else
+             (loop count (fcdr llst) result)))))
+     
+     (cerr (time (get-good-numbers-ll lazy-treap-list pagesize)) nl)
+         5 ms real time
+         0 ms cpu time (0 user, 0 system)
+         no collections
+         47752 bytes allocated
+         no minor faults
+         no major faults
+     (42 49 56 63 70 112 119 126 133 140)
+</pre>Note a commented out line at the very beginning of the treap
+iteratee that calls the <code>cerr</code> procedure . If you uncomment
+that line you can see for yourself that during the execution of <code>get-good-numbers-ll</code>, the iteratee is invoked only as many times
+as absolutely necessary.  In all other respects <code>lazy-treap-list</code> looks like a regular list.  This makes even
+complex, history-dependent traversal easily realizable: lists
+can be walked in a variety of ways. The <code>get-good-numbers-ll</code> is a thinly-veiled finite state machine implemented in a
+pure-functional style.
+<p>Performance-wise, the lazy list is definitely better than the
+dumb enumeration: the lazy list does not fetch elements if they are
+not needed. Yet the lazy list loses out to the early escape.</p>
+
+<p>The <code>get-good-numbers-ll</code> procedure is purely
+functional: The state of traversal is abstracted into a lazy pair, a
+first-class object. To advance the traversal, we have to <em>explicitly</em> apply methods like <code>fcdr</code> (aka <em>next</em>). We also have to explicitly check for EOF.  In this
+respect, a lazy list is very similar to an STL iterator. On the other
+hand, a for-each enumerator does not give an iteratee any hint about
+the current state of traversal, or its history.</p>
+
+<p>The procedure <code>treap-&gt;lazy-list</code> shows off call/cc at
+its best -- its ability not only to escape a scope but to re-enter it
+as well. <code>treap-&gt;lazy-list</code> cannot be implemented with
+simpler, throw-like constructions. In this example, the enumerator and
+its caller act as <em>coroutines</em>. The full power of call/cc is
+required to implement them in Scheme.</p>
+
+<p>There has been a discussion about the fate of call/cc. No doubt
+call/cc causes many a grief to implementors of Scheme. Is it worth the
+trouble? The conclusions of this article are mixed.  The early-escape
+solution needs call/cc only to throw a non-reenterable exception. This
+solution will work even if call/cc did not exist, being replaced by
+its weak relative, <code>throw</code> or <code>raise</code>. Only
+<code>treap-&gt;lazy-list</code> requires the full call/cc. The latter
+seems indispensable in &quot;inverting&quot; of an iteration, when we
+have an implementation control over an iteratee but not over its
+iteratOR.  We gain flexibility, but we have to brace for the problems with
+performance, finalization, and excessive resource usage.</p>
+
+<p>A more general iteration-inversion procedure along with a few
+validation tests can be found in [<a href="#inversion-src">inversion-src</a>].</p>
+<br>&nbsp;<a name="Generators">&nbsp;</a>
+<h2>Generators in Icon, Python, and Scheme</h2>
+
+<p>The section on generators has been expanded to delimited control, ML
+and Haskell and moved to a separate document: [<a href="#generators">generators</a>]</p>
+<br>&nbsp;<a name="Cursors">&nbsp;</a>
+<h2>Cursors, enumerators, and lazy lists</h2>
+
+<p>Another approach of traversing a collection is to use a <em>cursor</em>, which is often confusingly called a stream or an
+iterator. Examples of cursors include C++ STL iterators, SQL cursors,
+C streams, UNIX files. A (read-only) cursor lets the user read the current
+value and advance the cursor. Often these operations are combined into
+one (cf. <code>getc()</code> in C). </p>
+
+<p>Ben Escoto, in his thoughtful follow-up discussion about
+generators in Scheme [<a href="#generators-disc">generators-disc</a>], has observed a few
+displeasing facts about cursors.</p>
+
+<p>The first problem is about telling the user that there are no
+more values to access. When the collection is exhausted, the cursor
+operations typically return an &quot;out-of-band&quot; value such as EOF (cf.
+<code>getc()</code>), raise an error (cf. SQL cursors) or an
+exception (Python's <code>iterator.next()</code>). None of these approaches
+appear entirely satisfactory.</p>
+
+<p>Some collections may allow to backtrack a cursor -- but some
+may not. Cursors associated with network connections or those that
+compute values on the fly often do not permit backtracking. If we
+cannot look ahead by more than one item and then backtrack, some
+important stream processing functions become quite difficult to
+write.</p>
+
+<p>Unlike cursors, an enumerator does not need to do anything
+special to tell the iteratee that the traversal is finished: the
+enumerator will simply return. There is no longer a problem with
+out-of-band values and user's disregarding such values.</p>
+
+<p>Although lazy lists look rather similar to cursors, lazy lists
+do not have the above drawbacks either. A lazy list is either a pair
+-- in which case its first element is the current value -- or an empty
+list, in which case the traversal is finished. We should stress that a
+promise of a pair in a lazy list can be forced more than once. All
+further forcing are equivalent to the identity function. If a lazy
+pair is forced it yields an ordinary pair, which can be incorporated
+in other lists. Thus, lazy lists <em>always</em> permit backtracking
+-- transparent to the user and in arbitrary amount.</p>
+
+<p>The only inconvenience with lazy lists, also noted by Ben
+Escoto, is that many standard list operations such as map, filter, and
+fold have to be re-written specifically for lazy lists. This problem
+does not arise in those Scheme systems that force values implicitly.</p>
+<br>&nbsp;<a name="Groping for the best enumerator">&nbsp;</a>
+<h2>Groping for the best enumerator</h2>
+
+<p>If one has the power over implementing a collection, he can
+build an enumerator that allows for an early exit.  For example, such
+an enumerator may examine the return result of an iteratee. If the
+latter yields <code>#f</code>, the iteration is abandoned; the result
+<code>'()</code> means the traversal will go on. Any other value is
+added to a list that accumulates meaningful results of all iteratee
+invocations, in order.</p>
+
+<p>The best enumerator ought to let an iteratee explicitly pass
+its private state from one invocation to another -- similar to the the
+way an <code>unfold</code> combinator (see SRFI-1) tosses the <code>seed</code>
+around.  Some syntax however ought to be employed to make it easier
+for an iteratee to pack its state data into a 'parcel' -- only to
+unpack the data on the next iteration.  For example, one can imagine
+the following enumerator:</p>
+<pre>     (enumerate
+      (lambda (curr-elem count result)
+         (let ((x (car key-value)))
+           (if (good-value? x)
+               (let ((new-count (+ 1 count)))
+                 (values (&lt; new-count count-max)     ; #f as the first arg
+                         new-count                   ; will terminate the iter
+                         (cons x result)))           ; early
+               (values #t count result)
+               )))
+      treap
+      0              ; Initial value for the count
+      '()            ; Initial value for the result
+     )
+</pre>
+<p>The iteratee in the example above takes three arguments. The
+first one is the current element -- similar to the argument the
+ordinary <code>for-each</code> passes to its iteratee. The initial values for
+the other two arguments are given as invocation parameters of the
+enumerator.  The iteratee must return as many values as the arguments
+it received.  The first return value must be either <code>#t</code> or
+<code>#f</code>. In the latter case the traversal is prematurely
+terminated; otherwise it may continue, if there are elements to
+enumerate, of course. The other return values are passed to the next
+invocation of the iteratee as the second,... arguments.  The
+enumerator returns several values, which is the result yielded by the
+last invocation of the iteratee save the first value of the
+multi-value.  If the iteratee was never called, the initial values
+will be returned.  One can envision similar procedures
+<code>enumerate-replace</code> or <code>enumerate-replace!</code>,
+which use the first return value of the iteratee to update the current
+element, either functionally or destructively.</p>
+
+<p>This is just a suggestion. It may also be considered a
+blueprint for an ODBC-like interface in a true Scheme spirit; the
+collection in question is the result of a SELECT statement. I'm
+interested to hear if all this makes any sense.</p>
+
+<p>Since the previous phrase was written, the proposed enumerator
+interface has indeed been tried and found satisfactory. It was first
+implemented in a relational database access library [<a href="#database-access">database-access</a>]. This interface has been used in a production
+environment.  The generic-left-fold-based interface underlies the
+Collection SRFI. It was also used in a TIFF library [<a href="#TIFF">TIFF</a>],
+and even in other languages [<a href="#nonrec-fold-stream">nonrec-fold-stream</a>]. The LL3
+presentation [<a href="#LL3-enumerators">LL3-enumerators</a>] discussed the interface in
+more detail.</p>
+<br>&nbsp;<a name="Finalization">&nbsp;</a>
+<h2>Finalization problem: reclaiming resources after enumeration</h2>
+
+<p>Joe Marshall remarked:</p>
+
+<blockquote>Have you considered passing the iteratee a function that
+continues the iteration? The iteratee would look something like this:<pre>     (lambda (this-element current-state continue-iteration)
+       (let ((next-state (combine this-element current-state)))
+         (if (done? next-state)
+           next-state
+           (continue-iteration next-state))))
+</pre></blockquote>
+
+<p>This solution -- along with a lazy list solution above -- has
+one troublesome property. A special function has to be called to
+continue the traversal. To stop the traversal, iteratee doesn't have
+to do anything special: just return.  This is somewhat similar to the
+lazy-list solution. There, the element handler must force a promise to
+get to the next element in a collection. In contrast, in the
+enumerator proposal, to stop a traversal the iteratee must return a
+special kind of value to the caller. If some other value is returned,
+the iteration implicitly continues.</p>
+
+<p>Traversing a collection may require resources, e.g, a stack, a
+connection to a database, a DIR handle, a DOM tree of an XML document,
+etc. An enumerator takes care of allocating these resources.  When
+iteratee explicitly tells the enumerator to stop -- or when the
+collection is exhausted -- the enumerator can orderly free the
+resources.</p>
+
+<p>On the other hand, if iteration advances only upon an explicit
+call to a <code>continue-iteration</code> function, it is not so clear
+cut when to dispose of resources.  Obviously an enumeration should be
+assumed terminated when the <code>continue-iteration</code>
+procedure/closure is garbage-collected. This assumes that we can
+associate <em>finalizers</em> with objects -- which is not a
+standard feature. Fortunately, Gambit provides for 'wills', which it
+uses specifically for that purpose, to free a file handle when a port
+is GCed. Alas, the moment garbage collection (GC) is performed is not
+precisely defined. Often GC runs only when memory is tight. In that
+case, the following example</p>
+<pre>     (do ((i 0 (+ i 1))) ((&gt;= i 1000))
+       (open-input-file &quot;/dev/null&quot; (lambda () #f)))
+</pre>runs out of file handles way before it runs out of memory. On the
+other hand, the following code, although just as silly, completes
+without problems<pre>     (do ((i 0 (+ i 1))) ((&gt;= i 1000))
+       (with-input-from-file &quot;/dev/null&quot; (lambda () #f)))
+</pre>Incidentally, the example is stolen from a Python FAQ, from a section that
+aimed to illustrate why Python's reference-counting GC may be better
+than Java's mark-and-sweep GC.
+<p>The lazy-list solution we considered earlier, as well STL iterators
+exhibit this finalization problem, too. Therefore, there does appear
+to be a merit in insisting that iteratee do not escape an
+enumerator. Granted, the iteratee may call a continuation captured
+before enumerator was entered. For that reason, enumerator should
+employ a <code>dynamic-wind</code> to detect such an attempt to
+escape, shed excessive resources and switch to a &quot;low-power&quot;, &quot;sleep&quot;
+mode while the iteratee is on the run.</p>
+<br>&nbsp;<a name="Conclusions">&nbsp;</a>
+<h2>Conclusions</h2>
+
+<p>In this article we attempted to imagine a &quot;perfect&quot;
+enumerator, enumerator interface, or an <em>enumerator pattern</em>. If all collections were to support this general interface, there
+will be far less need to hack them with call/cc.</p>
+
+<p>Actually, there may still be a need to invert an iteration: for
+example, to move <em>some</em> elements from one collection into another. It
+seems very difficult for a single iteratee-copier to be controlled by
+two enumerators at the same time. Is there a generic way to chain two
+or more enumerators? I don't even know where to begin.</p>
+
+<p>We should note that some problems seem to lend themselves to 
+an event callback, dont-call-us-we-call-you-style: an enumerator
+driving an iteratee. Some other problems are more amenable to a
+<code>read-char</code>-, <code>GetNextEvent</code>-style: enumeration
+inversion.</p>
+
+<p>The proposed left-fold-based enumerator with the premature
+termination has been implemented and tested in practice, in
+particular, in a database access library [<a href="#database-access">database-access</a>]. The example quoted in that reference shows that the interface can
+deal with <code>EXISTS</code> and other subqueries, table expressions,
+collection datatypes, geodetic datablade datatypes and functions, and
+other frills. The enumerator makes it possible indeed to present a
+functional interface even to such complex collections as
+object-relational databases.</p>
+<br>&nbsp;<a name="References">&nbsp;</a>
+<h2>References</h2>
+
+<p><a name="generators">[generators]</a> 
+<br><a href="../continuations/generators.html">Generators: the API for traversal and non-determinism</a></p>
+
+<p><a name="iteratees">[iteratees]</a> 
+<br><a href="../Haskell/Iteratee/">Iteratees:</a> Incremental multi-level input processing and collection enumeration</p>
+
+<p><a name="LL3-enumerators">[LL3-enumerators]</a> 
+<br><a href="../Haskell/Iteratee/index.html#enumerator-stream">Towards the best collection traversal interface</a></p>
+
+<p><a name="enumerators-src">[enumerators-src]</a> 
+<br><a href="enumerators-callcc-code-old.scm">enumerators-callcc-code-old.scm</a> [8K]<br>The complete code for the treap enumeration examples.</p>
+
+<p><a name="inversion-src">[inversion-src]</a> 
+<br><a href="enumerators-callcc-code.scm">enumerators-callcc-code.scm</a> [4K]<br>The complete code for the enumerator inversion procedure and a
+few tests.</p>
+
+<p><a name="generators-src">[generators-src]</a> 
+<br><a href="generators.scm">generators.scm</a> [6K]<br>The complete code for the generator examples.</p>
+
+<p><a name="nonrec-fold-stream">[nonrec-fold-stream]</a> 
+<br><a href="../Haskell/Iteratee/index.html#fold-stream">The enumerator inversion procedure in Haskell</a></p>
+
+<p><a name="database-access">[database-access]</a> 
+<br><a href="lib/db-util1.scm">db-util1.scm</a> [24K]<br>Scheme database access tools
+<br><a href="tests/vdbaccess.scm">vdbaccess.scm</a> [5K]<br>Illustrative regression tests
+<br>&lt;<a href="http://www.metnet.navy.mil/Metcast/Code/gief-serve.scm">http://www.metnet.navy.mil/Metcast/Code/gief-serve.scm</a>&gt;
+<br>An example of using the left-fold-based database interface in a
+production environment.</p>
+
+<p><a name="TIFF">[TIFF]</a> 
+<br><a href="binary-io.html#tiff">Handling a TIFF file in Scheme</a></p>
+
+<p><a name="Treap">[Treap]</a> 
+<br><a href="index.html#treaps">Treaps:</a> A sorted dictionary data structure based on randomized search trees.</p>
+
+<p><a name="generators-disc">[generators-disc]</a> 
+<br>Ben Escoto. Re: Generators in Python, Icon and Scheme. A message
+posted on comp.lang.scheme on 2001-10-03 01:50:02 PST.</p>
+
+<p>The present page has started as a compilation of three articles 
+<Cite>General ways to traverse collections, and the fate of
+call/cc</Cite> posted on a comp.lang.scheme newsgroup Apr 16 through Apr
+20, 2000. The section about generators is based on an article <Cite>Generators in Python, Icon and Scheme</Cite> posted on comp.lang.scheme
+on Oct 2, 2001.</p>
+
+<br>
+<div>
+<hr></div>
+
+<h3>Last updated May 4, 2011</h3>
+
+<p>This site's top page is <a href="http://okmij.org/ftp/"><strong>http://okmij.org/ftp/</strong></a></p>
+
+<div>
+<address>oleg-at-okmij.org
+<br>Your comments, problem reports, questions are very welcome!</address>
+</div>
+
+<p><font size="-2">Converted from SXML by SXML-&gt;HTML</font></p>
+</body></html>
