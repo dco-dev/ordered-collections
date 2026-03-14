@@ -193,7 +193,7 @@
 
   java.util.List
   (indexOf [_ x]
-    (tree/node-rank root x cmp))
+    (or (tree/node-rank root x cmp) -1))
   (lastIndexOf [this x]
     (.indexOf this x))
 
@@ -287,10 +287,11 @@
     (with-ordered-set this
       (cond
         (identical? this o) true
+        (not (instance? clojure.lang.Counted o)) false
         (not= (tree/node-size root) (.count ^clojure.lang.Counted o)) false
         (.isCompatible this o) (zero? (tree/node-set-compare root (.getRoot ^OrderedSet o)))
         (.isSimilar    this o) (.equiv ^clojure.lang.IPersistentSet (into (empty o) this) o)
-        true     (throw (ex-info "unsupported comparison: " {:this this :o o})))))
+        :else false)))
   (count [_]
     (tree/node-size root))
   (empty [_]
@@ -308,12 +309,15 @@
 
   clojure.lang.IHashEq
   (hasheq [this]
-    ;; Set hash is sum of hasheq of all elements (order-independent)
-    (tree/node-reduce
-      (fn [^long acc n]
-        (unchecked-add acc (Murmur3/hashInt (clojure.lang.Util/hasheq (node/-k n)))))
-      (long 0)
-      root))
+    ;; Must match APersistentSet: sum of hasheq(element), then mixCollHash
+    (Murmur3/mixCollHash
+      (unchecked-int
+        (tree/node-reduce
+          (fn [^long acc n]
+            (unchecked-add acc (long (clojure.lang.Util/hasheq (node/-k n)))))
+          (long 0)
+          root))
+      (tree/node-size root)))
 
   clojure.lang.IReduceInit
   (reduce [this f init]

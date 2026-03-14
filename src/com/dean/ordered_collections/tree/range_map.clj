@@ -41,7 +41,7 @@
             [com.dean.ordered-collections.tree.protocol :as proto]
             [com.dean.ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang ILookup Associative IPersistentCollection Seqable
-             Counted IFn IMeta IObj MapEntry]
+             Counted IFn IMeta IObj MapEntry Murmur3]
             [com.dean.ordered_collections.tree.protocol PRangeMap]
             [com.dean.ordered_collections.tree.tree EnumFrame]))
 
@@ -242,6 +242,18 @@
   (equiv [this that]
     (and (instance? RangeMap that)
          (= (seq this) (seq that))))
+
+  clojure.lang.IHashEq
+  (hasheq [this]
+    (Murmur3/mixCollHash
+      (unchecked-int
+        (tree/node-reduce
+          (fn [^long acc n]
+            (unchecked-add acc (long (clojure.lang.Util/hasheq
+                                       (MapEntry. (node/-k n) (node/-v n))))))
+          (long 0)
+          root))
+      (tree/node-size root)))
 
   PRangeMap
   (ranges [this]

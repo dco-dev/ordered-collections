@@ -163,7 +163,7 @@
         (.isCompatible this o) (and (= (.count this) (.count ^clojure.lang.Counted o))
                                     (zero? (tree/node-map-compare root (.getRoot ^INodeCollection o))))
         (map? o) (.equiv ^clojure.lang.IPersistentCollection (into (empty o) (tree/node-vec root :accessor :kv)) o)
-        true     (throw (ex-info "unsupported comparison: " {:this this :o o})))))
+        :else false)))
 
   (cons [this o]
     (.assoc this (nth o 0) (nth o 1)))
@@ -231,13 +231,16 @@
 
   clojure.lang.IHashEq
   (hasheq [this]
-    ;; Map hash is sum of (hasheq(key) XOR hasheq(val)) for all entries
-    (tree/node-reduce
-      (fn [^long acc n]
-        (unchecked-add acc (bit-xor (clojure.lang.Util/hasheq (node/-k n))
-                                    (clojure.lang.Util/hasheq (node/-v n)))))
-      (long 0)
-      root))
+    ;; Must match APersistentMap: sum of hasheq(MapEntry) for each entry, then mixCollHash
+    (Murmur3/mixCollHash
+      (unchecked-int
+        (tree/node-reduce
+          (fn [^long acc n]
+            (unchecked-add acc (long (clojure.lang.Util/hasheq
+                                       (clojure.lang.MapEntry. (node/-k n) (node/-v n))))))
+          (long 0)
+          root))
+      (tree/node-size root)))
 
   PNearest
   (nearest [this test k]

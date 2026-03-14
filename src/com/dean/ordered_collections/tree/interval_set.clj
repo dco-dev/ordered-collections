@@ -7,7 +7,7 @@
             [com.dean.ordered-collections.tree.protocol :as proto]
             [com.dean.ordered-collections.tree.root]
             [com.dean.ordered-collections.tree.tree     :as tree])
-  (:import  [clojure.lang                RT]
+  (:import  [clojure.lang                RT Murmur3]
             [com.dean.ordered_collections.tree.protocol PExtensibleSet PIntervalCollection]
             [com.dean.ordered_collections.tree.root     INodeCollection
                                          IBalancedCollection
@@ -221,9 +221,10 @@
     (with-interval-set this
       (cond
         (identical? this o) true
+        (not (instance? clojure.lang.Counted o)) false
         (.isCompatible this o) (and (= (.count this) (.count ^clojure.lang.Counted o))
                                     (zero? (tree/node-set-compare root (.getRoot ^INodeCollection o))))
-        true (throw (ex-info "unsupported comparison: " {:this this :o o})))))
+        :else false)))
   (count [_]
     (tree/node-size root))
   (empty [_]
@@ -250,6 +251,17 @@
                        (f acc (node/-k n))))
                    sentinel root)]
       (if (identical? result sentinel) (f) result)))
+
+  clojure.lang.IHashEq
+  (hasheq [this]
+    (Murmur3/mixCollHash
+      (unchecked-int
+        (tree/node-reduce
+          (fn [^long acc n]
+            (unchecked-add acc (long (clojure.lang.Util/hasheq (node/-k n)))))
+          (long 0)
+          root))
+      (tree/node-size root)))
 
   clojure.core.reducers.CollFold
   (coll-fold [this n combinef reducef]

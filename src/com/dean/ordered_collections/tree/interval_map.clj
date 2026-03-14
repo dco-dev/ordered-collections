@@ -6,7 +6,7 @@
             [com.dean.ordered-collections.tree.root]
             [com.dean.ordered-collections.tree.order    :as order]
             [com.dean.ordered-collections.tree.tree     :as tree])
-  (:import  [clojure.lang                RT MapEntry]
+  (:import  [clojure.lang                RT MapEntry Murmur3]
             [com.dean.ordered_collections.tree.protocol PIntervalCollection]
             [com.dean.ordered_collections.tree.root     INodeCollection
                                          IBalancedCollection
@@ -89,9 +89,9 @@
   clojure.lang.ILookup
   (valAt [this k not-found]
     (with-interval-map this
-      (if-let [found (tree/node-find-intervals root k)]
+      (if-let [found (seq (tree/node-find-intervals root k))]
         (map node/-v found)
-      not-found)))
+        not-found)))
   (valAt [this k]
     (.valAt this k nil))
 
@@ -126,7 +126,8 @@
       (not (empty? (tree/node-find-intervals root k)))))
   (entryAt [this k]
     (with-interval-map this
-      (some->> k (tree/node-find-intervals root) (map node/-kv))))
+      (when-let [found (seq (tree/node-find-intervals root k))]
+        (node/-kv (first found)))))
   (assoc [this k v]
     (IntervalMap. (tree/node-add root (interval/ordered-pair k) v cmp alloc) cmp alloc stitch _meta))
   (empty [this]
@@ -162,9 +163,10 @@
     (with-interval-map this
       (cond
         (identical? this o) true
+        (not (instance? clojure.lang.Counted o)) false
         (.isCompatible this o) (and (= (.count this) (.count ^clojure.lang.Counted o))
                                     (zero? (tree/node-map-compare root (.getRoot ^INodeCollection o))))
-        true     (throw (ex-info "unsupported comparison: " {:this this :o o})))))
+        :else false)))
 
   (cons [this o]
     (.assoc this (nth o 0) (nth o 1)))
@@ -184,6 +186,18 @@
                    sentinel root)]
       (if (identical? result sentinel) (f) result)))
 
+  clojure.lang.IHashEq
+  (hasheq [this]
+    (Murmur3/mixCollHash
+      (unchecked-int
+        (tree/node-reduce
+          (fn [^long acc n]
+            (unchecked-add acc (long (clojure.lang.Util/hasheq
+                                       (clojure.lang.MapEntry. (node/-k n) (node/-v n))))))
+          (long 0)
+          root))
+      (tree/node-size root)))
+
   clojure.core.reducers.CollFold
   (coll-fold [this n combinef reducef]
     (with-interval-map this
@@ -196,7 +210,7 @@
       (throw (RuntimeException. "Key or value already present"))
       (assoc this k v)))
   (without [this k]
-    (IntervalMap. (tree/node-remove root k cmp alloc) cmp alloc stitch _meta)))
+    (IntervalMap. (tree/node-remove root (interval/ordered-pair k) cmp alloc) cmp alloc stitch _meta)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Literal Representation

@@ -12,7 +12,7 @@
             [com.dean.ordered-collections.tree.order    :as order]
             [com.dean.ordered-collections.tree.protocol :as proto]
             [com.dean.ordered-collections.tree.tree     :as tree])
-  (:import  [clojure.lang RT]
+  (:import  [clojure.lang RT Murmur3]
             [java.util Comparator]))
 
 
@@ -140,11 +140,16 @@
   (iterator [this]
     (clojure.lang.SeqIterator. (seq this)))
 
+  clojure.lang.IHashEq
+  (hasheq [this]
+    ;; Hash as an ordered collection of [priority value] pairs
+    (Murmur3/hashOrdered this))
+
   Object
   (toString [this]
     (str "#PriorityQueue" (vec (seq this))))
   (hashCode [this]
-    (.hashCode ^Object (vec (seq this))))
+    (.hasheq this))
   (equals [this o]
     (and (instance? PriorityQueue o)
          (.equiv this o)))

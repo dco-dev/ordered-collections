@@ -276,10 +276,11 @@
     (with-fuzzy-map this
       (cond
         (identical? this o) true
-        (not= (tree/node-size root) (count o)) false
+        (not (instance? clojure.lang.Counted o)) false
+        (not= (tree/node-size root) (.count ^clojure.lang.Counted o)) false
         (.isCompatible this o) (zero? (tree/node-compare root (.getRoot ^FuzzyMap o)))
         (.isSimilar this o) (.equiv ^clojure.lang.IPersistentCollection (into (empty o) this) o)
-        true (throw (ex-info "unsupported comparison: " {:this this :o o})))))
+        :else false)))
 
   clojure.lang.IPersistentMap
   (assocEx [this k v]
@@ -291,7 +292,16 @@
 
   clojure.lang.IHashEq
   (hasheq [this]
-    (Murmur3/hashUnordered this))
+    ;; Must match APersistentMap: sum of hasheq(MapEntry) for each entry, then mixCollHash
+    (Murmur3/mixCollHash
+      (unchecked-int
+        (tree/node-reduce
+          (fn [^long acc n]
+            (unchecked-add acc (long (clojure.lang.Util/hasheq
+                                       (clojure.lang.MapEntry. (node/-k n) (node/-v n))))))
+          (long 0)
+          root))
+      (tree/node-size root)))
 
   clojure.lang.IReduceInit
   (reduce [this f init]
