@@ -34,7 +34,10 @@ foundation for splitting, joining, and parallel operations.
 
 ## Quick Start
 
-Use `ordered-set` and `ordered-map` exactly like `clojure.core/sorted-set` and `clojure.core/sorted-map`:
+Use `ordered-set` and `ordered-map` exactly like
+`clojure.core/sorted-set` and `clojure.core/sorted-map`. All the functions you know work the same way. The difference is under the
+hood — and in the new things you can do.
+
 
 ```clojure
 
@@ -56,10 +59,6 @@ Use `ordered-set` and `ordered-map` exactly like `clojure.core/sorted-set` and `
 (assoc m :d 4)          ;=> {:a 1, :b 2, :c 3, :d 4}
 (subseq m >= :b <= :c)  ;=> ([:b 2] [:c 3])
 ```
-
-All the functions you know work the same way. The difference is under the
-hood — and in the new operations described below.
-
 ---
 
 ## Performance
