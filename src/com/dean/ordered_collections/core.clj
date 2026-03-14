@@ -9,7 +9,8 @@
             [com.dean.ordered-collections.tree.interval-set         :refer [->IntervalSet]]
             [com.dean.ordered-collections.tree.node                 :as node]
             [com.dean.ordered-collections.tree.order                :as order]
-            [com.dean.ordered-collections.tree.ordered-map          :refer [->OrderedMap]]
+            [com.dean.ordered-collections.tree.ordered-map          :refer [->OrderedMap]
+                                                                    :as omap]
             [com.dean.ordered-collections.tree.ordered-multiset     :as multiset]
             [com.dean.ordered-collections.tree.ordered-set          :refer [->OrderedSet]]
             [com.dean.ordered-collections.tree.priority-queue       :as pq]
@@ -340,7 +341,7 @@
      (assoc-new m :existing-key :v) ; => m (unchanged)"
   proto/assoc-new)
 
-(defn ordered-merge-with
+(def ordered-merge-with
   "Merge ordered maps with a function to resolve conflicts.
    When the same key appears in multiple maps, (f key val-in-result val-in-latter) is called.
    Uses parallel divide-and-conquer for large maps (threshold: 10000 elements).
@@ -348,38 +349,7 @@
    Examples:
      (ordered-merge-with (fn [k a b] (+ a b)) m1 m2)
      (ordered-merge-with (fn [k a b] b) m1 m2 m3)  ; last-wins"
-  [f & maps]
-  (when (some identity maps)
-    (let [merge-fn (fn [k v1 v2] (f k v2 v1))  ;; swap order to match clojure.core/merge-with semantics
-          maps (filter identity maps)]
-      (if (empty? maps)
-        nil
-        (reduce
-          (fn [m1 m2]
-            (if (and (instance? com.dean.ordered_collections.tree.ordered_map.OrderedMap m1)
-                     (instance? com.dean.ordered_collections.tree.ordered_map.OrderedMap m2)
-                     (.isCompatible ^IOrderedCollection m1 m2))
-              ;; Both are compatible ordered-maps: use fast tree merge
-              (let [^INodeCollection m1c m1
-                    ^INodeCollection m2c m2
-                    root1 (.getRoot m1c)
-                    root2 (.getRoot m2c)
-                    cmp (.getCmp ^IOrderedCollection m1)
-                    use-parallel? (>= (+ (tree/node-size root1) (tree/node-size root2))
-                                      tree/+parallel-threshold+)]
-                (binding [order/*compare* cmp]
-                  (->OrderedMap
-                    (if use-parallel?
-                      (tree/node-map-merge-parallel root1 root2 merge-fn)
-                      (tree/node-map-merge root1 root2 merge-fn))
-                    cmp nil nil {})))
-              ;; Fallback: use sequential assoc
-              (reduce-kv (fn [m k v]
-                           (if-let [existing (get m k)]
-                             (assoc m k (f k existing v))
-                             (assoc m k v)))
-                         m1 m2)))
-          maps)))))
+  omap/ordered-merge-with)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interval Map

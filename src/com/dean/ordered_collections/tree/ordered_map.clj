@@ -328,6 +328,55 @@
 ;; Literal Representation
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Merge
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn ordered-merge-with
+  "Merge ordered maps with a function to resolve conflicts.
+   When the same key appears in multiple maps, (f key val-in-result val-in-latter) is called.
+   Uses parallel divide-and-conquer for large maps (threshold: 10000 elements).
+
+   Examples:
+     (ordered-merge-with (fn [k a b] (+ a b)) m1 m2)
+     (ordered-merge-with (fn [k a b] b) m1 m2 m3)  ; last-wins"
+  [f & maps]
+  (when (some identity maps)
+    (let [merge-fn (fn [k v1 v2] (f k v2 v1))  ;; swap order to match clojure.core/merge-with semantics
+          maps (filter identity maps)]
+      (if (empty? maps)
+        nil
+        (reduce
+          (fn [m1 m2]
+            (if (and (instance? OrderedMap m1)
+                     (instance? OrderedMap m2)
+                     (.isCompatible ^IOrderedCollection m1 m2))
+              ;; Both are compatible ordered-maps: use fast tree merge
+              (let [^INodeCollection m1c m1
+                    ^INodeCollection m2c m2
+                    root1 (.getRoot m1c)
+                    root2 (.getRoot m2c)
+                    cmp (.getCmp ^IOrderedCollection m1)
+                    use-parallel? (>= (+ (tree/node-size root1) (tree/node-size root2))
+                                      tree/+parallel-threshold+)]
+                (binding [order/*compare* cmp]
+                  (->OrderedMap
+                    (if use-parallel?
+                      (tree/node-map-merge-parallel root1 root2 merge-fn)
+                      (tree/node-map-merge root1 root2 merge-fn))
+                    cmp nil nil {})))
+              ;; Fallback: use sequential assoc
+              (reduce-kv (fn [m k v]
+                           (if-let [existing (get m k)]
+                             (assoc m k (f k existing v))
+                             (assoc m k v)))
+                         m1 m2)))
+          maps)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Literal Representation
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defmethod print-method OrderedMap [^OrderedMap m ^java.io.Writer w]
   (if (order/default-comparator? (.getCmp ^IOrderedCollection m))
     (do (.write w "#ordered/map [")
