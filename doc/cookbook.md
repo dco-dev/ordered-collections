@@ -308,7 +308,7 @@ Practical examples showing where ordered-collections shines.
         fresh-data (if-let [first-key (first (keys data))]
                      (if (< first-key cutoff)
                        ;; Split off old data
-                       (second (oc/split-at data cutoff))
+                       (let [[_ _ fresh] (oc/split-key cutoff data)] fresh)
                        data)
                      data)]
     (assoc window :data (assoc fresh-data timestamp value))))
@@ -475,28 +475,28 @@ Practical examples showing where ordered-collections shines.
 
 ;; split-key: partition at a key value
 ;; Returns [elements-below, exact-match-or-nil, elements-above]
-(let [[below match above] (oc/split-key prices 500)]
+(let [[below match above] (oc/split-key 500 prices)]
   {:below (vec below)    ;; => [100 200 300 400]
    :match match          ;; => 500
    :above (vec above)})  ;; => [600 700 800 900 1000]
 
 ;; Key doesn't have to exist
-(let [[below match above] (oc/split-key prices 550)]
+(let [[below match above] (oc/split-key 550 prices)]
   {:below (vec below)    ;; => [100 200 300 400 500]
    :match match          ;; => nil
    :above (vec above)})  ;; => [600 700 800 900 1000]
 
 ;; split-at: partition at an index
 ;; Returns [left, right]
-(let [[left right] (oc/split-at prices 3)]
+(let [[left right] (oc/split-at 3 prices)]
   {:left (vec left)      ;; => [100 200 300]
    :right (vec right)})  ;; => [400 500 600 700 800 900 1000]
 
 ;; Useful for pagination
 (defn paginate [coll page-size page-num]
   (let [offset (* page-size page-num)
-        [_ remaining] (oc/split-at coll offset)
-        [page _] (oc/split-at remaining page-size)]
+        [_ remaining] (oc/split-at offset coll)
+        [page _] (oc/split-at page-size remaining)]
     (vec page)))
 
 (paginate prices 3 1)  ;; => [400 500 600] (page 1, 0-indexed)
@@ -517,23 +517,23 @@ Practical examples showing where ordered-collections shines.
      [40 "widget-d"] [50 "widget-e"] [60 "widget-f"]]))
 
 ;; Two-sided bounds
-(oc/subrange inventory >= 25 <= 50)
+(oc/subrange inventory :>= 25 :<= 50)
 ;; => {30 "widget-c", 40 "widget-d", 50 "widget-e"}
 
 ;; One-sided bounds
-(oc/subrange inventory > 40)
+(oc/subrange inventory :> 40)
 ;; => {50 "widget-e", 60 "widget-f"}
 
-(oc/subrange inventory < 30)
+(oc/subrange inventory :< 30)
 ;; => {10 "widget-a", 20 "widget-b"}
 
 ;; Works with sets too
 (def ids (oc/ordered-set (range 0 100 5)))  ; 0, 5, 10, ..., 95
-(vec (oc/subrange ids >= 20 < 40))
+(vec (oc/subrange ids :>= 20 :< 40))
 ;; => [20 25 30 35]
 
 ;; Count elements in range without materializing
-(count (oc/subrange ids >= 50 <= 80))  ;; => 7
+(count (oc/subrange ids :>= 50 :<= 80))  ;; => 7
 ```
 
 **Why ordered-collections?** Returns a view backed by the original tree. O(log n) to create, efficient iteration.
@@ -548,19 +548,19 @@ Practical examples showing where ordered-collections shines.
 (def versions (oc/ordered-set [100 200 300 450 500 800]))
 
 ;; Find version at or below target
-(oc/nearest versions <= 350)  ;; => 300
-(oc/nearest versions <= 300)  ;; => 300 (exact match)
-(oc/nearest versions <= 50)   ;; => nil (nothing at or below)
+(oc/nearest versions :<= 350)  ;; => 300
+(oc/nearest versions :<= 300)  ;; => 300 (exact match)
+(oc/nearest versions :<= 50)   ;; => nil (nothing at or below)
 
 ;; Find version strictly below target
-(oc/nearest versions < 300)   ;; => 200
+(oc/nearest versions :< 300)   ;; => 200
 
 ;; Find version at or above target
-(oc/nearest versions >= 350)  ;; => 450
-(oc/nearest versions >= 800)  ;; => 800
+(oc/nearest versions :>= 350)  ;; => 450
+(oc/nearest versions :>= 800)  ;; => 800
 
 ;; Find version strictly above target
-(oc/nearest versions > 500)   ;; => 800
+(oc/nearest versions :> 500)   ;; => 800
 
 ;; Practical: find applicable config version
 (def config-versions
@@ -570,8 +570,8 @@ Practical examples showing where ordered-collections shines.
      [350 {:feature-a true :feature-b true :feature-c true}]]))
 
 (defn config-for-version [v]
-  (when-let [k (oc/nearest (keys config-versions) <= v)]
-    (config-versions k)))
+  (when-let [[_ config] (oc/nearest config-versions :<= v)]
+    config))
 
 (config-for-version 275)
 ;; => {:feature-a true, :feature-b true}
@@ -616,7 +616,7 @@ Practical examples showing where ordered-collections shines.
 5. **Use `subrange` instead of filtering**
    ```clojure
    ;; Fast: O(log n) bounds, returns a view
-   (oc/subrange my-set >= 100 < 200)
+   (oc/subrange my-set :>= 100 :< 200)
 
    ;; Slow: creates intermediate seq, tests every element
    (filter #(<= 100 % 199) my-set)
@@ -625,7 +625,7 @@ Practical examples showing where ordered-collections shines.
 6. **Use `nearest` for floor/ceiling**
    ```clojure
    ;; Fast: O(log n)
-   (oc/nearest my-set <= target)
+   (oc/nearest my-set :<= target)
 
    ;; Slow: O(n) in worst case
    (last (take-while #(<= % target) my-set))
