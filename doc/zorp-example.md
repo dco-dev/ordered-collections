@@ -116,14 +116,14 @@ The problem: each of Tony's 47 feet has a slightly different size. Zorp needs to
      11.0 11.5 12.0 12.5 13.0 13.5 14.0 14.5 15.0]))
 
 ;; Reginald needs 11.3 - find the largest size that fits (floor)
-(oc/nearest available-sizes <= 11.3)  ;; => 11.0
+(oc/nearest available-sizes :<= 11.3)  ;; => 11.0
 
 ;; Or the smallest size with room to spare (ceiling)
-(oc/nearest available-sizes >= 11.3)  ;; => 11.5
+(oc/nearest available-sizes :>= 11.3)  ;; => 11.5
 
 ;; Strict bounds (exclusive)
-(oc/nearest available-sizes < 11.0)   ;; => 10.5  (strictly below 11)
-(oc/nearest available-sizes > 13.0)   ;; => 13.5  (strictly above 13)
+(oc/nearest available-sizes :< 11.0)   ;; => 10.5  (strictly below 11)
+(oc/nearest available-sizes :> 13.0)   ;; => 13.5  (strictly above 13)
 
 ;; Fit all of Tony's feet
 (def tonys-feet
@@ -131,8 +131,8 @@ The problem: each of Tony's 47 feet has a slightly different size. Zorp needs to
    :humphrey 13.7, :agnes 8.1, :bernard 12.0})
 
 (defn fit-foot [[foot-name ideal-size]]
-  (let [size-down (oc/nearest available-sizes <= ideal-size)
-        size-up   (oc/nearest available-sizes >= ideal-size)]
+  (let [size-down (oc/nearest available-sizes :<= ideal-size)
+        size-up   (oc/nearest available-sizes :>= ideal-size)]
     {:foot foot-name
      :ideal ideal-size
      :snug size-down
@@ -180,28 +180,28 @@ Zorp is planning a VIP event for top spenders and a re-engagement campaign for d
 (let [n (count customer-spending)]
 
   ;; Top 10% for VIP invites
-  (let [[_ top-10-pct] (oc/split-at customer-spending (- n (quot n 10)))]
+  (let [[_ top-10-pct] (oc/split-at (- n (quot n 10)) customer-spending)]
     (println "VIP count:" (count top-10-pct))
     (println "Minimum spend for VIP:" (first (first top-10-pct))))
 
   ;; Bottom 20% for re-engagement
-  (let [[bottom-20-pct _] (oc/split-at customer-spending (quot n 5))]
+  (let [[bottom-20-pct _] (oc/split-at (quot n 5) customer-spending)]
     (println "Re-engagement count:" (count bottom-20-pct))
     (println "Max spend in this group:" (first (last bottom-20-pct))))
 
   ;; Median spender for pricing strategy
-  (let [[_ upper-half] (oc/split-at customer-spending (quot n 2))]
+  (let [[_ upper-half] (oc/split-at (quot n 2) customer-spending)]
     (println "Median spend:" (first (first upper-half)))))
 
 ;; split-key partitions by value - segment at spending threshold
 ;; Returns [below, exact-match-or-nil, above]
-(let [[casual exact vip] (oc/split-key customer-spending 10000)]
+(let [[casual exact vip] (oc/split-key 10000 customer-spending)]
   {:casual (count casual)
    :exact-10k (some? exact)
    :vip (count vip)})
 
 ;; The results are full collections - chain operations
-(let [[_ _ high-spenders] (oc/split-key customer-spending 25000)]
+(let [[_ _ high-spenders] (oc/split-key 25000 customer-spending)]
   ;; Top spender among high-spenders
   (last high-spenders))
 ```
@@ -269,7 +269,7 @@ Unlike `nearest` (which finds floor OR ceiling), fuzzy collections automatically
 ;; Upsell pattern: show distance to next tier
 (defn tier-status [points]
   (let [[threshold tier _] (oc/fuzzy-nearest loyalty-tiers points)
-        next-threshold (oc/nearest (oc/ordered-set (keys loyalty-tiers)) > threshold)]
+        next-threshold (oc/nearest (oc/ordered-set (keys loyalty-tiers)) :> threshold)]
     (cond-> tier
       next-threshold (assoc :points-to-next (- next-threshold points)))))
 
@@ -356,7 +356,7 @@ Year-end clearance. Zorp needs to find all items that haven't sold in 90 days, c
      203 {:sku "AG-700" :name "Anti-Gravity 3000" :price 899.00 :markdown 0.50}}))
 
 ;; Find items stale for 90+ days - candidates for liquidation
-(def liquidation-candidates (oc/subrange stale-inventory >= 90))
+(def liquidation-candidates (oc/subrange stale-inventory :>= 90))
 
 (count liquidation-candidates)  ;; => 4 items
 
@@ -368,18 +368,18 @@ Year-end clearance. Zorp needs to find all items that haven't sold in 90 days, c
 ;; => 1511.5 credits if we liquidate now
 
 ;; Items in the "warning zone" (60-90 days) - markdown further or promote?
-(def warning-zone (oc/subrange stale-inventory >= 60 < 90))
+(def warning-zone (oc/subrange stale-inventory :>= 60 :< 90))
 
 (for [[days item] warning-zone]
   {:name (:name item) :days-stale days :current-markdown (:markdown item)})
 ;; => ({:name "Europa Ice", :days-stale 67, :current-markdown 0.15})
 
 ;; Fresh items (under 30 days) - no action needed
-(count (oc/subrange stale-inventory < 30))  ;; => 1
+(count (oc/subrange stale-inventory :< 30))  ;; => 1
 
 ;; Compare to full-price inventory
-(let [full-price (oc/subrange stale-inventory < 60)
-      discounted (oc/subrange stale-inventory >= 60)]
+(let [full-price (oc/subrange stale-inventory :< 60)
+      discounted (oc/subrange stale-inventory :>= 60)]
   {:full-price-count (count full-price)
    :discounted-count (count discounted)
    :liquidation-count (count liquidation-candidates)})

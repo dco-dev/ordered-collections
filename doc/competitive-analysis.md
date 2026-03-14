@@ -6,162 +6,177 @@ This document compares `ordered-collections` against the primary alternatives in
 
 | Aspect | ordered-collections | clojure.core | clojure.data.avl |
 |--------|---------------------|--------------|------------------|
-| **Tree Type** | Weight-balanced | Red-black | AVL |
-| **Set Operations** | O(m log(n/m+1)) parallel | O(n) via clojure.set | O(m log(n/m+1)) |
+| **Tree type** | Weight-balanced | Red-black | AVL |
+| **Set operations** | O(m log(n/m+1)) | O(n) via clojure.set | O(m log(n/m+1)) |
 | **O(log n) nth/rank** | Yes | No | Yes |
-| **O(log n) first/last** | Yes | O(n) | Yes |
-| **Interval Trees** | Yes | No | No |
-| **Fuzzy Lookup** | Yes | No | No |
+| **O(log n) last** | Yes | O(n) | O(n) |
+| **Parallel fold** | Yes (fork-join) | No | No |
+| **Interval trees** | Yes | No | No |
+| **Segment trees** | Yes | No | No |
+| **Range maps** | Yes | No | No |
+| **Fuzzy lookup** | Yes | No | No |
 | **Memory/element** | ~64 bytes | ~61 bytes | ~64 bytes |
-| **Parallel fold** | Yes | No | No |
 
-## Memory Overhead (Measured)
+## Algorithmic Comparison
 
-From `memory_test.clj` at N=100,000:
+### Set Operations (Union, Intersection, Difference)
 
-| Collection | Bytes/Element | vs sorted-set |
-|------------|---------------|---------------|
-| sorted-set | 60.6 | 1.00x |
-| data.avl sorted-set | 64.0 | 1.06x |
-| **ordered-set** | 64.0 | 1.06x |
-| long-ordered-set | 88.0 | 1.45x |
+All three libraries support set algebra, but the algorithms differ fundamentally:
 
-| Collection | Bytes/Entry | vs sorted-map |
-|------------|-------------|---------------|
-| sorted-map | 84.6 | 1.00x |
-| data.avl sorted-map | 88.0 | 1.04x |
-| **ordered-map** | 88.0 | 1.04x |
+**clojure.core** uses `clojure.set/union` etc., which iterate element-by-element, inserting each into the result. This is O(n log n) regardless of overlap between the sets.
 
-**Takeaway**: Memory overhead is minimal (4-6%) compared to core sorted collections. Both ordered-collections and data.avl use the same amount of memory.
-
-## Performance Characteristics
-
-### Set Operations
-
-Both ordered-collections and data.avl implement Adams' divide-and-conquer algorithms:
+**data.avl** and **ordered-collections** both implement Adams' divide-and-conquer algorithm:
 
 ```
-union(T1, T2):
-  Split T1 at T2.root → (L1, _, R1)
-  return join(T2.root, union(L1, T2.left), union(R1, T2.right))
+union(T₁, T₂):
+    split T₁ at root(T₂) → (L₁, _, R₁)
+    join(union(L₁, left(T₂)), root(T₂), union(R₁, right(T₂)))
 ```
 
-**Complexity**: O(m log(n/m + 1)) where m ≤ n
+This gives O(m log(n/m + 1)) where m ≤ n, which is information-theoretically optimal. When one set is much smaller, this is dramatically better than linear.
 
-This is asymptotically optimal and **dramatically faster** than `clojure.set/union` which is O(n).
+**ordered-collections** additionally parallelizes the two independent recursive calls via `ForkJoinPool` when the combined tree size exceeds 210,000 elements. In practice this yields 5-13x speedup over sorted-set and 2-10x over data.avl across the range N=10K to N=500K. See [Benchmarks](benchmarks.md) for measurements.
 
-ordered-collections adds **parallel execution** via ForkJoinPool for trees exceeding 65,536 combined elements, providing additional speedup on multi-core systems.
-
-### Indexed Access
+### Positional Access
 
 Both ordered-collections and data.avl track subtree sizes, enabling:
 - `(nth coll i)` in O(log n) instead of O(n)
-- `(rank coll x)` to find element position
-- `(split-at coll i)` to split at index
+- `(rank-of coll x)` to find element position
+- `(split-at i coll)` to split at index
 
-Core sorted collections require O(n) traversal for positional access.
+Core sorted collections require O(n) traversal for any positional operation.
 
 ### First/Last Element
 
-| Operation | clojure.core | ordered-collections |
-|-----------|--------------|---------------------|
-| `(first coll)` | O(1) | O(1) |
-| `(last coll)` | **O(n)** | **O(log n)** |
+| Operation | clojure.core | data.avl | ordered-collections |
+|-----------|:---:|:---:|:---:|
+| `(first coll)` | O(1) | O(1) | O(1) |
+| `(last coll)` | **O(n)** | **O(n)** | **O(log n)** |
 
-For a 1M element set, `(last sorted-set)` scans the entire collection. ordered-collections uses `java.util.SortedSet.last()` which traverses only log₂(n) ≈ 20 nodes.
+For a 1M-element set, `(last sorted-set)` scans the entire collection (~8 seconds). ordered-collections traverses ~20 nodes via `java.util.SortedSet.last()`.
+
+### Split and Join
+
+| | clojure.core | data.avl | ordered-collections |
+|--|:---:|:---:|:---:|
+| `split-key` | — | O(log n) | O(log n) |
+| `split-at` | — | O(log n) | O(log n) |
+| `join` | — | O(log n) | O(log n) |
+
+Split/join is the foundation for set operations, subrange extraction, and parallel fold. Core sorted collections don't expose these operations.
+
+ordered-collections has lower constant factors for split/join than data.avl (~3-4x faster in practice) because the weight-balanced invariant composes directly with subtree sizes — no height recomputation is needed.
+
+### Parallel Fold
+
+ordered-collections implements `clojure.core.reducers/CollFold` using tree decomposition: split at the root, fold left and right subtrees in parallel via `ForkJoinPool`, combine results.
+
+Both sorted-set and data.avl fall back to sequential reduce. At N=500K, parallel fold is 5-15x faster than sorted-set and 1-5x faster than data.avl, depending on the reduction function.
 
 ## Feature Comparison with data.avl
 
 | Feature | ordered-collections | data.avl |
-|---------|---------------------|----------|
+|---------|:---:|:---:|
 | `split-key` | ✓ | ✓ |
 | `split-at` | ✓ | ✓ |
 | `subrange` | ✓ | ✓ |
-| `nearest` | ✓ | ✓ |
+| `nearest` (floor/ceiling) | ✓ | ✓ |
 | `nth` / positional access | ✓ | ✓ |
 | `rank-of` | ✓ | ✓ |
-| Parallel set operations | ✓ | ✗ |
-| Parallel `r/fold` | ✓ | ✗ |
-| Interval trees | ✓ | ✗ |
-| Fuzzy lookup | ✓ | ✗ |
-| Range maps | ✓ | ✗ |
-| Priority queues | ✓ | ✗ |
-| Segment trees | ✓ | ✗ |
-| Multisets | ✓ | ✗ |
-| Serialization | ✓ | ✓ |
-| ClojureScript | ✗ | ✓ |
-| Transient support | ✗ | ✓ |
+| Parallel set operations | ✓ | — |
+| Parallel `r/fold` | ✓ | — |
+| Interval trees | ✓ | — |
+| Segment trees | ✓ | — |
+| Fuzzy sets/maps | ✓ | — |
+| Range maps | ✓ | — |
+| Priority queues | ✓ | — |
+| Multisets | ✓ | — |
+| EDN serialization | ✓ | ✓ |
+| ClojureScript | — | ✓ |
+| Transient support | — | ✓ |
 
-## When to Use Each Library
+### What data.avl has that we don't
 
-### Use clojure.core sorted collections when:
-- You need the smallest possible dependency footprint
-- Memory is more important than specialized operations
-- You don't need fast `last`, positional access, or set operations
+**ClojureScript support.** ordered-collections is JVM-only due to Java interop (`java.util.SortedSet`, `ForkJoinPool`, etc.). If you need sorted collections in ClojureScript, data.avl is your option.
 
-### Use clojure.data.avl when:
-- You need ClojureScript compatibility
-- You need transient/mutable builders for construction
-- You only need the core sorted map/set functionality
+**Transient support.** data.avl supports `transient`/`persistent!` for batch mutation. ordered-collections uses persistent construction throughout, mitigated by parallel batch construction which is competitive in practice.
 
-### Use ordered-collections when:
-- You need interval trees, fuzzy sets, or other specialized collections
-- You want parallel set operations and parallel fold
-- You're building applications with heavy set algebra
-- You need range maps, segment trees, or priority queues
+## Memory Overhead
 
-## Tree Algorithm
+From `memory_test.clj` at N=100,000 (measured with clj-memory-meter):
 
-ordered-collections uses weight-balanced trees with Hirai-Yamamoto parameters (δ=3, γ=2). This is the same algorithm used in Haskell's `Data.Set` and `Data.Map`.
+| Collection | Bytes/Element | vs sorted-set |
+|------------|:---:|:---:|
+| sorted-set | 60.6 | 1.00x |
+| data.avl sorted-set | 64.0 | 1.06x |
+| **ordered-set** | 64.0 | 1.06x |
 
-**Academic Foundation:**
-- Adams, S. (1992). "Implementing Sets Efficiently in a Functional Language"
-- Hirai, Y. & Yamamoto, K. (2011). "Balancing Weight-Balanced Trees" [JFP 21(3):287-307]
+| Collection | Bytes/Entry | vs sorted-map |
+|------------|:---:|:---:|
+| sorted-map | 84.6 | 1.00x |
+| data.avl sorted-map | 88.0 | 1.04x |
+| **ordered-map** | 88.0 | 1.04x |
 
-**Why weight-balanced trees?**
-1. Simple invariant (size ratio) enables clean persistent implementations
-2. Adams' set algorithms require only the `join` operation to be tree-specific
-3. Subtree sizes are already maintained, enabling O(log n) positional access
+Memory overhead is minimal (4-6%) compared to core sorted collections. ordered-collections and data.avl use the same amount — each node stores one extra field (subtree size/weight) beyond what red-black trees need.
 
 ## Specialized Collections
 
-ordered-collections provides several collections not available elsewhere:
+ordered-collections provides several collection types not available elsewhere in the Clojure ecosystem:
 
 ### Interval Trees
-Augmented trees with max-endpoint tracking for O(k + log n) overlap queries:
+Augmented trees with max-endpoint tracking for O(log n + k) overlap queries:
 ```clojure
-(def events (interval-set [[0 10] [5 15] [20 30]]))
-(overlapping events [8 12])  ;=> [[0 10] [5 15]]
+(def events (oc/interval-set [[0 10] [5 15] [20 30]]))
+(events [8 12])  ;=> ([0 10] [5 15])  — intervals overlapping [8,12]
+(events 5)       ;=> ([0 10] [5 15])  — intervals containing point 5
 ```
 
-### Fuzzy Sets/Maps
-Approximate matching with configurable distance functions:
+### Segment Trees
+O(log n) range aggregate queries with O(log n) updates:
 ```clojure
-(def fs (fuzzy-set [1.0 2.0 3.0 10.0]))
-(fs 2.1)  ;=> 2.0 (nearest match)
+(def st (oc/sum-tree {0 10, 1 20, 2 30, 3 40}))
+(oc/query st 1 3)  ;=> 90
 ```
 
 ### Range Maps
-Non-overlapping range-to-value mappings with automatic coalescing:
+Non-overlapping range-to-value mappings with automatic splitting on insert:
 ```clojure
-(def rm (range-map {[0 10] :a [20 30] :b}))
+(def rm (oc/range-map {[0 10] :a [20 30] :b}))
 (rm 5)   ;=> :a
 (rm 15)  ;=> nil
 ```
 
-### Segment Trees
-O(log n) range aggregate queries:
+### Fuzzy Sets/Maps
+Nearest-neighbor lookup with configurable distance and tiebreaking:
 ```clojure
-(def st (sum-tree {0 10, 1 20, 2 30, 3 40}))
-(query st 1 3)  ;=> 90
+(def fs (oc/fuzzy-set [1.0 2.0 3.0 10.0]))
+(fs 2.1)  ;=> 2.0
 ```
+
+## When to Use Each
+
+### Use clojure.core sorted collections when:
+- You need zero external dependencies
+- You only need basic lookup, insert, delete, and `subseq`
+- You don't need fast `last`, positional access, or set algebra
+
+### Use clojure.data.avl when:
+- You need ClojureScript compatibility
+- You need transient builders for batch construction
+- You want nth/rank but don't need intervals, segments, or parallelism
+
+### Use ordered-collections when:
+- You need specialized collections (intervals, segments, ranges, fuzzy lookup)
+- You want parallel set operations and parallel fold
+- You're working with large sorted collections and need fast set algebra
+- You need O(log n) `last`, `median`, `percentile`, or `slice`
 
 ## Honest Limitations
 
-1. **No ClojureScript support**: JVM-only due to Java interop
-2. **No transient builders**: Construction is persistent-only
-3. **Slightly higher memory**: 6% more than core sorted collections
-4. **Default comparator overhead**: `clojure.core/compare` has type dispatch overhead; use `long-ordered-set` for primitive keys
+1. **No ClojureScript support** — JVM-only due to Java interop
+2. **No transient builders** — construction is persistent-only (mitigated by parallel batch construction)
+3. **Slightly higher memory** — 6% more than core sorted collections
+4. **Lookup within 10%** — not meaningfully faster or slower than either competitor for point queries
 
 ## References
 
@@ -170,7 +185,3 @@ O(log n) range aggregate queries:
 3. Blelloch, G., Ferizovic, D., & Sun, Y. (2016). "Just Join for Parallel Ordered Sets". SPAA '16.
 4. [clojure.data.avl documentation](https://github.com/clojure/data.avl)
 5. [Haskell containers documentation](https://hackage.haskell.org/package/containers)
-
----
-
-*Analysis based on measured benchmarks. Memory tests at N=100,000 on JDK 25.*
