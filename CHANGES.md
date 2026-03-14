@@ -1,217 +1,69 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## [0.2.0-SNAPSHOT] - 2025-02-11
 
-## [0.2.0] - 2025-02-11
+### New Collection Types
 
-### New Features
+- **Range Map** (`range-map`) — non-overlapping `[lo, hi)` ranges with automatic carve-out on insert
+- **Segment Tree** (`segment-tree`, `sum-tree`, `min-tree`, `max-tree`) — O(log n) range aggregation with any associative operation
+- **Priority Queue** (`priority-queue`) — O(log n) push/peek/pop with min and max access
+- **Ordered Multiset** (`ordered-multiset`) — sorted bag allowing duplicate elements
+- **Fuzzy Set/Map** (`fuzzy-set`, `fuzzy-map`) — nearest-neighbor lookup by distance with configurable tiebreaking
 
-#### New Collection Types
+### New Operations
 
-- **Priority Queue** (`priority-queue`): O(log n) push/peek/pop with parallel fold
-  ```clojure
-  (def pq (priority-queue [3 1 4 1 5]))
-  (peek pq)  ; => 1 (min element)
-  (pop pq)   ; => queue without min
-  (push pq 0 :zero)  ; => queue with [0 :zero] added
-  ```
+- **Set algebra**: `union`, `intersection`, `difference`, `subset?`, `superset?`, `disjoint?`
+- **Positional**: `rank-of`, `slice`, `median`, `percentile`
+- **Navigation**: `nearest` (floor/ceiling with keyword tests `:<=`, `:>=`, `:<`, `:>`), `subrange`, `split-key`, `split-at`
+- **Interval**: `overlapping`, `span`
+- **Range map**: `ranges`, `spanning-range`, `gaps`, `assoc-coalescing`, `get-entry`, `range-remove`
+- **Segment tree**: `query`, `aggregate`, `update-val`, `update-fn`
+- **Priority queue**: `push`, `push-all`, `peek-min`, `peek-val`, `pop-min`, `peek-max`, `peek-max-val`, `pop-max`
+- **Multiset**: `multiplicity`, `disj-one`, `disj-all`, `distinct-elements`, `element-frequencies`
+- **Fuzzy**: `fuzzy-nearest`, `fuzzy-exact-contains?`, `fuzzy-exact-get`
+- **Map**: `assoc-new`, `ordered-merge-with`
 
-- **Ordered Multiset** (`ordered-multiset`): Sorted bag allowing duplicates
-  ```clojure
-  (def ms (ordered-multiset [3 1 4 1 5 9 2 6 5 3 5]))
-  (seq ms)         ; => (1 1 2 3 3 4 5 5 5 6 9)
-  (multiplicity ms 5)  ; => 3
-  (disj-one ms 5)  ; removes one occurrence
-  ```
+### Specialized Constructors
 
-- **Fuzzy Set** (`fuzzy-set`): Returns closest element to query
-  ```clojure
-  (def fs (fuzzy-set [1 5 10 20]))
-  (fs 7)   ; => 5 (closest to 7)
-  (fs 15)  ; => 10 or 20 depending on tiebreak
+- Type-specific: `long-ordered-set`, `long-ordered-map`, `double-ordered-set`, `double-ordered-map`, `string-ordered-set`, `string-ordered-map`
+- Custom comparator: `ordered-set-by`, `ordered-map-by`, `ordered-set-with`, `ordered-map-with`, `ordered-multiset-by`, `fuzzy-set-by`, `fuzzy-map-by`
+- Exported comparators: `long-compare`, `double-compare`, `string-compare`, `compare-by`
 
-  ;; With tiebreaker
-  (def fs (fuzzy-set [0 10 20] :tiebreak :>))
-  (fs 15)  ; => 20 (prefer larger when equidistant)
-  ```
+### Interface Implementations
 
-- **Fuzzy Map** (`fuzzy-map`): Returns value for closest key to query
-  ```clojure
-  (def fm (fuzzy-map {0 :zero 10 :ten 100 :hundred}))
-  (fm 7)   ; => :ten (closest key to 7 is 10)
-  (fm 55)  ; => :ten or :hundred depending on tiebreak
+- `clojure.lang.Sorted` — native `subseq`/`rsubseq` on ordered-set and ordered-map
+- `clojure.core.reducers/CollFold` — fork-join parallel fold on all collection types (threshold: 8,192 elements)
+- `clojure.lang.IHashEq` — correct `hash` for use in hash-based collections
+- `java.io.Serializable` — Java serialization support
+- `IReduceInit`/`IReduce` — direct tree traversal for fast `reduce`
+- Direct `ISeq` implementations (`KeySeq`, `EntrySeq`) replace lazy-seq wrappers
 
-  ;; Exact lookup (no fuzzy matching)
-  (fuzzy-exact-get fm 10)   ; => :ten
-  (fuzzy-exact-get fm 11)   ; => nil
-  ```
+### EDN Tagged Literals
 
-#### Specialized Comparator Constructors
+Round-trip serialization via `data_readers.clj`: `#ordered/set`, `#ordered/map`, `#ordered/interval-set`, `#ordered/interval-map`, `#ordered/range-map`, `#ordered/priority-queue`, `#ordered/multiset`.
 
-- **Type-specific constructors** for competitive lookup performance:
-  ```clojure
-  ;; Long keys - 3% faster than sorted-set
-  (long-ordered-set [1 2 3])
-  (long-ordered-map [[1 :a] [2 :b]])
+### Performance
 
-  ;; String keys - 5% faster than sorted-set
-  (string-ordered-set ["apple" "banana" "cherry"])
-  (string-ordered-map [["a" 1] ["b" 2]])
+- **Parallel set operations** via ForkJoinPool (threshold: 210,000 combined elements; sequential cutoff: 64)
+- **Primitive node types** (`LongKeyNode`, `DoubleKeyNode`) — unboxed key storage
+- **Primitive lookup fast path** — `long-ordered-set` bypasses `Comparator` dispatch
 
-  ;; Double keys
-  (double-ordered-set [1.0 2.0 3.0])
-  (double-ordered-map [[1.0 :a] [2.0 :b]])
-  ```
+See [benchmarks](doc/benchmarks.md) and [performance analysis](doc/perf-analysis.md) for numbers.
 
-- **Custom comparator constructors** for full control:
-  ```clojure
-  ;; Pass a java.util.Comparator directly
-  (ordered-set-with long-compare [1 2 3])
-  (ordered-map-with string-compare [["a" 1] ["b" 2]])
+### Build
 
-  ;; Build from predicate (slightly slower)
-  (ordered-set-with (compare-by >) [1 2 3])  ; descending
-  ```
-
-- **Exported comparators** for reuse:
-  - `long-compare` - optimized Long comparison
-  - `double-compare` - optimized Double comparison
-  - `string-compare` - optimized String comparison
-  - `compare-by` - build Comparator from predicate
-
-#### Full `clojure.lang.Sorted` Support
-- `ordered-set` and `ordered-map` now implement `clojure.lang.Sorted`
-- Enables native `subseq` and `rsubseq` support:
-  ```clojure
-  (def os (ordered-set (range 10)))
-  (subseq os >= 3 < 7)  ; => (3 4 5 6)
-  (rsubseq os > 5)      ; => (9 8 7 6)
-
-  (def om (ordered-map (map #(vector % (str %)) (range 10))))
-  (subseq om >= 3 < 7)  ; => ([3 "3"] [4 "4"] [5 "5"] [6 "6"])
-  ```
-
-#### Parallel Fold (`r/fold`) for All Collection Types
-- All collection types now implement `clojure.core.reducers/CollFold`
-- Enables efficient parallel reduction via `r/fold`:
-  ```clojure
-  (require '[clojure.core.reducers :as r])
-  (def os (ordered-set (range 1000000)))
-  (r/fold + os)  ; parallel sum - 1.6x faster than sorted-set
-  ```
-- Supported types:
-  - `ordered-set`, `ordered-map`
-  - `interval-set`, `interval-map`
-  - `priority-queue`, `ordered-multiset`
-  - `fuzzy-set`, `fuzzy-map`
-
-#### Proper Hash Support
-- `ordered-set` and `ordered-map` now implement `clojure.lang.IHashEq`
-- Enables correct behavior in hash-based collections:
-  ```clojure
-  (def s1 (ordered-set [1 2 3]))
-  (def s2 (ordered-set [1 2 3]))
-  (= (hash s1) (hash s2))  ; => true
-  #{s1 s2}                 ; => #{#{1 2 3}} (deduplicated)
-  ```
-
-#### Serialization Support
-- `ordered-set` and `ordered-map` now implement `java.io.Serializable`
-- Enables serialization via Java serialization mechanisms
-
-### Performance Improvements
-
-#### ForkJoinPool Parallel Set Operations
-- Set operations (union, intersection, difference) now use `java.util.concurrent.ForkJoinPool`
-- Work-stealing parallelism based on Blelloch, Ferizovic, Sun (2016) join-based algorithms
-- **6.9x faster** union, **7.4x faster** intersection vs `clojure.set`
-- Automatic threshold tuning (64K combined elements) for optimal sequential/parallel tradeoff
-
-#### Primitive Lookup Optimization
-- `long-ordered-set` and `long-ordered-map` now use primitive `Long/compare` directly
-- Bypasses `java.util.Comparator` interface dispatch entirely
-- **20% faster** lookups than `sorted-set` for Long keys
-- Automatic detection: uses fast path when comparator is `long-compare`
-
-#### Primitive Node Types
-- `LongKeyNode` and `DoubleKeyNode` store keys as primitives (not boxed)
-- Used automatically by `long-ordered-set`, `long-ordered-map`, etc.
-- Reduces GC pressure and memory overhead for numeric workloads
-
-#### Iteration Performance
-- All types implement optimized `IReduceInit` and `IReduce` for fast reduce
-- **Direct reduce: 2.1x faster than sorted-set** via direct tree traversal
-
-#### Seq Performance
-- New direct `ISeq` implementations (`KeySeq`, `EntrySeq`) replace lazy-seq + map wrappers
-- Seq types also implement `IReduceInit` for fast reduce over seqs
-- **Reduce over seq: 1.4x faster than sorted-set/sorted-map**
-- **Seq iteration (first/next): within 7% of sorted-set/sorted-map**
-- Efficient reverse seq via `KeySeqReverse` and `EntrySeqReverse`
-- All seq types implement `Counted` for O(1) count when size is known
-
-#### Lookup Performance
-- Comparators implement `java.util.Comparator` for fast dispatch
-- `long-ordered-set`/`long-ordered-map` use primitive `Long/compare`
-- **`long-ordered-set` is 3% faster than `sorted-set`** for numeric keys
-- `ordered-set` with default comparator is 14% slower (use `long-*` for numerics)
-
-#### Reduced Dynamic Var Overhead
-- Hot-path operations (`assoc`, `dissoc`, `get`, `contains?`) bypass dynamic binding
-- Explicit parameter passing to tree functions eliminates binding push/pop overhead
-- ~200ns savings per operation
+- Added `deps.edn` with aliases: `:dev`, `:test`, `:bench`, `:bench-simple`, `:bench-range-map`, `:bench-parallel`
 
 ### Bug Fixes
 
-#### SortedSet Semantics
-- `tailSet` now correctly returns elements >= x (was exclusive, now inclusive)
-- `subSet` now correctly returns elements >= from and < to
-- Matches Java `SortedSet` contract
-
-#### Interval Tree Construction
-- Fixed `interval-set` and `interval-map` construction to use sequential reduce instead of parallel fold
-- Previously, parallel workers lost dynamic binding for node allocator, causing `ClassCastException` for collections >2048 elements
-- Interval trees now construct correctly at all sizes
-
-### Performance Summary (N=500K, verified with Criterium)
-
-| Operation | sorted-set | data.avl | ordered-set | vs sorted | vs avl |
-|-----------|------------|----------|-------------|-----------|--------|
-| Last element (100 calls) | 3.98s | 4.60s | **34µs** | **118,000x** | **135,000x** |
-| Union (50% overlap) | 321ms | 376ms | **40ms** | **8x** | **9x** |
-| Intersection | 213ms | 172ms | **36ms** | **6x** | **5x** |
-| Difference | 213ms | 149ms | **31ms** | **7x** | **5x** |
-| Reduce | 57ms | 11ms | **17ms** | **3.4x** | — |
-
-**Parallel Fold (r/fold):**
-| N | sorted-set | data.avl | ordered-set | vs sorted | vs avl |
-|---|------------|----------|-------------|-----------|--------|
-| 500K | 54ms | 11ms | **3.4ms** | **16x** | **3.2x** |
-| 1M | 71ms | 18ms | **7.2ms** | **10x** | **2.5x** |
-| 2M | 197ms | 45ms | **15ms** | **13x** | **3x** |
-
-Tree-based fork-join parallelism. sorted-set and data.avl fall back to sequential.
-
-**Lookup (10K queries, N=100K):**
-- sorted-set: 2.93ms
-- ordered-set: 2.80ms (on par)
-- long-ordered-set: **2.11ms (28% faster)**
-
-Performance advantages grow with collection size. For `last` element, ordered-set is O(log n) while sorted-set and data.avl are O(n).
+- `SortedSet.tailSet` now returns elements >= x (was exclusive)
+- `SortedSet.subSet` now returns elements >= from, < to
+- Interval tree construction uses sequential reduce (parallel fold lost dynamic binding for node allocator at >2048 elements)
 
 ### Breaking Changes
 
-#### Removed Mutable Variants
-- **Removed**: `mutable-ordered-set`, `mutable-ordered-map`, `mutable-interval-set`, `mutable-interval-map`
-- The mutable variants added API complexity with marginal performance benefit
-- Use persistent types directly - construction via `ordered-set` and `ordered-map` is now faster
-- For batch operations, the persistent constructors now use parallel fold internally
-
-#### Removed Transient Support
-- **Removed**: `transient`/`persistent!` support from all collection types
-- The implementation only saved wrapper allocation, not tree node allocation
-- Tree operations still did full path-copying, providing no meaningful speedup
-- This simplifies the API without loss of real-world performance
+- **Removed** `mutable-ordered-set`, `mutable-ordered-map`, `mutable-interval-set`, `mutable-interval-map`
+- **Removed** `transient`/`persistent!` support (path-copying made it a no-op)
 
 ---
 
