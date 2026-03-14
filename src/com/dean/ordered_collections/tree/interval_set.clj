@@ -215,6 +215,27 @@
   (last [this]
     (with-interval-set this
       (first (tree/node-greatest-kv root))))
+  (headSet [this x]
+    (with-interval-set this
+      (IntervalSet. (tree/node-split-lesser root (interval/ordered-pair x)) cmp alloc stitch {})))
+  (tailSet [this x]
+    (with-interval-set this
+      (let [k (interval/ordered-pair x)
+            [_ present gt] (tree/node-split root k)]
+        (if present
+          (IntervalSet. (tree/node-add gt (first present) (first present) cmp alloc) cmp alloc stitch {})
+          (IntervalSet. gt cmp alloc stitch {})))))
+  (subSet [this from to]
+    (with-interval-set this
+      (let [from-k (interval/ordered-pair from)
+            to-k (interval/ordered-pair to)
+            [_ from-present from-gt] (tree/node-split root from-k)
+            from-tree (if from-present
+                        (tree/node-add from-gt (first from-present) (first from-present) cmp alloc)
+                        from-gt)
+            to-tree (tree/node-split-lesser root to-k)
+            result (tree/node-set-intersection from-tree to-tree)]
+        (IntervalSet. result cmp alloc stitch {}))))
 
   clojure.lang.IPersistentSet
   (equiv [this o]
