@@ -1435,7 +1435,7 @@
 ;; Empirically determined via parallel_threshold_bench.clj:
 ;;   - Union crossover: ~65K
 ;;   - Intersection/Difference crossover: ~49K
-(def ^:const ^long +parallel-threshold+ 65536)
+(def ^:const ^long +parallel-threshold+ 210000)
 
 ;; Secondary threshold for very small subtrees where even sequential
 ;; divide-and-conquer has overhead. Use direct linear merge instead.
