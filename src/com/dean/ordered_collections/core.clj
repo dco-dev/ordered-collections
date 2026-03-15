@@ -357,6 +357,18 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn interval-map
+  "Create an interval map from [interval value] entries.
+   Intervals are [lo hi] pairs. Supports O(log n + k) overlap queries.
+
+   Query by invoking as a function:
+     (imap point)       — entries whose interval contains point
+     (imap [lo hi])     — entries overlapping the range
+
+   Examples:
+     (interval-map [[[1 5] :a] [[3 8] :b]])
+     (def imap (interval-map [[[0 10] \"x\"] [[5 20] \"y\"]]))
+     (imap 7)         ; => [[[0 10] \"x\"] [[5 20] \"y\"]]
+     (imap [11 15])   ; => [[[5 20] \"y\"]]"
   ([]
    (interval-map nil))
   ([coll]
@@ -375,6 +387,19 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn interval-set
+  "Create an interval set from intervals or points.
+   Intervals are [lo hi] pairs; bare values become [x x] point intervals.
+   Supports O(log n + k) overlap queries.
+
+   Query by invoking as a function:
+     (iset point)       — intervals containing point
+     (iset [lo hi])     — intervals overlapping the range
+
+   Examples:
+     (interval-set [[1 3] [2 4] [5 9]])
+     (def iset (interval-set [[0 10] [5 20]]))
+     (iset 7)         ; => [[0 10] [5 20]]
+     (iset [11 15])   ; => [[5 20]]"
   ([]
    (interval-set nil))
   ([coll]
