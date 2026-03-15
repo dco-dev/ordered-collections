@@ -181,6 +181,10 @@
   (reduce [this f]
     (tree/node-reduce-entries f root))
 
+  clojure.lang.IKVReduce
+  (kvreduce [this f init]
+    (tree/node-reduce-kvs f init root))
+
   Object
   (toString [this]
     (pr-str this))
