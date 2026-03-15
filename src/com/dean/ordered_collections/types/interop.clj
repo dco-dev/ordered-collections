@@ -27,7 +27,9 @@
   (subset? [this that]
     (set/subset? this that))
   (superset? [this that]
-    (set/subset? that this)))
+    (set/subset? that this))
+  (disjoint? [this that]
+    (empty? (set/intersection this that))))
 
 (extend-type clojure.lang.PersistentTreeSet
   proto/PExtensibleSet
@@ -40,7 +42,9 @@
   (subset? [this that]
     (set/subset? this that))
   (superset? [this that]
-    (set/subset? that this)))
+    (set/subset? that this))
+  (disjoint? [this that]
+    (empty? (set/intersection this that))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
