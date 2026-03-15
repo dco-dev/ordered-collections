@@ -37,22 +37,14 @@ Practical examples showing where ordered-collections shines.
                              {:id id :score score :data data}))))
 
 (defn rank-of-player [board player-id score]
-  ;; Find position in sorted order via iteration
-  (let [key [score player-id]]
-    (loop [i 0, entries (seq board)]
-      (when entries
-        (if (= (ffirst entries) key)
-          i
-          (recur (inc i) (next entries)))))))
+  (oc/rank board [score player-id]))
 
 (defn players-around-rank [board rank window]
-  ;; Get players from (rank - window) to (rank + window)
   (let [start (max 0 (- rank window))
-        end (+ rank window 1)]
-    (->> (range start end)
-         (keep #(when-let [entry (nth board % nil)]
-                  (let [[[score id] data] entry]
-                    {:rank % :id id :score score}))))))
+        end   (min (count board) (+ rank window 1))]
+    (map-indexed (fn [i [[score id] data]]
+                   {:rank (+ start i) :id id :score score})
+                 (oc/slice board start end))))
 
 ;; Usage
 (def board (-> (make-leaderboard)
