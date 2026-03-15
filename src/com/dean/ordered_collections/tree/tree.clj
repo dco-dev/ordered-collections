@@ -515,30 +515,20 @@
   [k v l r]
   (let [^Comparator cmp order/*compare*
         create *t-join*]
-    (letfn [(cat3 [k v l r]
+    (letfn [(add [n]
+              (if (leaf? n)
+                (create k v (leaf) (leaf))
+                (kvlr [key val l r] n
+                  (let [c (.compare cmp k key)]
+                    (if (zero? c)
+                      (create key v l r)
+                      (if (neg? c)
+                        (stitch-wb create key val (add l) r)
+                        (stitch-wb create key val l (add r))))))))
+            (cat3 [k v l r]
               (cond
-                (leaf? l) (let [add (fn add [n]
-                                     (if (leaf? n)
-                                       (create k v (leaf) (leaf))
-                                       (kvlr [key val l r] n
-                                         (let [c (.compare cmp k key)]
-                                           (if (zero? c)
-                                             (create key v l r)
-                                             (if (neg? c)
-                                               (stitch-wb create key val (add l) r)
-                                               (stitch-wb create key val l (add r))))))))]
-                            (add r))
-                (leaf? r) (let [add (fn add [n]
-                                     (if (leaf? n)
-                                       (create k v (leaf) (leaf))
-                                       (kvlr [key val l r] n
-                                         (let [c (.compare cmp k key)]
-                                           (if (zero? c)
-                                             (create key v l r)
-                                             (if (neg? c)
-                                               (stitch-wb create key val (add l) r)
-                                               (stitch-wb create key val l (add r))))))))]
-                            (add l))
+                (leaf? l) (add r)
+                (leaf? r) (add l)
                 true      (let [lw (node-weight l)
                                 rw (node-weight r)]
                             (cond
