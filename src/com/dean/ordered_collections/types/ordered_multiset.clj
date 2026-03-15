@@ -294,11 +294,12 @@
   Example:
     (ordered-multiset [3 1 4 1 5 9 2 6 5 3 5])
     ;; => #OrderedMultiset[1 1 2 3 3 4 5 5 5 6 9]"
-  [coll]
-  (let [base-cmp order/normal-compare
-        ms-cmp (make-multiset-comparator base-cmp)
-        empty-ms (OrderedMultiset. (node/leaf) ms-cmp base-cmp 0 {})]
-    (into empty-ms coll)))
+  ([] (ordered-multiset []))
+  ([coll]
+   (let [base-cmp order/normal-compare
+         ms-cmp (make-multiset-comparator base-cmp)
+         empty-ms (OrderedMultiset. (node/leaf) ms-cmp base-cmp 0 {})]
+     (into empty-ms coll))))
 
 (defn ordered-multiset-by
   "Create an ordered multiset with a custom comparator.

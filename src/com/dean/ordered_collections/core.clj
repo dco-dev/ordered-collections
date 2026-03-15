@@ -422,12 +422,14 @@
     :comparator - priority comparator (default: compare, natural ordering)
 
   Examples:
+    (priority-queue)                                  ; empty queue
     (priority-queue [[1 :urgent] [5 :low] [3 :medium]])
     (priority-queue [[1 :a] [2 :b]] :comparator >) ; max-heap
 
   Use (peek-min pq) for min element, (pop-min pq) to remove it."
-  [pairs & opts]
-  (apply pq/priority-queue pairs opts))
+  ([] (pq/priority-queue))
+  ([pairs & opts]
+   (apply pq/priority-queue pairs opts)))
 
 (defalias push
   "Add an element to a priority queue with the given priority.
@@ -486,11 +488,13 @@
 
   Supports O(log n) add/remove, nth access, and parallel fold.
 
-  Example:
+  Examples:
+    (ordered-multiset)                                ; empty multiset
     (ordered-multiset [3 1 4 1 5 9 2 6 5 3 5])
     ;; => #OrderedMultiset[1 1 2 3 3 4 5 5 5 6 9]"
-  [coll]
-  (multiset/ordered-multiset coll))
+  ([] (multiset/ordered-multiset))
+  ([coll]
+   (multiset/ordered-multiset coll)))
 
 (defn ordered-multiset-by
   "Create an ordered multiset with a custom comparator.

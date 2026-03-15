@@ -256,14 +256,15 @@
   Examples:
     (priority-queue [[1 :a] [3 :c] [2 :b]])           ; min-heap
     (priority-queue [[1 :a] [3 :c]] :comparator >)    ; max-heap"
-  [pairs & {:keys [comparator]}]
-  (let [base-cmp (cond
-                   (nil? comparator)                order/normal-compare
-                   (instance? Comparator comparator) comparator
-                   :else                             (order/compare-by comparator))
-        pq-cmp (make-pq-comparator base-cmp)
-        empty-pq (PriorityQueue. (node/leaf) pq-cmp 0 {})]
-    (push-all empty-pq pairs)))
+  ([] (priority-queue []))
+  ([pairs & {:keys [comparator]}]
+   (let [base-cmp (cond
+                    (nil? comparator)                order/normal-compare
+                    (instance? Comparator comparator) comparator
+                    :else                             (order/compare-by comparator))
+         pq-cmp (make-pq-comparator base-cmp)
+         empty-pq (PriorityQueue. (node/leaf) pq-cmp 0 {})]
+     (push-all empty-pq pairs))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Print Method
