@@ -174,19 +174,7 @@
 
   clojure.lang.IReduce
   (reduce [this f]
-    ;; No-init reduce: first entry becomes initial accumulator
-    (if (node/leaf? root)
-      (f)
-      (let [least (tree/node-least root)
-            first-entry (clojure.lang.MapEntry. (node/-k least) (node/-v least))
-            seen-first (volatile! false)]
-        (tree/node-reduce-entries
-          (fn [acc entry]
-            (if @seen-first
-              (f acc entry)
-              (do (vreset! seen-first true) entry)))
-          first-entry
-          root))))
+    (tree/node-reduce-entries f root))
 
   clojure.lang.IKVReduce
   (kvreduce [this f init]

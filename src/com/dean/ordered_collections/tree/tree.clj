@@ -1051,22 +1051,35 @@
 (defn node-reduce-keys
   "Optimized reduction over keys only (for sets). Calls (f acc k) directly.
    Supports early termination via clojure.core/reduced."
-  [f init root]
-  (letfn [(reduce-node [acc n]
-            (cond
-              (leaf? n) acc
-              (reduced? acc) acc
-              :else
-              (lr [l r] n
-                (let [acc (reduce-node acc l)]
-                  (if (reduced? acc)
-                    acc
-                    (let [acc (f acc (-k n))]
-                      (if (reduced? acc)
-                        acc
-                        (reduce-node acc r))))))))]
-    (let [result (reduce-node init root)]
-      (if (reduced? result) @result result))))
+  ([f init root]
+   (letfn [(reduce-node [acc n]
+             (cond
+               (leaf? n) acc
+               (reduced? acc) acc
+               :else
+               (lr [l r] n
+                 (let [acc (reduce-node acc l)]
+                   (if (reduced? acc)
+                     acc
+                     (let [acc (f acc (-k n))]
+                       (if (reduced? acc)
+                         acc
+                         (reduce-node acc r))))))))]
+     (let [result (reduce-node init root)]
+       (if (reduced? result) @result result))))
+  ([f root]
+   (if (leaf? root)
+     (f)
+     (let [e   (node-enumerator root nil)
+           acc (-k (node-enum-first e))
+           e   (node-enum-rest e)]
+       (loop [e e, acc acc]
+         (if (nil? e)
+           acc
+           (let [res (f acc (-k (node-enum-first e)))]
+             (if (reduced? res)
+               @res
+               (recur (node-enum-rest e) res)))))))))
 
 (defn node-reduce-kvs
   "Optimized reduction over key-value pairs. Calls (f acc k v) directly.
@@ -1091,22 +1104,37 @@
 (defn node-reduce-entries
   "Optimized reduction over MapEntry pairs (for maps). Calls (f acc entry).
    Supports early termination via clojure.core/reduced."
-  [f init root]
-  (letfn [(reduce-node [acc n]
-            (cond
-              (leaf? n) acc
-              (reduced? acc) acc
-              :else
-              (lr [l r] n
-                (let [acc (reduce-node acc l)]
-                  (if (reduced? acc)
-                    acc
-                    (let [acc (f acc (clojure.lang.MapEntry. (-k n) (-v n)))]
-                      (if (reduced? acc)
-                        acc
-                        (reduce-node acc r))))))))]
-    (let [result (reduce-node init root)]
-      (if (reduced? result) @result result))))
+  ([f init root]
+   (letfn [(reduce-node [acc n]
+             (cond
+               (leaf? n) acc
+               (reduced? acc) acc
+               :else
+               (lr [l r] n
+                 (let [acc (reduce-node acc l)]
+                   (if (reduced? acc)
+                     acc
+                     (let [acc (f acc (clojure.lang.MapEntry. (-k n) (-v n)))]
+                       (if (reduced? acc)
+                         acc
+                         (reduce-node acc r))))))))]
+     (let [result (reduce-node init root)]
+       (if (reduced? result) @result result))))
+  ([f root]
+   (if (leaf? root)
+     (f)
+     (let [e   (node-enumerator root nil)
+           n   (node-enum-first e)
+           acc (clojure.lang.MapEntry. (-k n) (-v n))
+           e   (node-enum-rest e)]
+       (loop [e e, acc acc]
+         (if (nil? e)
+           acc
+           (let [n   (node-enum-first e)
+                 res (f acc (clojure.lang.MapEntry. (-k n) (-v n)))]
+             (if (reduced? res)
+               @res
+               (recur (node-enum-rest e) res)))))))))
 
 ;; MAYBE: i'm not convinced these are necessary
 

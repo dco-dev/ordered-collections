@@ -205,6 +205,18 @@
   (seq [_]
     (tree/entry-seq root (tree/node-size root)))
 
+  clojure.lang.IReduceInit
+  (reduce [this f init]
+    (tree/node-reduce-entries f init root))
+
+  clojure.lang.IReduce
+  (reduce [this f]
+    (tree/node-reduce-entries f root))
+
+  clojure.lang.IKVReduce
+  (kvreduce [this f init]
+    (tree/node-reduce-kvs f init root))
+
   ILookup
   (valAt [this x] (.valAt this x nil))
   (valAt [_ x not-found]

@@ -262,18 +262,11 @@
 
   clojure.lang.IReduceInit
   (reduce [this f init]
-    (tree/node-reduce (fn [acc n] (f acc (node/-k n))) init root))
+    (tree/node-reduce-keys f init root))
 
   clojure.lang.IReduce
   (reduce [this f]
-    (let [sentinel (Object.)
-          result (tree/node-reduce
-                   (fn [acc n]
-                     (if (identical? acc sentinel)
-                       (node/-k n)
-                       (f acc (node/-k n))))
-                   sentinel root)]
-      (if (identical? result sentinel) (f) result)))
+    (tree/node-reduce-keys f root))
 
   Object
   (toString [this]

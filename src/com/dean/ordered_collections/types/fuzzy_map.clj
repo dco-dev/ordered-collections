@@ -309,18 +309,11 @@
 
   clojure.lang.IReduceInit
   (reduce [this f init]
-    (tree/node-reduce (fn [acc n] (f acc (node/-kv n))) init root))
+    (tree/node-reduce-entries f init root))
 
   clojure.lang.IReduce
   (reduce [this f]
-    (let [sentinel (Object.)
-          result (tree/node-reduce
-                   (fn [acc n]
-                     (if (identical? acc sentinel)
-                       (node/-kv n)
-                       (f acc (node/-kv n))))
-                   sentinel root)]
-      (if (identical? result sentinel) (f) result)))
+    (tree/node-reduce-entries f root))
 
   clojure.core.reducers.CollFold
   (coll-fold [this n combinef reducef]

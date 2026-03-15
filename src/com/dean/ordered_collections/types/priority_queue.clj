@@ -114,15 +114,20 @@
 
   clojure.lang.IReduce
   (reduce [_ f]
-    (let [sentinel (Object.)
-          result (tree/node-reduce
-                   (fn [acc n]
-                     (let [[p _ v] (node/-k n)]
-                       (if (identical? acc sentinel)
-                         [p v]
-                         (f acc [p v]))))
-                   sentinel root)]
-      (if (identical? result sentinel) (f) result)))
+    (if (node/leaf? root)
+      (f)
+      (let [e   (tree/node-enumerator root nil)
+            [p _ v] (node/-k (tree/node-enum-first e))
+            acc [p v]
+            e   (tree/node-enum-rest e)]
+        (loop [e e, acc acc]
+          (if (nil? e)
+            acc
+            (let [[p _ v] (node/-k (tree/node-enum-first e))
+                  res     (f acc [p v])]
+              (if (reduced? res)
+                @res
+                (recur (tree/node-enum-rest e) res))))))))
 
   clojure.core.reducers.CollFold
   (coll-fold [_ chunk-size combinef reducef]
