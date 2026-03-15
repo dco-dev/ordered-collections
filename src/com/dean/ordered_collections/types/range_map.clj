@@ -205,6 +205,10 @@
   (seq [_]
     (tree/entry-seq root (tree/node-size root)))
 
+  clojure.lang.Reversible
+  (rseq [_]
+    (tree/entry-seq-reverse root (tree/node-size root)))
+
   clojure.lang.IReduceInit
   (reduce [this f init]
     (tree/node-reduce-entries f init root))
