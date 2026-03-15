@@ -157,6 +157,97 @@ Two thresholds control granularity:
 
 Span is O(log² n), giving near-linear speedup on many cores (Blelloch et al. 2016).
 
+## Fork-Join Parallelism
+
+Six operations use Java's `ForkJoinPool` for automatic parallelism: union, intersection, difference, merge-with, fold-keys, and fold-entries. All share the same structural pattern.
+
+### The pattern
+
+Every parallel operation has three layers:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Entry point                                                │
+│  Is the caller already in a ForkJoinPool worker thread?     │
+│    yes → call par-fn directly                               │
+│    no  → submit par-fn to the common pool via .invoke       │
+├─────────────────────────────────────────────────────────────┤
+│  par-fn (parallel recursion)                                │
+│  Is the subtree large enough to justify forking?            │
+│    yes → fork left subtree, compute right inline, join      │
+│    no  → call seq-fn                                        │
+├─────────────────────────────────────────────────────────────┤
+│  seq-fn (sequential recursion)                              │
+│  Same algorithm, no fork overhead                           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Why the pool entry point is needed
+
+`ForkJoinTask.fork()` can only be called from within a `ForkJoinPool` worker thread. When user code calls `union` from a regular thread (e.g. the main thread or a core.async thread), the operation must first be submitted to the pool. Once inside the pool, recursive calls are already on worker threads and can fork directly:
+
+```
+(if (ForkJoinTask/inForkJoinPool)
+  (par-fn root)                          ;; already inside pool
+  (.invoke fork-join-pool                ;; enter pool
+    (ForkJoinTask/adapt (fn [] (par-fn root)))))
+```
+
+### The fork-join macro
+
+A shared macro handles the fork/compute/join choreography:
+
+```
+(fork-join [left-result  (par-fn left-subtree)
+            right-result (par-fn right-subtree)]
+  (combine left-result right-result))
+```
+
+This expands to:
+1. Wrap the left expression in a `Callable`, adapt it to a `ForkJoinTask`, and fork it (submits to the pool's work-stealing queue)
+2. Compute the right expression inline on the current thread
+3. `.join` the left task (blocks until complete, or steals work while waiting)
+4. Combine the two results
+
+The asymmetry — fork left, compute right — is deliberate. Forking both sides would double the task creation overhead with no benefit, since the current thread would just block immediately.
+
+### Dynamic binding capture
+
+Clojure's dynamic vars (`binding`) are thread-local. Since forked tasks run on different threads, each parallel operation captures the current comparator and node constructor into locals before entering the `letfn`:
+
+```
+(let [cmp  order/*compare*
+      join *t-join*]
+  (letfn [(seq-fn [n1 n2]
+            (binding [order/*compare* cmp, *t-join* join]
+              ...))
+          (par-fn [n1 n2]
+            (binding [order/*compare* cmp, *t-join* join]
+              ...))]))
+```
+
+The captured values are closed over by both `seq-fn` and `par-fn`, then re-bound on each thread that executes them. Without this, forked tasks would see the root binding (default comparator) instead of the collection's comparator.
+
+### Threshold tuning
+
+Two thresholds prevent fork overhead from dominating on small inputs:
+
+| Threshold | Value | Purpose |
+|-----------|-------|---------|
+| `+parallel-threshold+` | 210,000 | Combined subtree size below which set operations switch from `par-fn` to `seq-fn` |
+| `+sequential-cutoff+` | 64 | Subtree size below which set operations use direct linear merge |
+| `+fold-parallel-threshold+` | 8,192 | Subtree size below which fold operations use sequential in-order traversal |
+
+The set operation threshold is high because split/join have significant constant factors — the parallelism only pays off when there's enough work to amortize task creation. The fold threshold is lower because fold tasks do less work per element (just apply `reducef`).
+
+These values were empirically determined via `parallel_threshold_bench.clj`. The crossover point depends on hardware; 210K is conservative and benefits most multi-core machines.
+
+### Operations using this pattern
+
+**Set operations** (union, intersection, difference, merge-with): The tree's divide-and-conquer structure maps directly to fork-join. Split T₁ at T₂'s root, fork the left halves, compute the right halves inline, join results. Work O(m log(n/m + 1)), span O(log² n).
+
+**Parallel fold** (fold-keys, fold-entries): Walk the tree in-order. At each node, fork the left subtree fold, compute the right subtree fold inline, combine with `combinef`, then apply `reducef` to the node's element. Work O(n), span O(log n).
+
 ## Positional Access
 
 Weight at each node enables O(log n) index operations without any additional data structure.
