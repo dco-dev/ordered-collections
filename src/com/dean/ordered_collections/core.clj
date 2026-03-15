@@ -278,9 +278,7 @@
   ([]
    (ordered-map* order/normal-compare nil))
   ([coll]
-   (ordered-map* order/normal-compare coll))
-  ([compare-fn coll]
-   (ordered-map* compare-fn coll)))
+   (ordered-map* order/normal-compare coll)))
 
 (defn ordered-map-by
   "Create an ordered map with custom key ordering via a predicate.
