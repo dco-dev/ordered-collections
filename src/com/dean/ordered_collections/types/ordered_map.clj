@@ -193,11 +193,37 @@
   (without [this k]
     (OrderedMap. (tree/node-remove root k cmp tree/node-create-weight-balanced) cmp alloc stitch _meta))
 
-  clojure.lang.Sorted
+  java.util.SortedMap
   (comparator [_]
     cmp)
+  (firstKey [this]
+    (with-ordered-map this
+      (first (tree/node-least-kv root))))
+  (lastKey [this]
+    (with-ordered-map this
+      (first (tree/node-greatest-kv root))))
+  (headMap [this k]
+    (with-ordered-map this
+      (OrderedMap. (tree/node-split-lesser root k) cmp alloc stitch {})))
+  (tailMap [this k]
+    (with-ordered-map this
+      (let [[_ present gt] (tree/node-split root k)]
+        (if present
+          (OrderedMap. (tree/node-add gt (first present) (second present)) cmp alloc stitch {})
+          (OrderedMap. gt cmp alloc stitch {})))))
+  (subMap [this from to]
+    (with-ordered-map this
+      (let [[_ from-present from-gt] (tree/node-split root from)
+            from-tree (if from-present
+                        (tree/node-add from-gt (first from-present) (second from-present))
+                        from-gt)
+            to-tree (tree/node-split-lesser root to)
+            result (tree/node-set-intersection from-tree to-tree)]
+        (OrderedMap. result cmp alloc stitch {}))))
+
+  clojure.lang.Sorted
   (entryKey [_ entry]
-    (key entry))  ;; extract key from MapEntry
+    (key entry))
   (seq [_ ascending]
     (if ascending
       (tree/entry-seq root)
@@ -206,12 +232,10 @@
     (with-ordered-map this
       (let [[lt present gt] (tree/node-split root k)]
         (if ascending
-          ;; ascending: entries with keys >= k
           (if present
             (cons (clojure.lang.MapEntry. (first present) (second present))
                   (tree/entry-seq gt))
             (tree/entry-seq gt))
-          ;; descending: entries with keys <= k
           (if present
             (cons (clojure.lang.MapEntry. (first present) (second present))
                   (tree/entry-seq-reverse lt))

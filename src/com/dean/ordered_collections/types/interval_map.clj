@@ -220,12 +220,22 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmethod print-method IntervalMap [^IntervalMap m ^java.io.Writer w]
-  (.write w "#ordered/interval-map [")
-  (let [s (seq m)]
-    (when s
-      (let [[k v] (first s)]
-        (print-method [(vec k) v] w))
-      (doseq [[k v] (rest s)]
-        (.write w " ")
-        (print-method [(vec k) v] w))))
-  (.write w "]"))
+  (if (order/default-comparator? (.getCmp ^IOrderedCollection m))
+    (do (.write w "#ordered/interval-map [")
+        (let [s (seq m)]
+          (when s
+            (let [[k v] (first s)]
+              (print-method [(vec k) v] w))
+            (doseq [[k v] (rest s)]
+              (.write w " ")
+              (print-method [(vec k) v] w))))
+        (.write w "]"))
+    (do (.write w "#<IntervalMap {")
+        (let [s (seq m)]
+          (when s
+            (let [[k v] (first s)]
+              (print-method k w) (.write w " ") (print-method v w))
+            (doseq [[k v] (rest s)]
+              (.write w ", ")
+              (print-method k w) (.write w " ") (print-method v w))))
+        (.write w "}>"))))
