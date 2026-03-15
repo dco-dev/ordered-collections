@@ -103,8 +103,11 @@
 
 (defprotocol PIntervalCollection
   "Protocol for interval-based collections supporting overlap queries."
-  (overlapping [coll interval] "Return all intervals overlapping the given point or interval.")
-  (span [coll] "Return [min-start max-end] covering all intervals, or nil if empty."))
+  (overlapping [coll interval] "Return all intervals overlapping the given point or interval."))
+
+(defprotocol PSpan
+  "Protocol for collections that cover a contiguous range."
+  (span [coll] "Return [min max] covering all elements, or nil if empty."))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Range Map Protocol
@@ -116,7 +119,6 @@
   (get-entry       [rm point]     "Return [[lo hi] value] containing point, or nil.")
   (assoc-coalescing [rm rng val]  "Insert range [lo hi), merging adjacent same-value ranges.")
   (range-remove    [rm rng]       "Remove all mappings in [lo, hi) range.")
-  (spanning-range  [rm]           "Return [lo hi] spanning all ranges, or nil if empty.")
   (gaps            [rm]           "Return seq of [lo hi] gaps between ranges."))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

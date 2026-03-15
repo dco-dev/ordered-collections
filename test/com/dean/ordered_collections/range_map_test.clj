@@ -30,7 +30,7 @@
     (is (zero? (count rm)))
     (is (nil? (seq rm)))
     (is (nil? (rm 0)))
-    (is (nil? (oc/spanning-range rm)))))
+    (is (nil? (oc/span rm)))))
 
 (deftest construction-various-sizes
   (doseq [n [1 2 10 50 100 500 1000]]
@@ -208,7 +208,7 @@
     (is (thrown? Exception (assoc rm [100 50] :bad)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; ranges and spanning-range functions
+;; ranges and span functions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftest ranges-function
@@ -223,18 +223,18 @@
         (is (= (sort-by (comp first first) ranges)
                result))))))
 
-(deftest spanning-range-function
+(deftest span-function
   (doseq [n [1 10 50 100]]
     (testing (str "N=" n " ranges")
       (let [rm     (oc/range-map (for [i (range n)]
                                    [[(* i 10) (+ (* i 10) 5)] i]))
-            [lo hi] (oc/spanning-range rm)]
+            [lo hi] (oc/span rm)]
         (is (= 0 lo))
         (is (= (+ (* (dec n) 10) 5) hi))))))
 
-(deftest spanning-range-with-gaps
+(deftest span-with-gaps
   (let [rm (oc/range-map {[100 200] :a [500 600] :b [300 400] :c})]
-    (is (= [100 600] (oc/spanning-range rm)))))
+    (is (= [100 600] (oc/span rm)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Collection operations
@@ -384,7 +384,7 @@
                              [[(* i 10) (+ (* i 10) 5)] i]))]
       (is (= 10000 (count rm)))
       ;; Verify spanning range
-      (is (= [0 99995] (oc/spanning-range rm))))))
+      (is (= [0 99995] (oc/span rm))))))
 
 (deftest large-map-incremental-construction
   (testing "Build 2000 ranges incrementally in random order"

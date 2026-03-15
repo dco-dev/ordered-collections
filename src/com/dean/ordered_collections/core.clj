@@ -425,11 +425,12 @@
   proto/overlapping)
 
 (defalias span
-  "Return [min-start max-end] covering all intervals, or nil if empty.
-   Works with interval-set and interval-map.
+  "Return [min max] covering all elements, or nil if empty.
+   Works with interval-set, interval-map, and range-map.
 
-   Example:
-     (span (interval-set [[1 5] [3 8] [10 15]]))  ; => [1 15]"
+   Examples:
+     (span (interval-set [[1 5] [3 8] [10 15]]))          ; => [1 15]
+     (span (range-map [[[100 200] :a] [[500 600] :b]]))   ; => [100 600]"
   proto/span)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -742,10 +743,6 @@
 (defalias ranges
   "Return seq of [range value] pairs from a range-map."
   rmap/ranges)
-
-(defalias spanning-range
-  "Return [lo hi] spanning all ranges in a range-map, or nil if empty."
-  rmap/spanning-range)
 
 (defalias gaps
   "Return a seq of [lo hi) ranges that have no mapping in a range-map."

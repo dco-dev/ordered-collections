@@ -42,7 +42,7 @@
             [com.dean.ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang ILookup Associative IPersistentCollection Seqable
              Counted IFn IMeta IObj MapEntry Murmur3]
-            [com.dean.ordered_collections.protocol PRangeMap]
+            [com.dean.ordered_collections.protocol PRangeMap PSpan]
             [com.dean.ordered_collections.tree.tree EnumFrame]))
 
 
@@ -270,10 +270,12 @@
     (range-map-assoc this rng val true))
   (range-remove [this rng]
     (rm-range-remove this rng))
-  (spanning-range [this]
-    (rm-spanning-range this))
   (gaps [this]
-    (rm-gaps this)))
+    (rm-gaps this))
+
+  PSpan
+  (span [this]
+    (rm-spanning-range this)))
 
 (defn- range-map-assoc
   "Insert range [lo hi) -> val, removing any overlapping portions.
@@ -414,10 +416,10 @@
   [rm]
   (proto/ranges rm))
 
-(defn spanning-range
+(defn span
   "Return [lo hi] spanning all ranges, or nil if empty."
   [rm]
-  (proto/spanning-range rm))
+  (proto/span rm))
 
 (defn gaps
   "Return a seq of [lo hi) ranges that have no mapping."

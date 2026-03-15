@@ -8,7 +8,7 @@
             [com.dean.ordered-collections.tree.root]
             [com.dean.ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang                RT Murmur3]
-            [com.dean.ordered_collections.protocol PExtensibleSet PIntervalCollection]
+            [com.dean.ordered_collections.protocol PExtensibleSet PIntervalCollection PSpan]
             [com.dean.ordered_collections.tree.root     INodeCollection
                                          IBalancedCollection
                                          IOrderedCollection
@@ -57,6 +57,8 @@
     (with-interval-set this
       (when-let [found (seq (tree/node-find-intervals root interval))]
         (map node/-k found))))
+
+  PSpan
   (span [this]
     (when-not (node/leaf? root)
       [(first (node/-k (tree/node-least root))) (node/-z root)]))
