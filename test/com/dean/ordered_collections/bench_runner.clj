@@ -269,7 +269,7 @@
         cmp   #(compare (str %1) (str %2))]
     {:sorted-map-by (do (print ".") (flush) (bench-expr (into (sorted-map-by cmp) pairs)))
      :data-avl      (do (print ".") (flush) (bench-expr (into (avl/sorted-map-by cmp) pairs)))
-     :ordered-map   (do (print ".") (flush) (bench-expr (core/ordered-map string-cmp pairs)))}))
+     :ordered-map   (do (print ".") (flush) (bench-expr (core/ordered-map-with string-cmp pairs)))}))
 
 (defn bench-string-lookup [n & {:keys [num-lookups] :or {num-lookups 10000}}]
   (let [ks    (generate-string-keys n)
@@ -277,7 +277,7 @@
         cmp   #(compare (str %1) (str %2))
         sm    (into (sorted-map-by cmp) pairs)
         am    (into (avl/sorted-map-by cmp) pairs)
-        om    (core/ordered-map string-cmp pairs)
+        om    (core/ordered-map-with string-cmp pairs)
         ^objects look (object-array (repeatedly num-lookups #(nth ks (rand-int n))))]
     {:sorted-map-by (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (get sm (aget look i)))))
      :data-avl      (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (get am (aget look i)))))
@@ -289,7 +289,7 @@
         cmp   #(compare (str %1) (str %2))
         sm    (into (sorted-map-by cmp) pairs)
         am    (into (avl/sorted-map-by cmp) pairs)
-        om    (core/ordered-map string-cmp pairs)]
+        om    (core/ordered-map-with string-cmp pairs)]
     {:sorted-map-by (do (print ".") (flush) (bench-expr (reduce (fn [^long acc [k _]] (+ acc (long (hash k)))) 0 sm)))
      :data-avl      (do (print ".") (flush) (bench-expr (reduce (fn [^long acc [k _]] (+ acc (long (hash k)))) 0 am)))
      :ordered-map   (do (print ".") (flush) (bench-expr (reduce (fn [^long acc [k _]] (+ acc (long (hash k)))) 0 om)))}))

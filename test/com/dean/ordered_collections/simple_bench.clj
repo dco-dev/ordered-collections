@@ -336,7 +336,7 @@
       (print-row n
         [(bench 20 10 (into (sorted-map-by cmp) pairs))
          (bench 20 10 (into (avl/sorted-map-by cmp) pairs))
-         (bench 20 10 (core/ordered-map string-cmp pairs))]))))
+         (bench 20 10 (core/ordered-map-with string-cmp pairs))]))))
 
 (defn bench-string-map-lookup
   "Benchmark lookups with string keys."
@@ -349,7 +349,7 @@
           cmp   #(compare (str %1) (str %2))
           sm    (into (sorted-map-by cmp) pairs)
           am    (into (avl/sorted-map-by cmp) pairs)
-          om    (core/ordered-map string-cmp pairs)
+          om    (core/ordered-map-with string-cmp pairs)
           look  (object-array (repeatedly 10000 #(nth ks (rand-int n))))]
       (print-row n
         [(bench 20 10 (dotimes [i 10000] (get sm (aget look i))))
@@ -367,7 +367,7 @@
           cmp   #(compare (str %1) (str %2))
           sm    (into (sorted-map-by cmp) pairs)
           am    (into (avl/sorted-map-by cmp) pairs)
-          om    (core/ordered-map string-cmp pairs)]
+          om    (core/ordered-map-with string-cmp pairs)]
       (print-row n
         [(bench 20 10 (reduce (fn [^long acc [k _]] (+ acc (long (hash k)))) 0 sm))
          (bench 20 10 (reduce (fn [^long acc [k _]] (+ acc (long (hash k)))) 0 am))
