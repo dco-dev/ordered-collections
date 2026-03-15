@@ -6,7 +6,7 @@
              :refer [leaf? leaf -k -v -l -r -x -z -kv]])
   (:import  [clojure.lang ASeq MapEntry RT ISeq Seqable Sequential IPersistentCollection]
             [java.util Comparator]
-            [java.util.concurrent ForkJoinPool ForkJoinTask RecursiveTask]))
+            [java.util.concurrent ForkJoinPool ForkJoinTask]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -988,27 +988,27 @@
       (f (-k n) (-v n))
       (node-iter-kv-reverse l f))))
 
-(defn- node-fold-fn [dir]
-  (let [[enum-fn next-fn] (case dir
-                            :< [node-enumerator node-enum-rest]
-                            :> [node-enumerator-reverse node-enum-prior])]
-    (fn [f base n]
-      (loop [e (enum-fn n) acc base]
-        (if (nil? e)
-          acc
-          (let [res (f acc (node-enum-first e))]
-            (if (reduced? res) @res
-                (recur (next-fn e) res))))))))
+(defn- node-fold-fn [enum-fn next-fn]
+  (fn [f base n]
+    (loop [e (enum-fn n) acc base]
+      (if (nil? e)
+        acc
+        (let [res (f acc (node-enum-first e))]
+          (if (reduced? res) @res
+              (recur (next-fn e) res)))))))
+
+(def ^:private fold-left-fn  (node-fold-fn node-enumerator node-enum-rest))
+(def ^:private fold-right-fn (node-fold-fn node-enumerator-reverse node-enum-prior))
 
 (defn node-fold-left
   "Fold-left (reduce) the collection from least to greatest."
   ([f n]      (node-fold-left f nil n))
-  ([f base n] ((node-fold-fn :<) f base n)))
+  ([f base n] (fold-left-fn f base n)))
 
 (defn node-fold-right
   "Fold-right (reduce) the collection from greatest to least."
   ([f n] (node-fold-right f nil n))
-  ([f base n] ((node-fold-fn :>) f base n)))
+  ([f base n] (fold-right-fn f base n)))
 
 (defn node-reduce
   "Reduction over nodes. Delegates to node-fold-left.
@@ -1466,8 +1466,7 @@
   "Execute left-expr in a forked task, compute right-expr inline,
    then join and combine results."
   [[left-sym left-expr right-sym right-expr] combine-expr]
-  `(let [left-task# (proxy [RecursiveTask] []
-                      (compute [] ~left-expr))
+  `(let [left-task# (ForkJoinTask/adapt ^java.util.concurrent.Callable (fn [] ~left-expr))
          _# (.fork ^ForkJoinTask left-task#)
          ~right-sym ~right-expr
          ~left-sym (.join ^ForkJoinTask left-task#)]
@@ -1523,8 +1522,7 @@
       (if (ForkJoinTask/inForkJoinPool)
         (union-par n1 n2)
         (.invoke fork-join-pool
-          (proxy [RecursiveTask] []
-            (compute [] (union-par n1 n2))))))))
+          (ForkJoinTask/adapt ^java.util.concurrent.Callable (fn [] (union-par n1 n2))))))))
 
 (defn node-set-intersection-parallel
   "Parallel set intersection using ForkJoinPool.
@@ -1577,8 +1575,7 @@
       (if (ForkJoinTask/inForkJoinPool)
         (intersect-par n1 n2)
         (.invoke fork-join-pool
-          (proxy [RecursiveTask] []
-            (compute [] (intersect-par n1 n2))))))))
+          (ForkJoinTask/adapt ^java.util.concurrent.Callable (fn [] (intersect-par n1 n2))))))))
 
 (defn node-set-difference-parallel
   "Parallel set difference using ForkJoinPool.
@@ -1621,8 +1618,7 @@
       (if (ForkJoinTask/inForkJoinPool)
         (diff-par n1 n2)
         (.invoke fork-join-pool
-          (proxy [RecursiveTask] []
-            (compute [] (diff-par n1 n2))))))))
+          (ForkJoinTask/adapt ^java.util.concurrent.Callable (fn [] (diff-par n1 n2))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Fundamental Map Operations (Worst-Case Linear Time)
@@ -1690,8 +1686,7 @@
       (if (ForkJoinTask/inForkJoinPool)
         (merge-par n1 n2)
         (.invoke fork-join-pool
-          (proxy [RecursiveTask] []
-            (compute [] (merge-par n1 n2))))))))
+          (ForkJoinTask/adapt ^java.util.concurrent.Callable (fn [] (merge-par n1 n2))))))))
 
 (defn node-map-compare
   "Compare two map trees element-by-element. Keys are compared using
@@ -2129,10 +2124,10 @@
      (EntrySeqReverse. e cnt nil))))
 
 (defn node-subseq
-  "Return a (lazy) seq of nodes for the slice of the tree beginning
-  at position `from` ending at `to`."
+  "Return a seq of nodes for the slice of the tree from position
+  `from` to `to` (inclusive)."
   ([n from]
-   (node-subseq n from (node-size n)))
+   (node-subseq n from (dec (node-size n))))
   ([n ^long from ^long to]
    (let [cnt (inc (- to from))]
      (cond
@@ -2179,8 +2174,7 @@
     (if (ForkJoinTask/inForkJoinPool)
       (par-fold root)
       (.invoke fork-join-pool
-        (proxy [RecursiveTask] []
-          (compute [] (par-fold root)))))))
+        (ForkJoinTask/adapt ^java.util.concurrent.Callable (fn [] (par-fold root)))))))
 
 (defn node-parallel-fold-entries
   "Parallel fold over map entries using ForkJoinPool."
@@ -2209,8 +2203,7 @@
     (if (ForkJoinTask/inForkJoinPool)
       (par-fold root)
       (.invoke fork-join-pool
-        (proxy [RecursiveTask] []
-          (compute [] (par-fold root)))))))
+        (ForkJoinTask/adapt ^java.util.concurrent.Callable (fn [] (par-fold root)))))))
 
 (defn node-chunked-fold
   "Parallel chunked fold mechanism to support clojure.core.reducers/CollFold.
