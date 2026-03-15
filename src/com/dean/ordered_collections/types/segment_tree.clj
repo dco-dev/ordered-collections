@@ -156,6 +156,8 @@
 
 (deftype SegmentTree [root op identity creator cmp _meta]
 
+  java.io.Serializable
+
   IMeta
   (meta [_] _meta)
 

@@ -190,6 +190,8 @@
 
 (deftype RangeMap [root cmp _meta]
 
+  java.io.Serializable
+
   IMeta
   (meta [_] _meta)
 

@@ -8,9 +8,8 @@
    - priority-queue
    - fuzzy-set, fuzzy-map
 
-   Types NOT currently serializable:
-   - interval-set, interval-map (no Serializable marker)
-   - segment-tree, range-map (no Serializable marker)
+   - interval-set, interval-map
+   - segment-tree, range-map
 
    Note: Collections created with custom comparators (via ordered-set-by, etc.)
    will only be serializable if the custom comparator itself is serializable."
@@ -282,14 +281,18 @@
     (is (= [] (vec (round-trip (oc/ordered-set)))))
     (is (= [] (vec (round-trip (oc/ordered-map)))))
     (is (= [] (vec (round-trip (oc/ordered-multiset [])))))
-    (is (= [] (vec (round-trip (oc/fuzzy-set [])))))))
+    (is (= [] (vec (round-trip (oc/fuzzy-set [])))))
+    (is (= [] (vec (round-trip (oc/interval-set)))))
+    (is (= [] (vec (round-trip (oc/interval-map)))))))
 
 (deftest single-element-serialization
   (testing "single element collections serialize correctly"
     (is (= [42] (vec (round-trip (oc/ordered-set [42])))))
     (is (= [[1 :a]] (vec (round-trip (oc/ordered-map [[1 :a]])))))
     (is (= [42] (vec (round-trip (oc/ordered-multiset [42])))))
-    (is (= [42] (vec (round-trip (oc/fuzzy-set [42])))))))
+    (is (= [42] (vec (round-trip (oc/fuzzy-set [42])))))
+    (is (= [[1 5]] (vec (round-trip (oc/interval-set [[1 5]])))))
+    (is (= [[[1 5] :a]] (vec (round-trip (oc/interval-map [[[1 5] :a]])))))))
 
 (deftest large-values-serialization
   (testing "collections with large/extreme values"
@@ -385,17 +388,69 @@
             "update works")))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Non-Serializable Types Documentation
+;; Interval Set/Map Tests
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(deftest non-serializable-types-documentation
-  (testing "Types without Serializable marker"
-    ;; These types don't have the Serializable marker
-    (is (not (instance? java.io.Serializable (oc/interval-set [[1 5] [10 20]])))
-        "interval-set does not have Serializable marker")
-    (is (not (instance? java.io.Serializable (oc/interval-map [[[1 5] :a] [[10 20] :b]])))
-        "interval-map does not have Serializable marker")
-    (is (not (instance? java.io.Serializable (oc/segment-tree + [1 2 3])))
-        "segment-tree does not have Serializable marker")
-    (is (not (instance? java.io.Serializable (oc/range-map [[[1 5] :a] [[10 20] :b]])))
-        "range-map does not have Serializable marker")))
+(deftest interval-set-serialization
+  (testing "interval-set round-trip serialization"
+    (doseq [n [10 100 1000]]
+      (testing (str "cardinality " n)
+        (let [intervals (mapv (fn [_] (let [a (rand-int (* n 10))
+                                            b (rand-int (* n 10))]
+                                        [(min a b) (max a b)]))
+                              (range n))
+              original (oc/interval-set intervals)
+              restored (round-trip original)]
+          (is (= (count original) (count restored))
+              "count preserved")
+          (is (= (vec original) (vec restored))
+              "intervals and order preserved")
+          ;; Verify interval lookup works (invoke as function)
+          (let [[lo hi] (first (seq original))
+                mid     (/ (+ lo hi) 2)]
+            (is (= (original mid) (restored mid))
+                "interval lookup works after deserialization")))))))
+
+(deftest interval-map-serialization
+  (testing "interval-map round-trip serialization"
+    (doseq [n [10 100 1000]]
+      (testing (str "cardinality " n)
+        (let [entries (mapv (fn [i] (let [a (rand-int (* n 10))
+                                          b (rand-int (* n 10))]
+                                      [[(min a b) (max a b)] i]))
+                            (range n))
+              original (oc/interval-map entries)
+              restored (round-trip original)]
+          (is (= (count original) (count restored))
+              "count preserved")
+          (is (= (vec original) (vec restored))
+              "entries and order preserved")
+          ;; Verify interval lookup works (invoke as function)
+          (let [[[lo hi] _] (first (seq original))
+                mid         (/ (+ lo hi) 2)]
+            (is (= (original mid) (restored mid))
+                "interval lookup works after deserialization")))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Range Map Tests
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest range-map-serialization
+  (testing "range-map round-trip serialization"
+    (doseq [n [10 100 1000]]
+      (testing (str "cardinality " n)
+        ;; Build non-overlapping ranges
+        (let [points   (vec (sort (set (repeatedly (* n 2) #(rand-int (* n 20))))))
+              pairs    (->> points (partition 2) (take n))
+              entries  (mapv (fn [[a b]] [[a b] (str a "-" b)]) pairs)
+              original (oc/range-map entries)
+              restored (round-trip original)]
+          (is (= (count original) (count restored))
+              "count preserved")
+          (is (= (seq original) (seq restored))
+              "entries preserved")
+          ;; Verify point lookup works
+          (when-let [[[lo hi] v] (first (seq original))]
+            (let [mid (/ (+ lo hi) 2)]
+              (is (= (get original mid) (get restored mid))
+                  "point lookup works after deserialization"))))))))

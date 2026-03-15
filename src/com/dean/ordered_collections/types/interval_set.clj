@@ -30,6 +30,8 @@
 
 (deftype IntervalSet [root cmp alloc stitch _meta]
 
+  java.io.Serializable
+
   INodeCollection
   (getAllocator [_]
     alloc)
