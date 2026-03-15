@@ -36,31 +36,31 @@ Two sets of size N with 50% overlap. Adams' divide-and-conquer with fork-join pa
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **9.3x** | **10.7x** | **7.1x** |
-| Intersection | **7.2x** | **7.7x** | **5.1x** |
-| Difference | **8.6x** | **12.7x** | **6.4x** |
+| Union | **9.5x** | **9.5x** | **7.3x** |
+| Intersection | **6.9x** | **8.1x** | **5.2x** |
+| Difference | **7.9x** | **12.5x** | **6.9x** |
 
 ### vs data.avl (speedup)
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **6.1x** | **10.3x** | **7.4x** |
-| Intersection | **5.1x** | **5.2x** | **4.2x** |
-| Difference | **5.5x** | **7.0x** | **4.2x** |
+| Union | **7.6x** | **8.8x** | **6.9x** |
+| Intersection | **5.1x** | **4.9x** | **3.9x** |
+| Difference | **5.8x** | **6.1x** | **4.6x** |
 
 ### Raw times (ms)
 
 | Operation | N | sorted-set | data.avl | ordered-set |
 |-----------|---|----------:|----------:|----------:|
-| Union | 10K | 5.86 | 3.82 | **0.63** |
-| | 100K | 70.9 | 67.8 | **6.61** |
-| | 500K | 352 | 367 | **49.8** |
-| Intersection | 10K | 4.51 | 3.19 | **0.63** |
-| | 100K | 54.9 | 36.7 | **7.12** |
-| | 500K | 232 | 193 | **45.7** |
-| Difference | 10K | 3.80 | 2.45 | **0.44** |
-| | 100K | 51.0 | 28.2 | **4.01** |
-| | 500K | 234 | 155 | **36.4** |
+| Union | 10K | 6.05 | 4.84 | **0.63** |
+| | 100K | 69.7 | 64.2 | **7.31** |
+| | 500K | 366 | 348 | **50.2** |
+| Intersection | 10K | 4.48 | 3.31 | **0.65** |
+| | 100K | 60.5 | 36.6 | **7.42** |
+| | 500K | 270 | 203 | **52.3** |
+| Difference | 10K | 3.65 | 2.71 | **0.46** |
+| | 100K | 59.0 | 28.7 | **4.73** |
+| | 500K | 237 | 160 | **34.4** |
 
 ## Fold (r/fold)
 
@@ -68,11 +68,11 @@ Fork-join parallel fold (threshold: 8,192 elements). sorted-set and data.avl fal
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| sorted-set | 0.59ms | 5.97ms | 41.1ms |
-| data.avl | 0.18ms | 2.01ms | 14.1ms |
-| **ordered-set** | **0.14ms** | **0.40ms** | **3.58ms** |
-| vs sorted-set | 4.4x | 14.7x | **11.5x** |
-| vs data.avl | 1.4x | 5.0x | **3.9x** |
+| sorted-set | 0.59ms | 6.01ms | 53.9ms |
+| data.avl | 0.17ms | 1.91ms | 19.3ms |
+| **ordered-set** | **0.10ms** | **0.37ms** | **4.30ms** |
+| vs sorted-set | **5.7x** | **16.4x** | **12.5x** |
+| vs data.avl | 1.6x | **5.2x** | **4.5x** |
 
 ## Construction
 
@@ -80,11 +80,11 @@ Batch from collection (parallel fold + union).
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| sorted-set | 8.01ms | 128ms | 858ms |
-| data.avl | 3.56ms | 59.9ms | 602ms |
-| **ordered-set** | **3.36ms** | **60.0ms** | **384ms** |
-| vs sorted-set | 2.4x | 2.1x | **2.2x** |
-| vs data.avl | 1.1x | 1.0x | **1.6x** |
+| sorted-set | 7.34ms | 133ms | 889ms |
+| data.avl | 3.43ms | 63.1ms | 585ms |
+| **ordered-set** | **3.27ms** | **69.0ms** | **426ms** |
+| vs sorted-set | **2.2x** | **1.9x** | **2.1x** |
+| vs data.avl | 1.0x | 0.9x | **1.4x** |
 
 ## Split
 
@@ -92,9 +92,9 @@ Batch from collection (parallel fold + union).
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| data.avl | 0.93ms | 1.48ms | 2.05ms |
-| **ordered-set** | **0.30ms** | **0.40ms** | **0.54ms** |
-| vs data.avl | **3.1x** | **3.7x** | **3.8x** |
+| data.avl | 0.87ms | 1.35ms | 1.70ms |
+| **ordered-set** | **0.31ms** | **0.47ms** | **0.49ms** |
+| vs data.avl | **2.8x** | **2.9x** | **3.5x** |
 
 ## Lookup
 
@@ -104,17 +104,17 @@ Batch from collection (parallel fold + union).
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| sorted-set | 2.39 | 3.60 | 7.48 |
-| data.avl | 2.29 | 3.21 | 6.44 |
-| ordered-set | 2.01 | 3.18 | 6.83 |
+| sorted-set | 2.43 | 3.91 | 7.59 |
+| data.avl | 2.18 | 3.30 | 6.63 |
+| ordered-set | 2.03 | 3.05 | 6.54 |
 
 ### Map (ms)
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| sorted-map | 2.84 | 4.31 | 8.59 |
-| data.avl | 2.29 | 3.60 | 7.48 |
-| ordered-map | 2.14 | 3.52 | 7.39 |
+| sorted-map | 2.56 | 4.26 | 8.58 |
+| data.avl | 1.94 | 3.28 | 6.95 |
+| ordered-map | 1.95 | 3.46 | 6.96 |
 
 ## Last Element
 
@@ -122,19 +122,19 @@ Batch from collection (parallel fold + union).
 
 | | N=10K | N=100K |
 |--|------:|-------:|
-| sorted-set | 734ms | 8,292ms |
-| data.avl | 844ms | 9,377ms |
-| **ordered-set** | **0.25ms** | **0.28ms** |
+| sorted-set | 761ms | 7,770ms |
+| data.avl | 845ms | 10,200ms |
+| **ordered-set** | **0.22ms** | **0.24ms** |
 
-~29,000x faster at N=100K. Gap grows linearly with N.
+~32,000x faster at N=100K. Gap grows linearly with N.
 
 ## Iteration (reduce)
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| sorted-set | 0.59ms | 6.59ms | 35.3ms |
-| data.avl | 0.10ms | 1.49ms | 8.24ms |
-| ordered-set | 0.12ms | 1.44ms | 8.93ms |
+| sorted-set | 0.61ms | 6.21ms | 43.2ms |
+| data.avl | 0.10ms | 1.87ms | 10.4ms |
+| ordered-set | 0.13ms | 1.41ms | 13.1ms |
 
 4–5x faster than sorted-set. On par with data.avl.
 
@@ -142,17 +142,17 @@ Batch from collection (parallel fold + union).
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| sorted-set | 8.70ms | 141ms | 912ms |
-| data.avl | 5.71ms | 91ms | 749ms |
-| ordered-set | 4.61ms | 91ms | 809ms |
+| sorted-set | 7.74ms | 134ms | 883ms |
+| data.avl | 4.70ms | 96ms | 780ms |
+| ordered-set | 4.10ms | 96ms | 737ms |
 
 ## Delete
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| sorted-set | 4.12ms | 72ms | 525ms |
-| data.avl | 2.86ms | 50ms | 365ms |
-| ordered-set | 2.53ms | 44ms | 366ms |
+| sorted-set | 3.85ms | 70ms | 495ms |
+| data.avl | 2.60ms | 47ms | 353ms |
+| ordered-set | 2.11ms | 43ms | 332ms |
 
 ## Positional Access
 
@@ -162,8 +162,8 @@ Both O(log n). sorted-set has no nth/rank.
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| data.avl | 0.85ms | 1.56ms | 2.10ms |
-| ordered-set | 1.08ms | 2.20ms | 3.27ms |
+| data.avl | 0.92ms | 1.35ms | 2.08ms |
+| ordered-set | 1.01ms | 1.64ms | 2.93ms |
 
 data.avl ~1.4x faster.
 
@@ -171,10 +171,10 @@ data.avl ~1.4x faster.
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| data.avl | 2.64ms | 5.64ms | 7.24ms |
-| ordered-set | 2.14ms | 4.95ms | 6.78ms |
+| data.avl | 2.50ms | 4.11ms | 6.90ms |
+| ordered-set | 1.90ms | 3.15ms | 5.50ms |
 
-ordered-set ~1.1x faster.
+ordered-set ~1.3x faster.
 
 ## Interval Collections
 
@@ -182,14 +182,14 @@ ordered-set ~1.1x faster.
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| interval-set | 19.0 | 372 | 2,555 |
-| interval-map | 25.1 | 457 | 3,156 |
+| interval-set | 21.9 | 371 | 2,330 |
+| interval-map | 24.8 | 469 | 2,960 |
 
 ### Lookup (10K overlap queries, ms)
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| interval-map | 135 | 167 | 177 |
+| interval-map | 133 | 153 | 172 |
 
 Sub-linear growth — O(log n + k) means query time depends more on result count than collection size.
 
@@ -197,8 +197,8 @@ Sub-linear growth — O(log n + k) means query time depends more on result count
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| sorted-map | 6.22ms | 102ms | 776ms |
-| data.avl | 4.28ms | 78.8ms | 717ms |
-| ordered-map | 3.45ms | 65.2ms | **354ms** |
+| sorted-map | 5.52ms | 98ms | 686ms |
+| data.avl | 3.70ms | 68ms | 678ms |
+| ordered-map | 3.25ms | 65ms | **430ms** |
 
-2.2x faster than sorted-map at N=500K via parallel batch construction.
+1.6x faster than sorted-map at N=500K via parallel batch construction.

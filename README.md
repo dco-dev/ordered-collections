@@ -71,23 +71,23 @@ order-of-magnitude gains even at modest sizes.
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Construction | **2.4x** | **2.1x** | **2.2x** |
-| Lookup | 1.2x | 1.1x | 1.1x |
-| Union | **9.3x** | **10.7x** | **7.1x** |
-| Intersection | **7.2x** | **7.7x** | **5.1x** |
-| Difference | **8.6x** | **12.7x** | **6.4x** |
-| Fold | **4.4x** | **14.7x** | **11.5x** |
+| Construction | **2.2x** | **1.9x** | **2.1x** |
+| Lookup | 1.2x | 1.3x | 1.2x |
+| Union | **9.5x** | **9.5x** | **7.3x** |
+| Intersection | **6.9x** | **8.1x** | **5.2x** |
+| Difference | **7.9x** | **12.5x** | **6.9x** |
+| Fold | **5.7x** | **16.4x** | **12.5x** |
 
 ### vs data.avl (speedup)
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **6.1x** | **10.3x** | **7.4x** |
-| Intersection | **5.1x** | **5.2x** | **4.2x** |
-| Difference | **5.5x** | **7.0x** | **4.2x** |
-| Split | **3.1x** | **3.7x** | **3.8x** |
-| Fold | 1.4x | **5.0x** | **3.9x** |
-| Construction | 1.1x | 1.0x | **1.6x** |
+| Union | **7.6x** | **8.8x** | **6.9x** |
+| Intersection | **5.1x** | **4.9x** | **3.9x** |
+| Difference | **5.8x** | **6.1x** | **4.6x** |
+| Split | **2.8x** | **2.9x** | **3.5x** |
+| Fold | 1.6x | **5.2x** | **4.5x** |
+| Construction | 1.0x | 0.9x | **1.4x** |
 
 *[Criterium](https://github.com/hugoduncan/criterium) at all sizes.
 See [Benchmarks](doc/benchmarks.md) for full results.*
@@ -292,7 +292,7 @@ All collection types implement `CollFold` for efficient `r/fold`:
 ```
 $ lein test
 
-Ran 430 tests containing 466,000+ assertions.
+Ran 454 tests containing 466,000+ assertions.
 0 failures, 0 errors.
 ```
 
