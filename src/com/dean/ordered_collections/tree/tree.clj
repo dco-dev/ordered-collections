@@ -2135,82 +2135,37 @@
        (not (pos? cnt)) nil
        true (->> from (node-split-nth n) node-seq (take cnt))))))
 
-;; Threshold for parallel fold - below this use sequential reduce
-(def ^:const ^long +fold-parallel-threshold+ 8192)
-
-(defn node-parallel-fold-keys
-  "Parallel fold over keys using ForkJoinPool.
-
-   Uses tree structure for natural parallelism:
-   - Below threshold: sequential in-order traversal
-   - Above threshold: fork left subtree, compute right inline, combine results
-
-   Algorithm: O(n) work, O(log n) span for balanced trees."
-  [combinef reducef root]
-  (letfn [(seq-fold [n]
-            ;; Sequential fold for small subtrees
-            (if (leaf? n)
-              (combinef)
-              (lr [l r] n
-                (let [acc (seq-fold l)
-                      acc (reducef acc (-k n))]
-                  (if (reduced? acc)
-                    @acc
-                    (let [racc (seq-fold r)]
-                      (combinef acc racc)))))))
-          (par-fold [n]
-            ;; Parallel fold using fork-join
-            (cond
-              (leaf? n) (combinef)
-              (<= (node-size n) +fold-parallel-threshold+) (seq-fold n)
-              :else
-              (lr [l r] n
-                (fork-join
-                  [left-result (par-fold l)
-                   right-result (par-fold r)]
-                  (let [combined (combinef left-result right-result)]
-                    (reducef combined (-k n)))))))]
-    ;; If already in ForkJoinPool, run directly; otherwise submit
-    (if (ForkJoinTask/inForkJoinPool)
-      (par-fold root)
-      (.invoke fork-join-pool
-        (ForkJoinTask/adapt ^java.util.concurrent.Callable (fn [] (par-fold root)))))))
-
-(defn node-parallel-fold-entries
-  "Parallel fold over map entries using ForkJoinPool."
-  [combinef reducef root]
-  (letfn [(seq-fold [n]
-            (if (leaf? n)
-              (combinef)
-              (lr [l r] n
-                (let [acc (seq-fold l)
-                      acc (reducef acc (MapEntry. (-k n) (-v n)))]
-                  (if (reduced? acc)
-                    @acc
-                    (let [racc (seq-fold r)]
-                      (combinef acc racc)))))))
-          (par-fold [n]
-            (cond
-              (leaf? n) (combinef)
-              (<= (node-size n) +fold-parallel-threshold+) (seq-fold n)
-              :else
-              (lr [l r] n
-                (fork-join
-                  [left-result (par-fold l)
-                   right-result (par-fold r)]
-                  (let [combined (combinef left-result right-result)]
-                    (reducef combined (MapEntry. (-k n) (-v n))))))))]
-    (if (ForkJoinTask/inForkJoinPool)
-      (par-fold root)
-      (.invoke fork-join-pool
-        (ForkJoinTask/adapt ^java.util.concurrent.Callable (fn [] (par-fold root)))))))
+;; Each tree split costs O(log n), so too many chunks wastes time on
+;; splitting rather than folding.  This floor keeps split overhead
+;; negligible while still saturating typical core counts.
+(def ^:const ^long +min-fold-chunk-size+ 4096)
 
 (defn node-chunked-fold
-  "Parallel chunked fold mechanism to support clojure.core.reducers/CollFold.
-   DEPRECATED: Use node-parallel-fold-keys or node-parallel-fold-entries instead."
-  [^long i n combinef reducef]
-  {:pre [(pos? i)]}
-  (let [offsets (vec (range 0 (node-size n) i))
-        chunk   (fn [^long offset] (node-subseq n offset (dec (+ offset i))))
-        rf      (fn [_ ^long offset] (r/reduce reducef (combinef) (chunk offset)))]
-    (r/fold 1 combinef rf offsets)))
+  "Parallel chunked fold to support clojure.core.reducers/CollFold.
+
+   Splits the tree into roughly equal subtrees using node-split, then
+   folds them in parallel via r/fold.  Splitting is done eagerly in the
+   caller's thread (where dynamic bindings are available); each chunk's
+   sequential reduce uses node-reduce which needs no bindings."
+  [^long chunk-size n combinef reducef]
+  {:pre [(pos? chunk-size)]}
+  (let [chunk-size (max chunk-size +min-fold-chunk-size+)
+        sz         (node-size n)]
+    (if (<= sz chunk-size)
+      (node-reduce reducef (combinef) n)
+      (let [num-chunks  (max 2 (quot sz chunk-size))
+            subtrees    (loop [i          1
+                               remaining  n
+                               result     (transient [])]
+                          (if (or (= i num-chunks) (leaf? remaining))
+                            (persistent! (conj! result remaining))
+                            (let [pos       (long (* sz (/ (double i) num-chunks)))
+                                  split-key (-k (node-nth n pos))
+                                  [lt present gt] (node-split remaining split-key)
+                                  gt (if present
+                                       (node-add gt (first present) (second present))
+                                       gt)]
+                              (recur (inc i) gt (conj! result lt)))))
+            rf (fn [_ ^long idx]
+                 (node-reduce reducef (combinef) (nth subtrees idx)))]
+        (r/fold 1 combinef rf (vec (range (count subtrees))))))))
