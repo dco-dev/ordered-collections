@@ -291,7 +291,7 @@ Zorp sighs. "Kevin, please stop radicalizing the inventory."
 
 ## Chapter 5: The Segment Tree
 
-*Demonstrates: `segment-tree` with `query` — answer "what is the sum/max/min of values from index a to b?" in O(log n), with O(log n) updates. The tree precomputes aggregates at every level, so range queries touch only O(log n) nodes regardless of range size. Ideal for time-series analytics where both queries and updates need to be fast.*
+*Demonstrates: `segment-tree` with `query` — answer "what is the sum/max/min from key a to key b?" in O(log n), with O(log n) updates. The tree precomputes aggregates at every level, so range queries touch only O(log n) nodes regardless of range size. Ideal for time-series analytics where both queries and updates need to be fast.*
 
 Zorp needs to analyze hourly foot traffic—total customers, peak hours, slow periods. With a segment tree, any range query is O(log n), and updates are O(log n) when new data arrives.
 
@@ -629,7 +629,7 @@ Zorp's discount system is based on purchase amount. Different ranges get differe
 
 ## Chapter 11: The Daily Ledger
 
-*Demonstrates: `segment-tree` with `query` — answer range aggregate queries like "what is the sum/min/max from index a to b?" in O(log n), with O(log n) updates. Works with any associative operation.*
+*Demonstrates: `segment-tree` with `query` — answer range aggregate queries like "what is the sum/min/max from key a to key b?" in O(log n), with O(log n) updates. Works with any associative operation.*
 
 Zorp wants to analyze daily sales. Specifically, he needs to answer range queries like "What were total sales from day 50 to day 75?" and update individual days as sales come in—all in logarithmic time.
 

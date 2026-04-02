@@ -108,7 +108,6 @@
 
 ;; Sets
 (defn ->ss  [xs] (into (sorted-set) xs))
-(defn ->ts  [xs] (into (sorted-set) xs))  ; alias
 (defn ->hs  [xs] (into #{} xs))
 (defn ->as  [xs] (into (avl/sorted-set) xs))
 (defn ->os  [xs] (oc/ordered-set xs))
@@ -116,7 +115,6 @@
 
 ;; Maps
 (defn ->sm [xs] (into (sorted-map) xs))
-(defn ->tm [xs] (into (sorted-map) xs))  ; alias
 (defn ->am [xs] (into (avl/sorted-map) xs))
 (defn ->om [xs] (oc/ordered-map xs))
 

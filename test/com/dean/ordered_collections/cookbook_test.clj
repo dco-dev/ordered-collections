@@ -5,8 +5,6 @@
   (:refer-clojure :exclude [split-at])
   (:require [clojure.test :refer [deftest testing is are]]
             [clojure.core.reducers :as r]
-            [clojure.string :as str]
-            [clojure.set :as set]
             [com.dean.ordered-collections.core :as oc]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

@@ -133,7 +133,7 @@ The ability to efficiently split trees enables true parallel reduction:
 (r/fold + (ordered-set (range 500000)))
 ```
 
-The tree is recursively split at the root into left and right subtrees, which are reduced in parallel via `ForkJoinPool`. Clojure's `sorted-set` falls back to sequential reduce because red-black trees cannot efficiently split.
+The tree is split into larger balanced chunks, and those chunks are reduced in parallel via `r/fold`. Clojure's `sorted-set` falls back to sequential reduce because red-black trees cannot efficiently split.
 
 In practice, parallel fold is 5-15x faster than sorted-set's sequential fold at N=500K, depending on the reduction function.
 

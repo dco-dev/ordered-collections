@@ -210,7 +210,7 @@ Practical examples showing where ordered-collections shines.
 (def limiter (record-request limiter "user-123" 1000000))
 ```
 
-**Why this combination?** Fuzzy-map gives O(log n) tier lookup without exact key match. Ordered-map enables O(log n) time-window queries via `subseq`. Could add segment-tree for O(log n) count queries if needed.
+**Why this combination?** Fuzzy-map gives O(log n) tier lookup without exact key match. Ordered-map enables O(log n) time-window queries via `subseq`. A segment-tree is a good fit when counts can be projected onto integer time buckets and queried repeatedly.
 
 ---
 
@@ -334,7 +334,7 @@ Practical examples showing where ordered-collections shines.
 
 ## 8. Range Aggregate Queries (Segment Tree)
 
-**Problem:** Answer "what is the sum/max/min of values from index a to b?" with efficient updates.
+**Problem:** Answer "what is the sum/max/min of values from key a to key b?" with efficient updates.
 
 ```clojure
 ;; Daily sales data

@@ -58,7 +58,7 @@
 (defspec prop-set-cross-type-equality-and-hash 100
   (prop/for-all [xs tu/gen-int-set]
     (let [os  (tu/->os xs)
-          ss  (tu/->ts xs)
+          ss  (tu/->ss xs)
           hs  (tu/->hs xs)
           avl (tu/->as xs)]
       (and (= os ss) (= ss os)
@@ -71,7 +71,7 @@
     (let [os  (tu/->os xs)
           los (tu/->los xs)
           ros (oc/ordered-set-by > xs)
-          ss  (tu/->ts xs)]
+          ss  (tu/->ss xs)]
       (and (= os los) (= los os) (= los ss)
            (= os ros) (= ros os) (= ros ss)
            (= (hash os) (hash los) (hash ros) (hash ss))))))
@@ -98,7 +98,7 @@
 (defspec prop-map-cross-type-equality-and-hash 100
   (prop/for-all [kvs tu/gen-int-map-entries]
     (let [om  (tu/->om kvs)
-          sm  (tu/->tm kvs)
+          sm  (tu/->sm kvs)
           hm  (into {} kvs)
           avl (tu/->am kvs)]
       (and (= om sm) (= sm om)
@@ -111,7 +111,7 @@
     (let [om  (tu/->om kvs)
           lom (oc/long-ordered-map kvs)
           rom (oc/ordered-map-by > kvs)
-          sm  (tu/->tm kvs)
+          sm  (tu/->sm kvs)
           hm  (into {} kvs)
           avl (tu/->am kvs)]
       (and ;; cross-variant equality (symmetric)
@@ -138,7 +138,7 @@
   (prop/for-all [xs tu/gen-int-set]
     (let [fs  (oc/fuzzy-set xs)
           os  (tu/->os xs)
-          ss  (tu/->ts xs)
+          ss  (tu/->ss xs)
           hs  (tu/->hs xs)
           avl (tu/->as xs)]
       (and (= fs os) (= os fs)
@@ -156,7 +156,7 @@
   (prop/for-all [kvs tu/gen-int-map-entries]
     (let [fm  (oc/fuzzy-map kvs)
           om  (tu/->om kvs)
-          sm  (tu/->tm kvs)
+          sm  (tu/->sm kvs)
           hm  (into {} kvs)
           avl (tu/->am kvs)]
       (and (= fm om) (= om fm)

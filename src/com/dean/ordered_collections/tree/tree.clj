@@ -1448,12 +1448,12 @@
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; Threshold for parallel execution - tuned for modern multi-core CPUs.
-;; Below this threshold, sequential execution is faster due to fork overhead.
-;; Empirically determined via parallel_threshold_bench.clj:
-;;   - Union crossover: ~65K
-;;   - Intersection/Difference crossover: ~49K
-(def ^:const ^long +parallel-threshold+ 210000)
+;; Threshold for entering the ForkJoin path in ordered set algebra and
+;; ordered-map merge. Below this threshold, task setup dominates the work and
+;; the top-level operations should stay sequential. The exact crossover varies
+;; by operation, comparator cost, and machine; keep this conservative and tune
+;; it against `parallel_threshold_bench.clj`.
+(def ^:const ^long +parallel-threshold+ 524288)
 
 ;; Secondary threshold for very small subtrees where even sequential
 ;; divide-and-conquer has overhead. Use direct linear merge instead.
