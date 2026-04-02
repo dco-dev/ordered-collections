@@ -506,6 +506,34 @@
                                  (stitch-wb create key val l new-r)))))))]
      (add n))))
 
+(defn- node-concat3*
+  [k v l r ^Comparator cmp create]
+  (letfn [(add [n]
+            (if (leaf? n)
+              (create k v (leaf) (leaf))
+              (kvlr [key val l r] n
+                (let [c (.compare cmp k key)]
+                  (if (zero? c)
+                    (create key v l r)
+                    (if (neg? c)
+                      (stitch-wb create key val (add l) r)
+                      (stitch-wb create key val l (add r))))))))
+          (cat3 [k v l r]
+            (cond
+              (leaf? l) (add r)
+              (leaf? r) (add l)
+              true      (let [lw (node-weight l)
+                              rw (node-weight r)]
+                          (cond
+                            (< (* +delta+ lw) rw) (kvlr [k2 v2 l2 r2] r
+                                                    (stitch-wb create k2 v2
+                                                      (cat3 k v l l2) r2))
+                            (< (* +delta+ rw) lw) (kvlr [k1 v1 l1 r1] l
+                                                    (stitch-wb create k1 v1 l1
+                                                      (cat3 k v r1 r)))
+                            true                  (create k v l r)))))]
+    (cat3 k v l r)))
+
 (defn node-concat3
   "Join two trees, the left rooted at l, and the right at r,
   with a new key/value, performing rotation operations on the resulting
@@ -513,33 +541,7 @@
   r, and the relative balance of l and r is such that no more than one
   rotation operation will be required to balance the resulting tree."
   [k v l r]
-  (let [^Comparator cmp order/*compare*
-        create *t-join*]
-    (letfn [(add [n]
-              (if (leaf? n)
-                (create k v (leaf) (leaf))
-                (kvlr [key val l r] n
-                  (let [c (.compare cmp k key)]
-                    (if (zero? c)
-                      (create key v l r)
-                      (if (neg? c)
-                        (stitch-wb create key val (add l) r)
-                        (stitch-wb create key val l (add r))))))))
-            (cat3 [k v l r]
-              (cond
-                (leaf? l) (add r)
-                (leaf? r) (add l)
-                true      (let [lw (node-weight l)
-                                rw (node-weight r)]
-                            (cond
-                              (< (* +delta+ lw) rw) (kvlr [k2 v2 l2 r2] r
-                                                      (stitch-wb create k2 v2
-                                                        (cat3 k v l l2) r2))
-                              (< (* +delta+ rw) lw) (kvlr [k1 v1 l1 r1] l
-                                                      (stitch-wb create k1 v1 l1
-                                                        (cat3 k v r1 r)))
-                              true                  (create k v l r)))))]
-      (cat3 k v l r))))
+  (node-concat3* k v l r order/*compare* *t-join*))
 
 (defn node-least-kv
   "Return [k v] for the minimum key of the tree rooted at n."
@@ -573,18 +575,21 @@
     (leaf? (-r n)) n
     :else          (recur (-r n))))
 
+(defn- node-remove-least*
+  [n create]
+  (letfn [(rm-least [n]
+            (cond
+              (leaf? n)      (throw (ex-info "remove-least: empty tree" {:node n}))
+              (leaf? (-l n)) (-r n)
+              :else          (stitch-wb create (-k n) (-v n)
+                               (rm-least (-l n)) (-r n))))]
+    (rm-least n)))
+
 (defn node-remove-least
   "Return a tree the same as the one rooted at n, with the node
   containing the minimum key removed. See node-least."
   [n]
-  (let [create *t-join*]
-    (letfn [(rm-least [n]
-              (cond
-                (leaf? n)      (throw (ex-info "remove-least: empty tree" {:node n}))
-                (leaf? (-l n)) (-r n)
-                :else          (stitch-wb create (-k n) (-v n)
-                                 (rm-least (-l n)) (-r n))))]
-      (rm-least n))))
+  (node-remove-least* n *t-join*))
 
 (defn node-remove-greatest
   "Return a tree the same as the one rooted at n, with the node
@@ -599,6 +604,14 @@
                                  (rm-greatest (-r n)))))]
       (rm-greatest n))))
 
+(defn- node-concat2*
+  [l r create]
+  (cond
+    (leaf? l) r
+    (leaf? r) l
+    :else     (let [[k v] (node-least-kv r)]
+                (stitch-wb create k v l (node-remove-least* r create)))))
+
 (defn node-concat2
   "Join two trees, the left rooted at l, and the right at r,
   performing a single balancing operation on the resulting tree, if
@@ -606,12 +619,7 @@
   the relative balance of l and r is such that no more than one rotation
   operation will be required to balance the resulting tree."
   [l r]
-  (let [create *t-join*]
-    (cond
-      (leaf? l) r
-      (leaf? r) l
-      :else     (let [[k v] (node-least-kv r)]
-                  (stitch-wb create k v l (node-remove-least r))))))
+  (node-concat2* l r *t-join*))
 
 (defn node-remove
   "remove the node whose key is equal to k, if present."
@@ -1212,25 +1220,28 @@
               (neg? c)  (node-concat3 kn vn (node-split-greater ln k) rn)
               :else     (recur rn))))))))
 
+(defn- node-split*
+  [n k ^Comparator cmp create]
+  (letfn [(split [n]
+            (if (leaf? n)
+              [nil nil nil]
+              (kvlr [ak v l r] n
+                (let [c (.compare cmp k ak)]
+                  (cond
+                    (zero? c) [l (list k v) r]
+                    (neg? c)  (let [[ll pres rl] (split l)]
+                                [ll pres (node-concat3* ak v rl r cmp create)])
+                    :else     (let [[lr pres rr] (split r)]
+                                [(node-concat3* ak v l lr cmp create) pres rr]))))))]
+    (split n)))
+
 (defn node-split
   "returns a triple (l present r) where: l is the set of elements of
   n that are < k, r is the set of elements of n that are > k, present
   is false if n contains no element equal to k, or (k v) if n contains
   an element with key equal to k."
   [n k]
-  (let [^Comparator cmp order/*compare*]
-    (letfn [(split [n]
-              (if (leaf? n)
-                [nil nil nil]
-                (kvlr [ak v l r] n
-                  (let [c (.compare cmp k ak)]
-                    (cond
-                      (zero? c) [l (list k v) r]
-                      (neg? c)  (let [[ll pres rl] (split l)]
-                                  [ll pres (node-concat3 ak v rl r)])
-                      :else     (let [[lr pres rr] (split r)]
-                                  [(node-concat3 ak v l lr) pres rr]))))))]
-      (split n))))
+  (node-split* n k order/*compare* *t-join*))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Tree Comparator (Worst-Case Linear Time)
@@ -1349,45 +1360,84 @@
 ;;
 ;; This is the "Adams' algorithm" from the 1992 paper, refined by many others.
 
-(defn node-set-union
-  "set union"
-  [n1 n2]
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Explicit-Argument Algebra Hot Paths
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; The public tree algebra functions are intentionally dynamic-var friendly,
+;; but the recursive set/map kernels are hot enough that repeated lookups of
+;; `order/*compare*` and `*t-join*` are measurable overhead. These private
+;; variants thread the comparator and node constructor explicitly so the caller
+;; can capture them once and reuse them through the whole recursion.
+
+(defn- node-set-union*
+  [n1 n2 ^Comparator cmp create]
   (cond
     (leaf? n1) n2
     (leaf? n2) n1
     :else      (kvlr [ak av l r] n2
-                 (let [[l1 _ r1] (node-split n1 ak)]
-                   (node-concat3 ak av
-                     (node-set-union l1 l)
-                     (node-set-union r1 r))))))
+                 (let [[l1 _ r1] (node-split* n1 ak cmp create)]
+                   (node-concat3* ak av
+                                  (node-set-union* l1 l cmp create)
+                                  (node-set-union* r1 r cmp create)
+                                  cmp create)))))
 
-(defn node-set-intersection
-  "set intersection"
-  [n1 n2]
+(defn- node-set-intersection*
+  [n1 n2 ^Comparator cmp create]
   (cond
     (leaf? n1) (leaf)
     (leaf? n2) (leaf)
     :else      (kvlr [ak av l r] n2
-                 (let [[l1 x r1] (node-split n1 ak)]
+                 (let [[l1 x r1] (node-split* n1 ak cmp create)]
                    (if x
-                     (node-concat3 ak av
-                       (node-set-intersection l1 l)
-                       (node-set-intersection r1 r))
-                     (node-concat2
-                       (node-set-intersection l1 l)
-                       (node-set-intersection r1 r)))))))
+                     (node-concat3* ak av
+                                    (node-set-intersection* l1 l cmp create)
+                                    (node-set-intersection* r1 r cmp create)
+                                    cmp create)
+                     (node-concat2* (node-set-intersection* l1 l cmp create)
+                                    (node-set-intersection* r1 r cmp create)
+                                    create))))))
 
-(defn node-set-difference
-  "set difference"
-  [n1 n2]
+(defn- node-set-difference*
+  [n1 n2 ^Comparator cmp create]
   (cond
     (leaf? n1) (leaf)
     (leaf? n2) n1
     :else      (kvlr [ak _ l r] n2
-                 (let [[l1 _ r1] (node-split n1 ak)]
-                   (node-concat2
-                     (node-set-difference l1 l)
-                     (node-set-difference r1 r))))))
+                 (let [[l1 _ r1] (node-split* n1 ak cmp create)]
+                   (node-concat2* (node-set-difference* l1 l cmp create)
+                                  (node-set-difference* r1 r cmp create)
+                                  create)))))
+
+(defn- node-map-merge*
+  [n1 n2 merge-fn ^Comparator cmp create]
+  (cond
+    (leaf? n1) n2
+    (leaf? n2) n1
+    :else      (kvlr [ak av l r] n2
+                 (let [[l1 x r1] (node-split* n1 ak cmp create)
+                       val       (if x
+                                   (merge-fn ak av (second x))
+                                   av)]
+                   (node-concat3* ak val
+                                  (node-map-merge* l1 l merge-fn cmp create)
+                                  (node-map-merge* r1 r merge-fn cmp create)
+                                  cmp create)))))
+
+(defn node-set-union
+  "set union"
+  [n1 n2]
+  (node-set-union* n1 n2 order/*compare* *t-join*))
+
+(defn node-set-intersection
+  "set intersection"
+  [n1 n2]
+  (node-set-intersection* n1 n2 order/*compare* *t-join*))
+
+(defn node-set-difference
+  "set difference"
+  [n1 n2]
+  (node-set-difference* n1 n2 order/*compare* *t-join*))
 
 (defn node-subset?
   "return true if `sub` is a subset of `super`"
@@ -1472,6 +1522,84 @@
          ~left-sym (.join ^ForkJoinTask left-task#)]
      ~combine-expr))
 
+(defn- node-set-union-parallel*
+  [n1 n2 ^Comparator cmp create]
+  (cond
+    (leaf? n1) n2
+    (leaf? n2) n1
+    :else
+    (let [total (+ (node-size n1) (node-size n2))]
+      (kvlr [ak av l r] n2
+        (let [[l1 _ r1] (node-split* n1 ak cmp create)]
+          (if (< total +parallel-threshold+)
+            (node-concat3* ak av
+                           (node-set-union* l1 l cmp create)
+                           (node-set-union* r1 r cmp create)
+                           cmp create)
+            (fork-join [left-result (node-set-union-parallel* l1 l cmp create)
+                        right-result (node-set-union-parallel* r1 r cmp create)]
+              (node-concat3* ak av left-result right-result cmp create))))))))
+
+(defn- node-set-intersection-parallel*
+  [n1 n2 ^Comparator cmp create]
+  (cond
+    (leaf? n1) (leaf)
+    (leaf? n2) (leaf)
+    :else
+    (let [total (+ (node-size n1) (node-size n2))]
+      (kvlr [ak av l r] n2
+        (let [[l1 x r1] (node-split* n1 ak cmp create)]
+          (if (< total +parallel-threshold+)
+            (if x
+              (node-concat3* ak av
+                             (node-set-intersection* l1 l cmp create)
+                             (node-set-intersection* r1 r cmp create)
+                             cmp create)
+              (node-concat2* (node-set-intersection* l1 l cmp create)
+                             (node-set-intersection* r1 r cmp create)
+                             create))
+            (fork-join [left-result (node-set-intersection-parallel* l1 l cmp create)
+                        right-result (node-set-intersection-parallel* r1 r cmp create)]
+              (if x
+                (node-concat3* ak av left-result right-result cmp create)
+                (node-concat2* left-result right-result create)))))))))
+
+(defn- node-set-difference-parallel*
+  [n1 n2 ^Comparator cmp create]
+  (cond
+    (leaf? n1) (leaf)
+    (leaf? n2) n1
+    :else
+    (let [total (+ (node-size n1) (node-size n2))]
+      (kvlr [ak _ l r] n2
+        (let [[l1 _ r1] (node-split* n1 ak cmp create)]
+          (if (< total +parallel-threshold+)
+            (node-concat2* (node-set-difference* l1 l cmp create)
+                           (node-set-difference* r1 r cmp create)
+                           create)
+            (fork-join [left-result (node-set-difference-parallel* l1 l cmp create)
+                        right-result (node-set-difference-parallel* r1 r cmp create)]
+              (node-concat2* left-result right-result create))))))))
+
+(defn- node-map-merge-parallel*
+  [n1 n2 merge-fn ^Comparator cmp create]
+  (cond
+    (leaf? n1) n2
+    (leaf? n2) n1
+    :else
+    (let [total (+ (node-size n1) (node-size n2))]
+      (kvlr [ak av l r] n2
+        (let [[l1 x r1] (node-split* n1 ak cmp create)
+              val (if x (merge-fn ak av (second x)) av)]
+          (if (< total +parallel-threshold+)
+            (node-concat3* ak val
+                           (node-map-merge* l1 l merge-fn cmp create)
+                           (node-map-merge* r1 r merge-fn cmp create)
+                           cmp create)
+            (fork-join [left-result (node-map-merge-parallel* l1 l merge-fn cmp create)
+                        right-result (node-map-merge-parallel* r1 r merge-fn cmp create)]
+              (node-concat3* ak val left-result right-result cmp create))))))))
+
 (defn node-set-union-parallel
   "Parallel set union using ForkJoinPool.
 
@@ -1487,42 +1615,11 @@
   [n1 n2]
   (let [cmp order/*compare*
         join *t-join*]
-    (letfn [(union-seq [n1 n2]
-              ;; Sequential implementation for small subtrees
-              (cond
-                (leaf? n1) n2
-                (leaf? n2) n1
-                :else (binding [order/*compare* cmp *t-join* join]
-                        (kvlr [ak av l r] n2
-                          (let [[l1 _ r1] (node-split n1 ak)]
-                            (node-concat3 ak av
-                              (union-seq l1 l)
-                              (union-seq r1 r)))))))
-            (union-par [n1 n2]
-              (cond
-                (leaf? n1) n2
-                (leaf? n2) n1
-                :else
-                (let [size1 (node-size n1)
-                      size2 (node-size n2)
-                      total (+ size1 size2)]
-                  (binding [order/*compare* cmp *t-join* join]
-                    (kvlr [ak av l r] n2
-                      (let [[l1 _ r1] (node-split n1 ak)]
-                        (if (< total +parallel-threshold+)
-                          ;; Below threshold: sequential
-                          (node-concat3 ak av
-                            (union-seq l1 l)
-                            (union-seq r1 r))
-                          ;; Above threshold: fork left, compute right inline
-                          (fork-join [left-result (union-par l1 l)
-                                      right-result (union-par r1 r)]
-                            (node-concat3 ak av left-result right-result)))))))))]
-      ;; If already in ForkJoinPool, run directly; otherwise submit
-      (if (ForkJoinTask/inForkJoinPool)
-        (union-par n1 n2)
-        (.invoke fork-join-pool
-          (ForkJoinTask/adapt ^java.util.concurrent.Callable (fn [] (union-par n1 n2))))))))
+    (if (ForkJoinTask/inForkJoinPool)
+      (node-set-union-parallel* n1 n2 cmp join)
+      (.invoke fork-join-pool
+        (ForkJoinTask/adapt ^java.util.concurrent.Callable
+          (fn [] (node-set-union-parallel* n1 n2 cmp join)))))))
 
 (defn node-set-intersection-parallel
   "Parallel set intersection using ForkJoinPool.
@@ -1534,48 +1631,11 @@
   [n1 n2]
   (let [cmp order/*compare*
         join *t-join*]
-    (letfn [(intersect-seq [n1 n2]
-              (cond
-                (leaf? n1) (leaf)
-                (leaf? n2) (leaf)
-                :else (binding [order/*compare* cmp *t-join* join]
-                        (kvlr [ak av l r] n2
-                          (let [[l1 x r1] (node-split n1 ak)]
-                            (if x
-                              (node-concat3 ak av
-                                (intersect-seq l1 l)
-                                (intersect-seq r1 r))
-                              (node-concat2
-                                (intersect-seq l1 l)
-                                (intersect-seq r1 r))))))))
-            (intersect-par [n1 n2]
-              (cond
-                (leaf? n1) (leaf)
-                (leaf? n2) (leaf)
-                :else
-                (let [size1 (node-size n1)
-                      size2 (node-size n2)
-                      total (+ size1 size2)]
-                  (binding [order/*compare* cmp *t-join* join]
-                    (kvlr [ak av l r] n2
-                      (let [[l1 x r1] (node-split n1 ak)]
-                        (if (< total +parallel-threshold+)
-                          (if x
-                            (node-concat3 ak av
-                              (intersect-seq l1 l)
-                              (intersect-seq r1 r))
-                            (node-concat2
-                              (intersect-seq l1 l)
-                              (intersect-seq r1 r)))
-                          (fork-join [left-result (intersect-par l1 l)
-                                      right-result (intersect-par r1 r)]
-                            (if x
-                              (node-concat3 ak av left-result right-result)
-                              (node-concat2 left-result right-result))))))))))]
-      (if (ForkJoinTask/inForkJoinPool)
-        (intersect-par n1 n2)
-        (.invoke fork-join-pool
-          (ForkJoinTask/adapt ^java.util.concurrent.Callable (fn [] (intersect-par n1 n2))))))))
+    (if (ForkJoinTask/inForkJoinPool)
+      (node-set-intersection-parallel* n1 n2 cmp join)
+      (.invoke fork-join-pool
+        (ForkJoinTask/adapt ^java.util.concurrent.Callable
+          (fn [] (node-set-intersection-parallel* n1 n2 cmp join)))))))
 
 (defn node-set-difference-parallel
   "Parallel set difference using ForkJoinPool.
@@ -1587,38 +1647,11 @@
   [n1 n2]
   (let [cmp order/*compare*
         join *t-join*]
-    (letfn [(diff-seq [n1 n2]
-              (cond
-                (leaf? n1) (leaf)
-                (leaf? n2) n1
-                :else (binding [order/*compare* cmp *t-join* join]
-                        (kvlr [ak _ l r] n2
-                          (let [[l1 _ r1] (node-split n1 ak)]
-                            (node-concat2
-                              (diff-seq l1 l)
-                              (diff-seq r1 r)))))))
-            (diff-par [n1 n2]
-              (cond
-                (leaf? n1) (leaf)
-                (leaf? n2) n1
-                :else
-                (let [size1 (node-size n1)
-                      size2 (node-size n2)
-                      total (+ size1 size2)]
-                  (binding [order/*compare* cmp *t-join* join]
-                    (kvlr [ak _ l r] n2
-                      (let [[l1 _ r1] (node-split n1 ak)]
-                        (if (< total +parallel-threshold+)
-                          (node-concat2
-                            (diff-seq l1 l)
-                            (diff-seq r1 r))
-                          (fork-join [left-result (diff-par l1 l)
-                                      right-result (diff-par r1 r)]
-                            (node-concat2 left-result right-result)))))))))]
-      (if (ForkJoinTask/inForkJoinPool)
-        (diff-par n1 n2)
-        (.invoke fork-join-pool
-          (ForkJoinTask/adapt ^java.util.concurrent.Callable (fn [] (diff-par n1 n2))))))))
+    (if (ForkJoinTask/inForkJoinPool)
+      (node-set-difference-parallel* n1 n2 cmp join)
+      (.invoke fork-join-pool
+        (ForkJoinTask/adapt ^java.util.concurrent.Callable
+          (fn [] (node-set-difference-parallel* n1 n2 cmp join)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Fundamental Map Operations (Worst-Case Linear Time)
@@ -1629,18 +1662,7 @@
 (defn node-map-merge
   "Merge two maps in worst case linear time."
   [n1 n2 merge-fn]
-  (cond
-    (leaf? n1) n2
-    (leaf? n2) n1
-    :else      (kvlr [ak av l r] n2
-                 (let [[l1 x r1] (node-split n1 ak)
-                       ;; x is (list k v) when key exists, nil otherwise
-                       val       (if x
-                                   (merge-fn ak av (second x))
-                                   av)]
-                   (node-concat3 ak val
-                     (node-map-merge l1 l merge-fn)
-                     (node-map-merge r1 r merge-fn))))))
+  (node-map-merge* n1 n2 merge-fn order/*compare* *t-join*))
 
 (defn node-map-merge-parallel
   "Parallel map merge using ForkJoinPool.
@@ -1650,43 +1672,11 @@
   [n1 n2 merge-fn]
   (let [cmp order/*compare*
         join *t-join*]
-    (letfn [(merge-seq [n1 n2]
-              (cond
-                (leaf? n1) n2
-                (leaf? n2) n1
-                :else (binding [order/*compare* cmp *t-join* join]
-                        (kvlr [ak av l r] n2
-                          (let [[l1 x r1] (node-split n1 ak)
-                                val (if x (merge-fn ak av (second x)) av)]
-                            (node-concat3 ak val
-                              (merge-seq l1 l)
-                              (merge-seq r1 r)))))))
-            (merge-par [n1 n2]
-              (cond
-                (leaf? n1) n2
-                (leaf? n2) n1
-                :else
-                (let [size1 (node-size n1)
-                      size2 (node-size n2)]
-                  (if (< (+ size1 size2) +parallel-threshold+)
-                    (binding [order/*compare* cmp *t-join* join]
-                      (kvlr [ak av l r] n2
-                        (let [[l1 x r1] (node-split n1 ak)
-                              val (if x (merge-fn ak av (second x)) av)]
-                          (node-concat3 ak val
-                            (merge-seq l1 l)
-                            (merge-seq r1 r)))))
-                    (binding [order/*compare* cmp *t-join* join]
-                      (kvlr [ak av l r] n2
-                        (let [[l1 x r1] (node-split n1 ak)
-                              val (if x (merge-fn ak av (second x)) av)]
-                          (fork-join [left-result (merge-par l1 l)
-                                      right-result (merge-par r1 r)]
-                            (node-concat3 ak val left-result right-result)))))))))]
-      (if (ForkJoinTask/inForkJoinPool)
-        (merge-par n1 n2)
-        (.invoke fork-join-pool
-          (ForkJoinTask/adapt ^java.util.concurrent.Callable (fn [] (merge-par n1 n2))))))))
+    (if (ForkJoinTask/inForkJoinPool)
+      (node-map-merge-parallel* n1 n2 merge-fn cmp join)
+      (.invoke fork-join-pool
+        (ForkJoinTask/adapt ^java.util.concurrent.Callable
+          (fn [] (node-map-merge-parallel* n1 n2 merge-fn cmp join)))))))
 
 (defn node-map-compare
   "Compare two map trees element-by-element. Keys are compared using
