@@ -1,7 +1,8 @@
 (ns com.dean.ordered-collections.segment-tree-test
   "Rigorous tests for SegmentTree - range aggregate queries with O(log n) updates."
   (:require [clojure.test :refer [deftest testing is]]
-            [com.dean.ordered-collections.core :as oc]))
+            [com.dean.ordered-collections.core :as oc])
+  (:import [java.time Instant]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -395,6 +396,101 @@
     (is (= 30 (oc/query st -100 -50)))   ; 10 + 20
     (is (= 50 (oc/query st -50 0)))      ; 20 + 30
     (is (= 150 (oc/query st -100 100))))) ; all
+
+(deftest segment-tree-supports-generic-ordered-keys
+  (testing "string keys"
+    (let [st (oc/segment-tree + 0 {"a" 10, "b" 20, "c" 30, "d" 40})]
+      (is (= 100 (oc/aggregate st)))
+      (is (= 50 (oc/query st "b" "c")))
+      (is (= 90 (oc/query st "b" "z")))
+      (is (= 0 (oc/query st "x" "z")))
+      (is (= 15 (-> st
+                    (oc/update-val "a" 15)
+                    (get "a"))))))
+
+  (testing "long string keys with sparse misses"
+      (let [k1 "alpha/warehouse/zone/0001"
+          k2 "alpha/warehouse/zone/0100"
+          k3 "beta/warehouse/zone/0200"
+          st (oc/segment-tree + 0 {k1 5, k2 7, k3 11})]
+      (is (= 12 (oc/query st k1 k2)))
+      (is (= 23 (oc/query st "alpha" "beta/warehouse/zone/9999")))
+      (is (= 0 (oc/query st "gamma" "omega")))))
+
+  (testing "decimal keys"
+    (let [st (oc/segment-tree + 0 {1.5 10, 2.0 20, 2.5 30, 4.0 40})]
+      (is (= 60 (oc/query st 1.5 2.5)))
+      (is (= 50 (oc/query st 1.7 3.0)))
+      (is (= 0 (oc/query st 4.1 5.0)))))
+
+  (testing "Instant keys"
+    (let [t0 (Instant/parse "2026-01-01T00:00:00Z")
+          t1 (Instant/parse "2026-01-01T01:00:00Z")
+          t2 (Instant/parse "2026-01-01T02:00:00Z")
+          t3 (Instant/parse "2026-01-01T03:00:00Z")
+          t4 (Instant/parse "2026-01-01T04:00:00Z")
+          st (oc/segment-tree + 0 {t0 10, t1 20, t2 30, t3 40})]
+      (is (= 60 (oc/query st t0 t2)))
+      (is (= 90 (oc/query st t1 t4)))
+      (is (= 0 (oc/query st (Instant/parse "2026-01-02T00:00:00Z")
+                         (Instant/parse "2026-01-02T01:00:00Z"))))
+      (is (= 25 (-> st
+                    (oc/update-val t1 25)
+                    (get t1))))))
+
+  (testing "custom comparator via segment-tree-by"
+    (let [st (oc/segment-tree-by > + 0 [[4 40] [3 30] [2 20] [1 10]])]
+      (is (= 70 (oc/query st 4 3)))
+      (is (= 100 (oc/query st 4 1)))
+      (is (= 0 (oc/query st 0 -1)))))
+
+  (testing "empty range when lo > hi"
+    (let [st (oc/sum-tree {0 10, 1 20, 2 30})]
+      (is (= 0 (oc/query st 2 1))))))
+
+(deftest segment-tree-ordered-map-parity-on-generic-keys
+  (let [t0 (Instant/parse "2026-01-01T00:00:00Z")
+        t1 (Instant/parse "2026-01-01T01:00:00Z")
+        t2 (Instant/parse "2026-01-01T02:00:00Z")
+        t3 (Instant/parse "2026-01-01T03:00:00Z")
+        st (oc/segment-tree + 0 {t0 10, t1 20, t2 30, t3 40})]
+    (testing "ranked operations"
+      (is (= 0 (oc/rank st t0)))
+      (is (= 2 (oc/rank st t2)))
+      (is (nil? (oc/rank st (Instant/parse "2026-01-01T00:30:00Z"))))
+      (is (= [[t1 20] [t2 30]]
+             (mapv vec (oc/slice st 1 3))))
+      (is (= [t1 20] (vec (oc/median st))))
+      (is (= [t2 30] (vec (oc/percentile st 50)))))
+
+    (testing "split operations"
+      (let [[left entry right] (oc/split-key t1 st)
+            [front back]       (oc/split-at 2 st)]
+        (is (= [[t0 10]] (mapv vec left)))
+        (is (= [t1 20] (vec entry)))
+        (is (= [[t2 30] [t3 40]] (mapv vec right)))
+        (is (= [[t0 10] [t1 20]] (mapv vec front)))
+        (is (= [[t2 30] [t3 40]] (mapv vec back)))))
+
+    (testing "nearest and subrange"
+      (let [probe (Instant/parse "2026-01-01T01:30:00Z")]
+        (is (= [t1 20] (vec (oc/nearest st :<= probe))))
+        (is (= [t2 30] (vec (oc/nearest st :>= probe))))
+        (is (= [[t0 10] [t1 20]]
+               (mapv vec (oc/subrange st :<= t1))))
+        (is (= [[t2 30] [t3 40]]
+               (mapv vec (oc/subrange st :> t1))))))
+
+    (testing "sorted map behavior preserves aggregates"
+      (let [tail (.tailMap ^java.util.SortedMap st t1)
+            trimmed (dissoc st t1)
+            inserted (assoc st (Instant/parse "2026-01-01T04:00:00Z") 50)]
+        (is (= t0 (.firstKey ^java.util.SortedMap st)))
+        (is (= t3 (.lastKey ^java.util.SortedMap st)))
+        (is (= 90 (oc/aggregate tail)))
+        (is (= 80 (oc/aggregate trimmed)))
+        (is (= 150 (oc/aggregate inserted)))
+        (is (= 90 (oc/query tail t1 t3)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Stress tests

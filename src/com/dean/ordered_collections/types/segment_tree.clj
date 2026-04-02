@@ -38,12 +38,17 @@
      (query st 1 3)     ; => 160 (20 + 100 + 40)"
   (:require [com.dean.ordered-collections.tree.node     :as node]
             [com.dean.ordered-collections.tree.order    :as order]
+            [com.dean.ordered-collections.tree.root]
             [com.dean.ordered-collections.tree.tree     :as tree]
             [com.dean.ordered-collections.protocol      :as proto]
             [com.dean.ordered-collections.util          :refer [defalias]])
   (:import  [clojure.lang ILookup Associative IPersistentCollection Seqable
              Counted IFn IMeta IObj MapEntry Murmur3]
-            [com.dean.ordered_collections.protocol PRangeAggregate]))
+            [java.util Comparator]
+            [com.dean.ordered_collections.protocol PRangeAggregate]
+            [com.dean.ordered_collections.tree.root INodeCollection
+                                         IBalancedCollection
+                                         IOrderedCollection]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -63,8 +68,10 @@
   (r  [_] r)
   (kv [_] (MapEntry. k v)))
 
-(defn- node-agg [n]
-  (if (node/leaf? n) nil (.-agg ^AggregateNode n)))
+(defn- node-agg
+  "Return the cached aggregate for subtree n, or identity for an empty subtree."
+  [n identity]
+  (if (node/leaf? n) identity (.-agg ^AggregateNode n)))
 
 (defn- make-agg-creator
   "Create a node constructor that computes aggregates using op and identity."
@@ -78,75 +85,31 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Range Query Algorithm
 ;;
-;; To compute op over [lo, hi]:
-;;   1. If node's key range is entirely within [lo, hi], use its agg
-;;   2. If node's key range is entirely outside [lo, hi], return identity
-;;   3. Otherwise, recurse on children and include this node's value if in range
+;; Query uses two splits:
+;;   1. split at lo  =>  (< lo)  [= lo]  (> lo)
+;;   2. split >lo at hi => (lo,hi) [= hi] (> hi)
+;;
+;; The middle tree already stores the aggregate for all keys strictly between
+;; lo and hi. We then combine that cached aggregate with exact lo/hi matches.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn- query-range
-  "Compute op over all values with keys in [lo, hi] inclusive."
-  [n lo hi op identity]
-  (if (node/leaf? n)
-    identity
-    (let [lo (long lo)
-          hi (long hi)
-          k  (long (node/-k n))]
-      (cond
-        ;; Node entirely right of query range
-        (< hi k)
-        (query-range (node/-l n) lo hi op identity)
-
-        ;; Node entirely left of query range
-        (> lo k)
-        (query-range (node/-r n) lo hi op identity)
-
-        ;; Node's key is within range - need to check subtrees carefully
-        :else
-        (let [;; Left subtree: query for [lo, k-1]
-              l-result (if (< lo k)
-                         (query-range (node/-l n) lo (dec k) op identity)
-                         identity)
-              ;; This node's contribution
-              v-result (node/-v n)
-              ;; Right subtree: query for [k+1, hi]
-              r-result (if (> hi k)
-                         (query-range (node/-r n) (inc k) hi op identity)
-                         identity)]
-          (op l-result (op v-result r-result)))))))
-
 (defn- query-range-fast
-  "Optimized range query that uses subtree aggregates when possible.
-
-   Key insight: if we know the entire subtree is within [lo, hi], we can
-   use the pre-computed aggregate instead of recursing."
-  [n lo hi op identity cmp]
-  (if (node/leaf? n)
+  "Compute op over all values with keys in [lo, hi] inclusive."
+  [root lo hi op identity cmp]
+  (if (node/leaf? root)
     identity
-    (let [lo   (long lo)
-          hi   (long hi)
-          k    (long (node/-k n))
-          l    (node/-l n)
-          r    (node/-r n)
-          l-lo (if (node/leaf? l) k (long (node/-k (tree/node-least l))))
-          r-hi (if (node/leaf? r) k (long (node/-k (tree/node-greatest r))))]
-      (cond
-        ;; Entire subtree outside range
-        (or (< r-hi lo) (> l-lo hi))
+    (binding [order/*compare* cmp]
+      (if (pos? (order/compare lo hi))
         identity
-
-        ;; Entire subtree inside range - use aggregate!
-        (and (<= lo l-lo) (>= hi r-hi))
-        (.-agg ^AggregateNode n)
-
-        ;; Partial overlap - recurse
-        :else
-        (let [l-result (query-range-fast l lo hi op identity cmp)
-              v-result (if (and (<= lo k) (<= k hi))
-                         (node/-v n)
-                         identity)
-              r-result (query-range-fast r lo hi op identity cmp)]
-          (op l-result (op v-result r-result)))))))
+        (let [[_ lo-present gt] (tree/node-split root lo)
+              [mid hi-present _] (tree/node-split gt hi)
+              acc0 (if lo-present
+                     (second lo-present)
+                     identity)
+              acc1 (op acc0 (node-agg mid identity))]
+          (if hi-present
+            (op acc1 (second hi-present))
+            acc1))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; SegmentTree Type
@@ -154,9 +117,33 @@
 
 (declare seg-assoc)
 
+(defmacro with-segment-tree [x & body]
+  `(binding [order/*compare* (.getCmp ~(with-meta x {:tag 'com.dean.ordered_collections.tree.root.IOrderedCollection}))
+             tree/*t-join*   (.getAllocator ~(with-meta x {:tag 'com.dean.ordered_collections.tree.root.INodeCollection}))]
+     ~@body))
+
 (deftype SegmentTree [root op identity creator cmp _meta]
 
   java.io.Serializable
+
+  INodeCollection
+  (getAllocator [_]
+    creator)
+  (getRoot [_]
+    root)
+
+  IOrderedCollection
+  (getCmp [_]
+    cmp)
+  (isCompatible [_ o]
+    (and (instance? SegmentTree o)
+         (= cmp (.getCmp ^IOrderedCollection o))))
+  (isSimilar [_ o]
+    (map? o))
+
+  IBalancedCollection
+  (getStitch [_]
+    creator)
 
   IMeta
   (meta [_] _meta)
@@ -187,10 +174,12 @@
   (kvreduce [this f init]
     (tree/node-reduce-kvs f init root))
 
+  clojure.lang.MapEquivalence
+
   ILookup
   (valAt [_ k] (.valAt _ k nil))
-  (valAt [_ k not-found]
-    (binding [order/*compare* cmp]
+  (valAt [this k not-found]
+    (with-segment-tree this
       (if-let [n (tree/node-find root k)]
         (node/-v n)
         not-found)))
@@ -200,8 +189,8 @@
   (invoke [this k not-found] (.valAt this k not-found))
 
   Associative
-  (containsKey [_ k]
-    (binding [order/*compare* cmp]
+  (containsKey [this k]
+    (with-segment-tree this
       (some? (tree/node-find root k))))
   (entryAt [this k]
     (let [v (.valAt this k ::not-found)]
@@ -225,6 +214,99 @@
   (toString [this]
     (pr-str this))
 
+  java.lang.Comparable
+  (compareTo [this o]
+    (with-segment-tree this
+      (cond
+        (identical? this o) 0
+        (.isCompatible this o) (tree/node-map-compare root (.getRoot ^INodeCollection o))
+        (.isSimilar this o) (.compareTo ^Comparable (into (empty o) this) o)
+        true (throw (ex-info "unsupported comparison: " {:this this :o o})))))
+
+  java.util.Map
+  (get [this k]
+    (.valAt this k))
+  (isEmpty [_]
+    (node/leaf? root))
+  (size [_]
+    (tree/node-size root))
+  (keySet [this]
+    (with-segment-tree this
+      (set (tree/node-vec root :accessor :k))))
+  (put [_ _ _]
+    (throw (UnsupportedOperationException.)))
+  (putAll [_ _]
+    (throw (UnsupportedOperationException.)))
+  (clear [_]
+    (throw (UnsupportedOperationException.)))
+  (values [this]
+    (with-segment-tree this
+      (tree/node-vec root :accessor :v)))
+  (entrySet [this]
+    (with-segment-tree this
+      (set (tree/node-vec root :accessor :kv))))
+  (iterator [this]
+    (clojure.lang.SeqIterator. (seq this)))
+
+  clojure.lang.IPersistentMap
+  (assocEx [this k v]
+    (with-segment-tree this
+      (if-let [new-root (tree/node-add-if-absent root k v)]
+        (SegmentTree. new-root op identity creator cmp _meta)
+        (throw (Exception. "Key already present")))))
+  (without [this k]
+    (with-segment-tree this
+      (SegmentTree. (tree/node-remove root k) op identity creator cmp _meta)))
+
+  java.util.SortedMap
+  (comparator [_]
+    cmp)
+  (firstKey [this]
+    (with-segment-tree this
+      (first (tree/node-least-kv root))))
+  (lastKey [this]
+    (with-segment-tree this
+      (first (tree/node-greatest-kv root))))
+  (headMap [this k]
+    (with-segment-tree this
+      (SegmentTree. (tree/node-split-lesser root k) op identity creator cmp {})))
+  (tailMap [this k]
+    (with-segment-tree this
+      (let [[_ present gt] (tree/node-split root k)]
+        (if present
+          (SegmentTree. (tree/node-add gt (first present) (second present))
+                        op identity creator cmp {})
+          (SegmentTree. gt op identity creator cmp {})))))
+  (subMap [this from to]
+    (with-segment-tree this
+      (let [[_ from-present from-gt] (tree/node-split root from)
+            from-tree (if from-present
+                        (tree/node-add from-gt (first from-present) (second from-present))
+                        from-gt)
+            to-tree   (tree/node-split-lesser root to)
+            result    (tree/node-set-intersection from-tree to-tree)]
+        (SegmentTree. result op identity creator cmp {}))))
+
+  clojure.lang.Sorted
+  (entryKey [_ entry]
+    (key entry))
+  (seq [_ ascending]
+    (if ascending
+      (tree/entry-seq root)
+      (tree/entry-seq-reverse root)))
+  (seqFrom [this k ascending]
+    (with-segment-tree this
+      (let [[lt present gt] (tree/node-split root k)]
+        (if ascending
+          (if present
+            (cons (MapEntry. (first present) (second present))
+                  (tree/entry-seq gt))
+            (tree/entry-seq gt))
+          (if present
+            (cons (MapEntry. (first present) (second present))
+                  (tree/entry-seq-reverse lt))
+            (tree/entry-seq-reverse lt))))))
+
   clojure.lang.IHashEq
   (hasheq [this]
     (Murmur3/mixCollHash
@@ -239,7 +321,7 @@
 
   PRangeAggregate
   (aggregate-range [this lo hi]
-    (binding [order/*compare* cmp]
+    (with-segment-tree this
       (query-range-fast root lo hi op identity cmp)))
   (aggregate [this]
     (if (node/leaf? root)
@@ -251,9 +333,86 @@
     (let [old-val (get this k identity)]
       (seg-assoc this k (f old-val)))))
 
+(extend-type SegmentTree
+  proto/PNearest
+  (nearest [this test k]
+    (with-segment-tree this
+      (case test
+        :< (when-let [n (tree/node-predecessor (.getRoot ^INodeCollection this) k)]
+             [(node/-k n) (node/-v n)])
+        :<= (when-let [n (tree/node-find-nearest (.getRoot ^INodeCollection this) k :<)]
+              [(node/-k n) (node/-v n)])
+        :> (when-let [n (tree/node-successor (.getRoot ^INodeCollection this) k)]
+             [(node/-k n) (node/-v n)])
+        :>= (when-let [n (tree/node-find-nearest (.getRoot ^INodeCollection this) k :>)]
+              [(node/-k n) (node/-v n)])
+        (throw (ex-info "nearest test must be :<, :<=, :>, or :>=" {:test test})))))
+  (subrange [this test k]
+    (with-segment-tree this
+      (let [root        (.getRoot ^INodeCollection this)
+            result-root (case test
+                          (:< :<=) (tree/node-split-lesser root k)
+                          (:> :>=) (tree/node-split-greater root k)
+                          (throw (ex-info "subrange test must be :<, :<=, :>, or :>=" {:test test})))
+            result-root (case test
+                          (:<= :>=) (if-let [n (tree/node-find root k)]
+                                      (tree/node-add result-root (node/-k n) (node/-v n))
+                                      result-root)
+                          result-root)]
+        (SegmentTree. result-root (.-op this) (.-identity this) (.-creator this) (.-cmp this) {}))))
+
+  proto/PRanked
+  (rank-of [this k]
+    (or (tree/node-rank (.getRoot ^INodeCollection this) k (.getCmp ^IOrderedCollection this)) -1))
+  (slice [this start end]
+    (let [root  (.getRoot ^INodeCollection this)
+          n     (tree/node-size root)
+          start (max 0 (long start))
+          end   (min n (long end))]
+      (when (< start end)
+        (with-segment-tree this
+          (map (fn [n] (MapEntry. (node/-k n) (node/-v n)))
+               (tree/node-subseq root start (dec end)))))))
+  (median [this]
+    (let [root (.getRoot ^INodeCollection this)
+          n    (tree/node-size root)]
+      (when (pos? n)
+        (with-segment-tree this
+          (let [n (tree/node-nth root (quot (dec n) 2))]
+            (MapEntry. (node/-k n) (node/-v n)))))))
+  (percentile [this pct]
+    (let [root (.getRoot ^INodeCollection this)
+          n    (tree/node-size root)]
+      (when (pos? n)
+        (let [idx (min (dec n) (long (* (/ (double pct) 100.0) n)))]
+          (with-segment-tree this
+            (let [n (tree/node-nth root idx)]
+              (MapEntry. (node/-k n) (node/-v n))))))))
+
+  proto/PSplittable
+  (split-key [this k]
+    (with-segment-tree this
+      (let [root         (.getRoot ^INodeCollection this)
+            [l present r] (tree/node-split root k)
+            entry         (when present [(first present) (second present)])]
+        [(SegmentTree. l (.-op this) (.-identity this) (.-creator this) (.-cmp this) {})
+         entry
+         (SegmentTree. r (.-op this) (.-identity this) (.-creator this) (.-cmp this) {})])))
+  (split-at [this i]
+    (with-segment-tree this
+      (let [root (.getRoot ^INodeCollection this)
+            n    (tree/node-size root)]
+        (cond
+          (<= i 0) [(.empty this) this]
+          (>= i n) [this (.empty this)]
+          :else
+          (let [left-root  (tree/node-split-lesser root (node/-k (tree/node-nth root i)))
+                right-root (tree/node-split-nth root i)]
+            [(SegmentTree. left-root (.-op this) (.-identity this) (.-creator this) (.-cmp this) {})
+             (SegmentTree. right-root (.-op this) (.-identity this) (.-creator this) (.-cmp this) {})]))))))
+
 (defn- seg-assoc [^SegmentTree st k v]
-  (binding [order/*compare* (.-cmp st)
-            tree/*t-join*   (.-creator st)]
+  (with-segment-tree st
     (SegmentTree.
       (tree/node-add (.-root st) k v)
       (.-op st)
@@ -266,13 +425,38 @@
 ;; Public API
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defn segment-tree-with
+  "Create a segment tree with a custom comparator.
+
+   The comparator controls key ordering for point lookups, updates,
+   and range queries."
+  ([^Comparator comparator op identity]
+   (segment-tree-with comparator op identity nil))
+  ([^Comparator comparator op identity coll]
+   (let [creator (make-agg-creator op identity)]
+     (binding [order/*compare* comparator
+               tree/*t-join*   creator]
+       (SegmentTree.
+         (reduce (fn [n [k v]]
+                   (tree/node-add n k v))
+                 (node/leaf)
+                 coll)
+         op identity creator comparator {})))))
+
+(defn segment-tree-by
+  "Create a segment tree with a custom ordering predicate.
+
+   The predicate should define a total order like < or >."
+  [pred op identity coll]
+  (segment-tree-with (order/compare-by pred) op identity coll))
+
 (defn segment-tree
   "Create a segment tree with the given associative operation and identity.
 
    Arguments:
      op       - associative binary operation (e.g., +, min, max)
      identity - identity element for op (e.g., 0 for +, Long/MAX_VALUE for min)
-     coll     - map or seq of [index value] pairs
+     coll     - map or seq of [key value] pairs
 
    Example:
      ;; Sum segment tree
@@ -286,16 +470,10 @@
   ([op identity]
    (segment-tree op identity nil))
   ([op identity coll]
-   (let [cmp     order/normal-compare
-         creator (make-agg-creator op identity)]
-     (binding [order/*compare* cmp
-               tree/*t-join*   creator]
-       (SegmentTree.
-         (reduce (fn [n [k v]] (tree/node-add n k v)) (node/leaf) coll)
-         op identity creator cmp {})))))
+   (segment-tree-with order/normal-compare op identity coll)))
 
 (defalias query
-  "Query the aggregate over index range [lo, hi] inclusive.
+  "Query the aggregate over key range [lo, hi] inclusive.
    O(log n) time.
 
    Example:

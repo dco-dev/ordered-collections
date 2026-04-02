@@ -343,7 +343,8 @@
 (defalias ordered-merge-with
   "Merge ordered maps with a function to resolve conflicts.
    When the same key appears in multiple maps, (f key val-in-result val-in-latter) is called.
-   Uses parallel divide-and-conquer for large maps (threshold: 10000 elements).
+   Uses the same conservative fork-join threshold as ordered-set algebra for
+   large compatible ordered-maps.
 
    Examples:
      (ordered-merge-with (fn [k a b] (+ a b)) m1 m2)
@@ -790,12 +791,20 @@
    Arguments:
      op       - associative operation (+, min, max, etc.)
      identity - identity element (0 for +, Long/MAX_VALUE for min)
-     coll     - map or seq of [index value] pairs
+     coll     - map or seq of [key value] pairs
 
    Example:
      (def st (segment-tree + 0 {0 10, 1 20, 2 30, 3 40}))
      (query st 1 3)  ; => 90 (sum of indices 1,2,3)"
   segtree/segment-tree)
+
+(defalias segment-tree-with
+  "Create a segment tree with a custom java.util.Comparator."
+  segtree/segment-tree-with)
+
+(defalias segment-tree-by
+  "Create a segment tree with a custom ordering predicate."
+  segtree/segment-tree-by)
 
 (defalias sum-tree
   "Create a segment tree for range sums."
@@ -810,7 +819,7 @@
   segtree/max-tree)
 
 (defalias query
-  "Query aggregate over [lo, hi] inclusive. O(log n)."
+  "Query aggregate over key range [lo, hi] inclusive. O(log n)."
   segtree/query)
 
 (defalias aggregate
@@ -914,4 +923,3 @@
      ;=> [3 :b]"
   [coll test k]
   (proto/nearest coll test k))
-
