@@ -63,31 +63,33 @@ hood — and in the new things you can do.
 
 ## Performance
 
-Faster than both `sorted-set` and `data.avl` at every cardinality measured.
-Set algebra is the standout — Adams' split-based algorithm delivers
-order-of-magnitude gains even at modest sizes.
+Across the measured set-heavy workloads, `ordered-collections` is faster than
+both `sorted-set` and `data.avl` at every cardinality measured. Lookups stay
+close to parity; some map lookups still slightly favor `data.avl`. Set algebra
+is the standout — Adams' split-based algorithm delivers order-of-magnitude
+gains even at modest sizes.
 
 ### vs sorted-set (speedup)
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Construction | **2.2x** | **1.9x** | **2.1x** |
-| Lookup | 1.2x | 1.3x | 1.2x |
-| Union | **9.5x** | **9.5x** | **7.3x** |
-| Intersection | **6.9x** | **8.1x** | **5.2x** |
-| Difference | **7.9x** | **12.5x** | **6.9x** |
-| Fold | **5.7x** | **16.4x** | **12.5x** |
+| Construction | **2.6x** | **2.5x** | **2.6x** |
+| Lookup | 1.3x | 1.2x | 1.1x |
+| Union | **9.8x** | **9.6x** | **7.5x** |
+| Intersection | **6.1x** | **6.8x** | **5.1x** |
+| Difference | **6.9x** | **10.3x** | **5.6x** |
+| Fold | **3.7x** | **7.2x** | **9.1x** |
 
 ### vs data.avl (speedup)
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **7.6x** | **8.8x** | **6.9x** |
-| Intersection | **5.1x** | **4.9x** | **3.9x** |
-| Difference | **5.8x** | **6.1x** | **4.6x** |
-| Split | **2.8x** | **2.9x** | **3.5x** |
-| Fold | 1.6x | **5.2x** | **4.5x** |
-| Construction | 1.0x | 0.9x | **1.4x** |
+| Union | **7.5x** | **7.0x** | **5.7x** |
+| Intersection | **5.3x** | **5.4x** | **4.0x** |
+| Difference | **5.1x** | **5.8x** | **3.5x** |
+| Split | **2.6x** | **3.3x** | **3.3x** |
+| Fold | 1.0x | **2.8x** | **3.2x** |
+| Construction | **1.4x** | **1.2x** | **1.4x** |
 
 *[Criterium](https://github.com/hugoduncan/criterium) at all sizes.
 See [Benchmarks](doc/benchmarks.md) for full results.*
@@ -133,6 +135,8 @@ See [Algorithms](doc/algorithms.md) for implementation details and [Why Weight-B
 | `(oc/interval-map coll)` | Map supporting interval overlap queries |
 | `(oc/range-map)` | Non-overlapping ranges (Guava TreeRangeMap) |
 | `(oc/segment-tree f identity coll)` | O(log n) range aggregate queries |
+| `(oc/segment-tree-by pred f identity coll)` | Segment tree with custom ordering predicate |
+| `(oc/segment-tree-with cmp f identity coll)` | Segment tree with custom Comparator |
 | `(oc/priority-queue pairs)` | Priority queue from `[priority value]` pairs |
 | `(oc/ordered-multiset coll)` | Sorted multiset (allows duplicates) |
 | `(oc/fuzzy-set coll)` | Returns closest element to query |
@@ -302,9 +306,9 @@ tests against `sorted-set`, `sorted-map`, and `clojure.data.avl`.
 ### Benchmarks
 
 ```
-$ lein bench                  # Criterium, N=100K (~3 min)
-$ lein bench --full           # Criterium, N=10K,100K,500K (~13 min)
-$ lein bench --readme --full  # README tables only (~5 min)
+$ lein bench                  # Criterium, N=100K (~5 min)
+$ lein bench --full           # Criterium, N=10K,100K,500K (~30 min)
+$ lein bench --readme --full  # README tables only (~10 min)
 $ lein bench --sizes 50000    # Custom sizes
 
 $ lein bench-simple           # Quick iteration bench (100 to 100K)

@@ -28,10 +28,10 @@ All three libraries support union, intersection, and difference.
 **data.avl** and **ordered-collections** both use Adams' divide-and-conquer algorithm: split one tree at the other's root, recurse on halves, join. O(m log(n/m + 1)) where m ≤ n — information-theoretically optimal. When one set is much smaller, this is dramatically better than linear.
 
 **ordered-collections** additionally parallelizes the two independent recursive calls via `ForkJoinPool`. Two thresholds control granularity:
-- **210,000** (combined subtree size) — below this, sequential recursion is faster than forking
+- **524,288** (combined subtree size) — current configured threshold for switching from fork-join recursion to sequential recursion
 - **64** — below this, direct linear merge replaces divide-and-conquer entirely
 
-In practice: 5–13x faster than sorted-set and 2–10x faster than data.avl across N=10K–500K. See [Benchmarks](benchmarks.md).
+In practice, the April 2, 2026 rerun shows roughly 5-10x speedups over `sorted-set` and 3.5-7.5x over `data.avl` across N=10K-500K. The exact parallel crossover depends strongly on hardware and workload; the corrected `lein bench-parallel` harness now measures the real production dispatch path and showed that the old 210K threshold was too aggressive on this machine, especially for string keys. See [Benchmarks](benchmarks.md).
 
 ### Split and Join
 
@@ -41,7 +41,7 @@ In practice: 5–13x faster than sorted-set and 2–10x faster than data.avl acr
 | `split-at` | — | O(log n) | O(log n) |
 | `join` | — | O(log n) | O(log n) |
 
-Both data.avl and ordered-collections expose split/join, but ordered-collections has ~3–4x lower constant factors because weight composes trivially: `weight(join(L, k, R)) = weight(L) + 1 + weight(R)`. AVL trees must recompute heights bottom-up after joining. Red-black trees must reconcile color invariants. This difference compounds in set operations, which call split/join at every level of recursion.
+Both data.avl and ordered-collections expose split/join, but ordered-collections has roughly 2.6-3.3x lower constant factors in the current run because weight composes trivially: `weight(join(L, k, R)) = weight(L) + 1 + weight(R)`. AVL trees must recompute heights bottom-up after joining. Red-black trees must reconcile color invariants. This difference compounds in set operations, which call split/join at every level of recursion.
 
 ### Positional Access
 
@@ -63,7 +63,7 @@ ordered-collections additionally provides `slice`, `median`, and `percentile` �
 
 ### Parallel Fold
 
-ordered-collections implements `clojure.core.reducers/CollFold` using tree decomposition: split at root, fold subtrees in parallel via `ForkJoinPool`, combine. Threshold: 8,192 elements.
+ordered-collections implements `clojure.core.reducers/CollFold` by splitting the tree into larger chunks and delegating those chunks to `r/fold`. The implementation enforces a minimum chunk size of 4,096 to keep tree-splitting overhead under control.
 
 sorted-set and data.avl fall back to sequential reduce.
 

@@ -45,7 +45,7 @@
   [& body]
   `(let [results# (crit/quick-benchmark* (fn [] ~@body) {})]
      {:mean-ns     (long (* 1e9 (first (:mean results#))))
-      :stddev-ns   (long (* 1e9 (first (:variance results#))))
+      :variance-ns (long (* 1e9 (first (:variance results#))))
       :lower-q-ns  (long (* 1e9 (first (:lower-q results#))))
       :upper-q-ns  (long (* 1e9 (first (:upper-q results#))))
       :samples     (:sample-count results#)
@@ -177,6 +177,17 @@
     {:sorted-set-fold  (do (print ".") (flush) (bench-expr (r/fold + sum-elems ss)))
      :data-avl-fold    (do (print ".") (flush) (bench-expr (r/fold + sum-elems as)))
      :ordered-set-fold (do (print ".") (flush) (bench-expr (r/fold + sum-elems os)))}))
+
+(defn bench-set-fold-freq [n]
+  (let [elems (generate-elements n)
+        ss    (into (sorted-set) elems)
+        as    (into (avl/sorted-set) elems)
+        os    (core/ordered-set elems)
+        combinef (fn ([] {}) ([m1 m2] (merge-with + m1 m2)))
+        reducef  (fn [m x] (update m (mod (long x) 100) (fnil inc 0)))]
+    {:sorted-set-fold-freq  (do (print ".") (flush) (bench-expr (r/fold combinef reducef ss)))
+     :data-avl-fold-freq    (do (print ".") (flush) (bench-expr (r/fold combinef reducef as)))
+     :ordered-set-fold-freq (do (print ".") (flush) (bench-expr (r/fold combinef reducef os)))}))
 
 (defn bench-set-union [n]
   (let [elems1 (range n)
@@ -336,6 +347,7 @@
 
       ;; Parallel fold (we win - true parallelism)
       (print "  set-fold") (swap! results assoc-in [n :set-fold] (bench-set-fold n)) (println)
+      (print "  set-fold-freq") (swap! results assoc-in [n :set-fold-freq] (bench-set-fold-freq n)) (println)
       (print "  map-fold") (swap! results assoc-in [n :map-fold] (bench-map-fold n)) (println)
 
       ;; Set operations (we win 5-10x)
@@ -368,6 +380,7 @@
       (print "  set-intersection") (swap! results assoc-in [n :set-intersection] (bench-set-intersection n)) (println)
       (print "  set-difference") (swap! results assoc-in [n :set-difference] (bench-set-difference n)) (println)
       (print "  set-fold") (swap! results assoc-in [n :set-fold] (bench-set-fold n)) (println)
+      (print "  set-fold-freq") (swap! results assoc-in [n :set-fold-freq] (bench-set-fold-freq n)) (println)
       (print "  split") (swap! results assoc-in [n :split] (bench-split n)) (println))
     @results))
 
@@ -392,6 +405,7 @@
       (print "  set-lookup") (swap! results assoc-in [n :set-lookup] (bench-set-lookup n)) (println)
       (print "  set-iteration") (swap! results assoc-in [n :set-iteration] (bench-set-iteration n)) (println)
       (print "  set-fold") (swap! results assoc-in [n :set-fold] (bench-set-fold n)) (println)
+      (print "  set-fold-freq") (swap! results assoc-in [n :set-fold-freq] (bench-set-fold-freq n)) (println)
 
       (print "  set-union") (swap! results assoc-in [n :set-union] (bench-set-union n)) (println)
       (print "  set-intersection") (swap! results assoc-in [n :set-intersection] (bench-set-intersection n)) (println)

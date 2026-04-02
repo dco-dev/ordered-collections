@@ -152,14 +152,14 @@ fork-join:
 ```
 
 Two thresholds control granularity:
-- **`+parallel-threshold+` = 210,000**: when the combined subtree size falls below this, switch to sequential recursion (fork overhead exceeds benefit)
+- **`+parallel-threshold+` = 524,288**: current configured cutoff for switching from fork-join recursion to sequential recursion
 - **`+sequential-cutoff+` = 64**: below this, use direct linear merge
 
 Span is O(log² n), giving near-linear speedup on many cores (Blelloch et al. 2016).
 
 ## Fork-Join Parallelism
 
-Six operations use Java's `ForkJoinPool` for automatic parallelism: union, intersection, difference, merge-with, fold-keys, and fold-entries. All share the same structural pattern.
+Six operations use Java's `ForkJoinPool` for automatic parallelism: union, intersection, difference, merge-with, and two forms of parallel fold. Set operations use the three-layer fork-join pattern directly; fold delegates to `clojure.core.reducers/fold`.
 
 ### The pattern
 
@@ -234,19 +234,19 @@ Two thresholds prevent fork overhead from dominating on small inputs:
 
 | Threshold | Value | Purpose |
 |-----------|-------|---------|
-| `+parallel-threshold+` | 210,000 | Combined subtree size below which set operations switch from `par-fn` to `seq-fn` |
+| `+parallel-threshold+` | 524,288 | Combined subtree size below which set operations and ordered-map merge switch from `par-fn` to `seq-fn` |
 | `+sequential-cutoff+` | 64 | Subtree size below which set operations use direct linear merge |
-| `+fold-parallel-threshold+` | 8,192 | Subtree size below which fold operations use sequential in-order traversal |
+| `+min-fold-chunk-size+` | 4,096 | Minimum chunk size for parallel fold (floor on user-supplied value) |
 
-The set operation threshold is high because split/join have significant constant factors — the parallelism only pays off when there's enough work to amortize task creation. The fold threshold is lower because fold tasks do less work per element (just apply `reducef`).
+The shared set/merge threshold is high because split/join have significant constant factors, comparator cost matters, and fork-join overhead is workload-sensitive. The fold chunk floor prevents excessive O(log n) tree splits when `r/fold`'s default chunk size (512) would create too many chunks.
 
-These values were empirically determined via `parallel_threshold_bench.clj`. The crossover point depends on hardware; 210K is conservative and benefits most multi-core machines.
+`parallel_threshold_bench.clj` is useful for local tuning, but it does not produce a single stable crossover point across machines. In the April 2, 2026 rerun, the corrected production-path benchmark showed that the old 210K threshold triggered the fork-join path too early at 262K combined elements, with the regression most visible for string keys. The current 524,288 cutoff keeps those cases sequential while still allowing truly large workloads to parallelize.
 
 ### Operations using this pattern
 
 **Set operations** (union, intersection, difference, merge-with): The tree's divide-and-conquer structure maps directly to fork-join. Split T₁ at T₂'s root, fork the left halves, compute the right halves inline, join results. Work O(m log(n/m + 1)), span O(log² n).
 
-**Parallel fold** (fold-keys, fold-entries): Walk the tree in-order. At each node, fork the left subtree fold, compute the right subtree fold inline, combine with `combinef`, then apply `reducef` to the node's element. Work O(n), span O(log n).
+**Parallel fold** (`node-chunked-fold`): Split the tree into roughly equal subtrees using `node-split` at evenly-spaced positions, then fold them in parallel via `r/fold`. Splitting is done eagerly in the caller's thread (where dynamic bindings are available); each chunk's sequential reduce uses `node-reduce` which needs no bindings. Work O(n), span O(n/p + k log n) where k is the number of chunks.
 
 ## Positional Access
 
@@ -297,11 +297,11 @@ Standard BST descent with candidate tracking. O(log n).
 
 ## Parallel Fold
 
-Collections implement `clojure.core.reducers/CollFold`. The tree is recursively split at the root: left and right subtrees are reduced in parallel via `ForkJoinPool`, results combined with the user's combining function.
+Collections implement `clojure.core.reducers/CollFold` via `node-chunked-fold`. The tree is split into roughly equal chunks using `node-split`; those chunks are then folded in parallel by `clojure.core.reducers/fold`.
 
-Threshold: **`+fold-parallel-threshold+` = 8,192** (below this, sequential reduce).
+Minimum chunk size: **`+min-fold-chunk-size+` = 4,096**. User-supplied chunk sizes below that floor are rounded up to avoid excessive tree splitting overhead.
 
-Span: O(n/p + log² n) where p = number of processors.
+Span is approximately O(n/p + k log n), where `p` is processor count and `k` is the number of chunks.
 
 ## Interval Tree Augmentation
 
