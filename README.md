@@ -24,7 +24,6 @@ foundation for splitting, joining, and parallel operations.
 
 - [Zorp's Sneaker Emporium](doc/zorp-example.md) — Narrative guide with extended examples
 - [Cookbook](doc/cookbook.md) — Practical patterns: leaderboards, time-series, scheduling, IP ranges
-- [When to Use](doc/when-to-use.md) — Decision guide for choosing the right collection type
 - [Benchmarks](doc/benchmarks.md) — Detailed performance measurements
 - [Competitive Analysis](doc/competitive-analysis.md) — Comparison with other libraries
 - [vs clojure.data.avl](doc/vs-clojure-data-avl.md) — For data.avl users considering a switch
