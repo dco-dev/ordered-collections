@@ -30,23 +30,26 @@
 ;; --  Oleg Kiselyov
 ;;     'Towards the best collection API, A design of the overall optimal
 ;;     collection traversal interface'
-;;     <http://pobox.com/~oleg/ftp/papers/LL3-collections-enumerators.txt>
+;;     <https://okmij.org/ftp/papers/LL3-collections-enumerators.txt>
 ;;
 ;; --  Nievergelt and Reingold (1972)
 ;;     'Binary Search Trees of Bounded Balance'
 ;;     STOC '72 Proceedings
 ;;     4th Annual ACM symposium on Theory of Computing
 ;;     Pages 137-142
+;;     <https://dl.acm.org/doi/abs/10.1145/800152.804906>
 ;;
 ;; --  Driscoll, Sarnak, Sleator, and Tarjan (1989)
 ;;     'Making Data Structures Persistent'
 ;;     Journal of Computer and System Sciences Volume 38 Issue 1, February 1989
 ;;     18th Annual ACM Symposium on Theory of Computing
 ;;     Pages 86-124
+;;     <https://www.sciencedirect.com/science/article/pii/0022000089900342>
 ;;
 ;; --  MIT Scheme weight balanced tree as reimplemented by Yoichi Hirai
 ;;     and Kazuhiko Yamamoto using the revised non-variant algorithm recommended
 ;;     integer balance parameters from (Hirai/Yamomoto 2011).
+;;     <https://www.cambridge.org/core/journals/journal-of-functional-programming/article/balancing-weightbalanced-trees/7281C4DE7E56B74F2D13F06E31DCBC5B>
 ;;
 ;; --  Wikipedia
 ;;     'Interval Tree'
