@@ -58,7 +58,7 @@
         (.isCompatible this that)
         (let [that-root (.getRoot ^OrderedSet that)
               use-parallel? (>= (+ (tree/node-size root) (tree/node-size that-root))
-                                tree/+parallel-threshold+)]
+                                tree/+parallel-intersection-root-threshold+)]
           (new OrderedSet
                (if use-parallel?
                  (tree/node-set-intersection-parallel root that-root)
@@ -73,7 +73,7 @@
         (.isCompatible this that)
         (let [that-root (.getRoot ^OrderedSet that)
               use-parallel? (>= (+ (tree/node-size root) (tree/node-size that-root))
-                                tree/+parallel-threshold+)]
+                                tree/+parallel-union-root-threshold+)]
           (new OrderedSet
                (if use-parallel?
                  (tree/node-set-union-parallel root that-root)
@@ -88,7 +88,7 @@
         (.isCompatible this that)
         (let [that-root (.getRoot ^OrderedSet that)
               use-parallel? (>= (+ (tree/node-size root) (tree/node-size that-root))
-                                tree/+parallel-threshold+)]
+                                tree/+parallel-difference-root-threshold+)]
           (new OrderedSet
                (if use-parallel?
                  (tree/node-set-difference-parallel root that-root)

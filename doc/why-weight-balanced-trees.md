@@ -135,7 +135,8 @@ The ability to efficiently split trees enables true parallel reduction:
 
 The tree is split into larger balanced chunks, and those chunks are reduced in parallel via `r/fold`. Clojure's `sorted-set` falls back to sequential reduce because red-black trees cannot efficiently split.
 
-In practice, parallel fold is 5-15x faster than sorted-set's sequential fold at N=500K, depending on the reduction function.
+In the current run, parallel fold is about 9.7x faster than sorted-set and 3.4x
+faster than data.avl at N=500K.
 
 ## The Balance Invariant
 
@@ -169,11 +170,11 @@ Kazu Yamamoto subsequently [patched MIT Scheme and SLIB](https://github.com/kazu
 
 Weight-balanced trees are competitive with red-black and AVL trees on basic operations (lookup, insert, iteration) and significantly faster on operations that leverage split/join:
 
-- **Set algebra**: 5-13x faster than sorted-set, 2-10x faster than data.avl (union, intersection, difference)
-- **Fold**: 5-15x faster than sorted-set, 1-5x faster than data.avl (parallel decomposition)
-- **Construction**: 2x faster than sorted-set (parallel batch construction)
-- **Split**: 3-4x faster than data.avl
-- **Lookup**: Within 10% of both competitors (slightly taller trees vs slightly different node layout — a wash)
+- **Set algebra**: about 8.7-46.1x faster than sorted-set and 7.2-39.6x faster than data.avl in the current Criterium suite
+- **Fold**: about 3.7-9.7x faster than sorted-set and 1.0-3.4x faster than data.avl in the current benchmark suite
+- **Construction**: about 2.7-2.9x faster than sorted-set and 1.4-1.5x faster than data.avl
+- **Split**: about 3.1-3.7x faster than data.avl
+- **Lookup**: roughly comparable to both competitors; not the main reason to choose this design
 
 See [Benchmarks](benchmarks.md) for detailed Criterium measurements at N=10K, 100K, and 500K.
 

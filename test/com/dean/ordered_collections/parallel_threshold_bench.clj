@@ -15,6 +15,7 @@
    overhead below the configured threshold."
   (:require [com.dean.ordered-collections.bench-utils :refer [has-flag?]]
             [com.dean.ordered-collections.core :as oc]
+            [com.dean.ordered-collections.parallel :as parallel]
             [com.dean.ordered-collections.tree.tree :as tree]
             [com.dean.ordered-collections.tree.node :as node]
             [com.dean.ordered-collections.tree.order :as order]
@@ -114,7 +115,36 @@
     (seq-f)))
 
 (def ^:private default-threshold-candidates
-  [4096 16384 65536 131072 210000 262144 524288])
+  [4096 8192 16384 32768 65536 131072 210000 262144 524288])
+
+(def ^:private default-recursive-threshold-candidates
+  [4096 16384 32768 65536])
+
+(defn- current-thresholds
+  []
+  {:union tree/+parallel-union-root-threshold+
+   :intersect tree/+parallel-intersection-root-threshold+
+   :diff tree/+parallel-difference-root-threshold+
+   :merge tree/+parallel-merge-root-threshold+})
+
+(defn- current-recursive-thresholds
+  []
+  {:union tree/+parallel-union-recursive-threshold+
+   :intersect tree/+parallel-intersection-recursive-threshold+
+   :diff tree/+parallel-difference-recursive-threshold+
+   :merge tree/+parallel-merge-recursive-threshold+})
+
+(def ^:private union-parallel-kernel
+  (ns-resolve 'com.dean.ordered-collections.tree.tree 'node-set-union-parallel*))
+
+(def ^:private intersect-parallel-kernel
+  (ns-resolve 'com.dean.ordered-collections.tree.tree 'node-set-intersection-parallel*))
+
+(def ^:private diff-parallel-kernel
+  (ns-resolve 'com.dean.ordered-collections.tree.tree 'node-set-difference-parallel*))
+
+(def ^:private merge-parallel-kernel
+  (ns-resolve 'com.dean.ordered-collections.tree.tree 'node-map-merge-parallel*))
 
 (defn bench-threshold-for-size
   "Benchmark production-style dispatch at a given combined size."
@@ -189,6 +219,93 @@
 
     (assoc results :size size :total total :key-profile key-profile)))
 
+(defn bench-recursive-threshold-for-size
+  "Benchmark explicit recursive-threshold choices once an operation has already
+   entered the parallel path at the root."
+  [size & {:keys [warmup-iters bench-iters sample-runs overlap-ratio recursive-thresholds key-profile]
+           :or {warmup-iters 5
+                bench-iters 20
+                sample-runs 9
+                overlap-ratio 0.5
+                recursive-thresholds default-recursive-threshold-candidates
+                key-profile :long}}]
+  (let [recursive-thresholds (sort (distinct (concat recursive-thresholds
+                                                      (vals (current-recursive-thresholds)))))
+        half-size (quot size 2)
+        [s1 s2]   (make-test-sets half-size half-size overlap-ratio key-profile)
+        [m1 m2]   (make-test-maps half-size half-size overlap-ratio key-profile)
+        [r1 r2]   (get-roots s1 s2)
+        [mr1 mr2] (get-roots m1 m2)
+        set-cmp   (.getCmp ^IOrderedCollection s1)
+        map-cmp   (.getCmp ^IOrderedCollection m1)
+        join      tree/*t-join*
+        merge-fn  (fn [_ left _] left)
+
+        union-seq-f     #(tree/node-set-union r1 r2)
+        intersect-seq-f #(tree/node-set-intersection r1 r2)
+        diff-seq-f      #(tree/node-set-difference r1 r2)
+        merge-seq-f     #(tree/node-map-merge mr1 mr2 merge-fn)
+
+        union-par-f     (fn [recursive-threshold]
+                          #(parallel/invoke-root
+                             (fn []
+                               (union-parallel-kernel r1 r2 set-cmp join recursive-threshold))))
+        intersect-par-f (fn [recursive-threshold]
+                          #(parallel/invoke-root
+                             (fn []
+                               (intersect-parallel-kernel r1 r2 set-cmp join recursive-threshold))))
+        diff-par-f      (fn [recursive-threshold]
+                          #(parallel/invoke-root
+                             (fn []
+                               (diff-parallel-kernel r1 r2 set-cmp join recursive-threshold))))
+        merge-par-f     (fn [recursive-threshold]
+                          #(parallel/invoke-root
+                             (fn []
+                               (merge-parallel-kernel mr1 mr2 merge-fn map-cmp join recursive-threshold))))
+
+        set-results
+        {:union-seq     (binding [order/*compare* set-cmp]
+                         (bench-op-samples union-seq-f warmup-iters bench-iters sample-runs))
+         :intersect-seq (binding [order/*compare* set-cmp]
+                         (bench-op-samples intersect-seq-f warmup-iters bench-iters sample-runs))
+         :diff-seq      (binding [order/*compare* set-cmp]
+                         (bench-op-samples diff-seq-f warmup-iters bench-iters sample-runs))
+         :recursive-thresholds
+         (into {}
+               (for [threshold recursive-thresholds]
+                 [threshold
+                   {:union
+                   (binding [order/*compare* set-cmp]
+                     (bench-op-samples (union-par-f threshold) warmup-iters bench-iters sample-runs))
+                   :intersect
+                   (binding [order/*compare* set-cmp]
+                     (bench-op-samples (intersect-par-f threshold) warmup-iters bench-iters sample-runs))
+                   :diff
+                   (binding [order/*compare* set-cmp]
+                     (bench-op-samples (diff-par-f threshold) warmup-iters bench-iters sample-runs))}]))}
+
+        merge-results
+        {:merge-seq (binding [order/*compare* map-cmp]
+                     (bench-op-samples merge-seq-f warmup-iters bench-iters sample-runs))
+         :merge-recursive-thresholds
+         (into {}
+               (for [threshold recursive-thresholds]
+                 [threshold
+                  (binding [order/*compare* map-cmp]
+                    (bench-op-samples (merge-par-f threshold) warmup-iters bench-iters sample-runs))]))}
+
+        results
+        (assoc set-results
+               :merge-seq (:merge-seq merge-results)
+               :recursive-thresholds
+               (reduce (fn [acc threshold]
+                         (assoc acc threshold
+                                (assoc (get acc threshold)
+                                       :merge (get-in merge-results [:merge-recursive-thresholds threshold]))))
+                       (:recursive-thresholds set-results)
+                       recursive-thresholds))]
+    (assoc results :size size :key-profile key-profile)))
+
 (defn- best-threshold
   [threshold-results op]
   (apply min-key #(get-in threshold-results [% op :median]) (keys threshold-results)))
@@ -213,7 +330,7 @@
           intersect-best-th  (best-threshold thresholds :intersect)
           diff-best-th       (best-threshold thresholds :diff)
           merge-best-th      (best-threshold thresholds :merge)
-          current            (get thresholds tree/+parallel-threshold+)]
+          current-thresholds (current-thresholds)]
       (printf "║ %6d  │ %6d %6.0f %5.2fx │ %6d %6.0f %5.2fx │ %6d %6.0f %5.2fx │ %6d %6.0f %5.2fx │ %4.0f %4.0f %4.0f %4.0f ║%n"
               size
               union-best-th
@@ -228,34 +345,44 @@
               merge-best-th
               (get-in thresholds [merge-best-th :merge :median])
               (speedup merge-seq (get-in thresholds [merge-best-th :merge]))
-              (get-in current [:union :median])
-              (get-in current [:intersect :median])
-              (get-in current [:diff :median])
-              (get-in current [:merge :median]))))
+              (get-in thresholds [(:union current-thresholds) :union :median])
+              (get-in thresholds [(:intersect current-thresholds) :intersect :median])
+              (get-in thresholds [(:diff current-thresholds) :diff :median])
+              (get-in thresholds [(:merge current-thresholds) :merge :median]))))
   (println "╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════╝")
   (println)
   (println "Speedup > 1.0 means the candidate threshold beat forced sequential on median time.")
-  (println (str "Current threshold: " tree/+parallel-threshold+)))
+  (println (str "Current root thresholds:"
+                " union=" tree/+parallel-union-root-threshold+
+                " intersect=" tree/+parallel-intersection-root-threshold+
+                " diff=" tree/+parallel-difference-root-threshold+
+                " merge=" tree/+parallel-merge-root-threshold+))
+  (println (str "Current recursive thresholds:"
+                " union=" tree/+parallel-union-recursive-threshold+
+                " intersect=" tree/+parallel-intersection-recursive-threshold+
+                " diff=" tree/+parallel-difference-recursive-threshold+
+                " merge=" tree/+parallel-merge-recursive-threshold+)))
 
 (defn find-crossover
   "Find best candidate threshold per operation at each tested size."
   [results]
-  (mapv (fn [{:keys [size union-seq intersect-seq diff-seq merge-seq thresholds]}]
-          {:size size
-           :union-threshold (best-threshold thresholds :union)
-           :union-speedup (speedup union-seq (get-in thresholds [(best-threshold thresholds :union) :union]))
-           :intersect-threshold (best-threshold thresholds :intersect)
-           :intersect-speedup (speedup intersect-seq (get-in thresholds [(best-threshold thresholds :intersect) :intersect]))
-           :diff-threshold (best-threshold thresholds :diff)
-           :diff-speedup (speedup diff-seq (get-in thresholds [(best-threshold thresholds :diff) :diff]))
-           :merge-threshold (best-threshold thresholds :merge)
-           :merge-speedup (speedup merge-seq (get-in thresholds [(best-threshold thresholds :merge) :merge]))
-           :current-threshold tree/+parallel-threshold+
-           :current-union-speedup (speedup union-seq (get-in thresholds [tree/+parallel-threshold+ :union]))
-           :current-intersect-speedup (speedup intersect-seq (get-in thresholds [tree/+parallel-threshold+ :intersect]))
-           :current-diff-speedup (speedup diff-seq (get-in thresholds [tree/+parallel-threshold+ :diff]))
-           :current-merge-speedup (speedup merge-seq (get-in thresholds [tree/+parallel-threshold+ :merge]))})
-        results))
+  (let [current-thresholds (current-thresholds)]
+    (mapv (fn [{:keys [size union-seq intersect-seq diff-seq merge-seq thresholds]}]
+            {:size size
+             :union-threshold (best-threshold thresholds :union)
+             :union-speedup (speedup union-seq (get-in thresholds [(best-threshold thresholds :union) :union]))
+             :intersect-threshold (best-threshold thresholds :intersect)
+             :intersect-speedup (speedup intersect-seq (get-in thresholds [(best-threshold thresholds :intersect) :intersect]))
+             :diff-threshold (best-threshold thresholds :diff)
+             :diff-speedup (speedup diff-seq (get-in thresholds [(best-threshold thresholds :diff) :diff]))
+             :merge-threshold (best-threshold thresholds :merge)
+             :merge-speedup (speedup merge-seq (get-in thresholds [(best-threshold thresholds :merge) :merge]))
+             :current-thresholds current-thresholds
+             :current-union-speedup (speedup union-seq (get-in thresholds [(:union current-thresholds) :union]))
+             :current-intersect-speedup (speedup intersect-seq (get-in thresholds [(:intersect current-thresholds) :intersect]))
+             :current-diff-speedup (speedup diff-seq (get-in thresholds [(:diff current-thresholds) :diff]))
+             :current-merge-speedup (speedup merge-seq (get-in thresholds [(:merge current-thresholds) :merge]))})
+          results)))
 
 (defn run-benchmark
   "Run the full threshold benchmark."
@@ -307,19 +434,151 @@
                         intersect-threshold intersect-speedup
                         diff-threshold diff-speedup
                         merge-threshold merge-speedup
-                        current-threshold current-union-speedup
+                        current-thresholds current-union-speedup
                         current-intersect-speedup current-diff-speedup
                         current-merge-speedup]} summaries]
-          (printf "  size=%d  union=%d (%4.2fx)  intersect=%d (%4.2fx)  diff=%d (%4.2fx)  merge=%d (%4.2fx)  current=%d [%4.2fx %4.2fx %4.2fx %4.2fx]%n"
+          (printf "  size=%d  union=%d (%4.2fx)  intersect=%d (%4.2fx)  diff=%d (%4.2fx)  merge=%d (%4.2fx)  current=[%d %d %d %d] [%4.2fx %4.2fx %4.2fx %4.2fx]%n"
                   size
                   union-threshold union-speedup
                   intersect-threshold intersect-speedup
                   diff-threshold diff-speedup
                   merge-threshold merge-speedup
-                  current-threshold
+                  (:union current-thresholds)
+                  (:intersect current-thresholds)
+                  (:diff current-thresholds)
+                  (:merge current-thresholds)
                   current-union-speedup current-intersect-speedup current-diff-speedup current-merge-speedup))
         (println)))
 
+    {:results-by-profile results-by-profile
+     :summaries-by-profile summaries-by-profile}))
+
+(defn print-recursive-results-table
+  [key-profile results]
+  (println)
+  (println (str "Key profile: " (name key-profile)))
+  (println "╔══════════════════════════════════════════════════════════════════════════════════════════════════════════════╗")
+  (println "║                         RECURSIVE THRESHOLD BENCHMARK RESULTS                                                ║")
+  (println "╠══════════════════════════════════════════════════════════════════════════════════════════════════════════════╣")
+  (println "║  Size   │  Best Union         │ Best Intersect      │ Best Diff           │ Best Merge          │ Current     ║")
+  (println "║         │ recur   med   spd   │ recur   med   spd   │ recur   med   spd   │ recur   med   spd   │ U I D M     ║")
+  (println "╠══════════════════════════════════════════════════════════════════════════════════════════════════════════════╣")
+  (doseq [{:keys [size union-seq intersect-seq diff-seq merge-seq recursive-thresholds]} results]
+    (let [union-best-th      (best-threshold recursive-thresholds :union)
+          intersect-best-th  (best-threshold recursive-thresholds :intersect)
+          diff-best-th       (best-threshold recursive-thresholds :diff)
+          merge-best-th      (best-threshold recursive-thresholds :merge)
+          current-thresholds (current-recursive-thresholds)]
+      (printf "║ %6d  │ %6d %6.0f %5.2fx │ %6d %6.0f %5.2fx │ %6d %6.0f %5.2fx │ %6d %6.0f %5.2fx │ %4.0f %4.0f %4.0f %4.0f ║%n"
+              size
+              union-best-th
+              (get-in recursive-thresholds [union-best-th :union :median])
+              (speedup union-seq (get-in recursive-thresholds [union-best-th :union]))
+              intersect-best-th
+              (get-in recursive-thresholds [intersect-best-th :intersect :median])
+              (speedup intersect-seq (get-in recursive-thresholds [intersect-best-th :intersect]))
+              diff-best-th
+              (get-in recursive-thresholds [diff-best-th :diff :median])
+              (speedup diff-seq (get-in recursive-thresholds [diff-best-th :diff]))
+              merge-best-th
+              (get-in recursive-thresholds [merge-best-th :merge :median])
+              (speedup merge-seq (get-in recursive-thresholds [merge-best-th :merge]))
+              (get-in recursive-thresholds [(:union current-thresholds) :union :median])
+              (get-in recursive-thresholds [(:intersect current-thresholds) :intersect :median])
+              (get-in recursive-thresholds [(:diff current-thresholds) :diff :median])
+              (get-in recursive-thresholds [(:merge current-thresholds) :merge :median]))))
+  (println "╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════╝")
+  (println)
+  (println "Current root thresholds stay fixed during this benchmark.")
+  (println (str "Current recursive thresholds:"
+                " union=" tree/+parallel-union-recursive-threshold+
+                " intersect=" tree/+parallel-intersection-recursive-threshold+
+                " diff=" tree/+parallel-difference-recursive-threshold+
+                " merge=" tree/+parallel-merge-recursive-threshold+)))
+
+(defn find-recursive-crossover
+  [results]
+  (let [current-thresholds (current-recursive-thresholds)]
+    (mapv (fn [{:keys [size union-seq intersect-seq diff-seq merge-seq recursive-thresholds]}]
+            {:size size
+             :union-threshold (best-threshold recursive-thresholds :union)
+             :union-speedup (speedup union-seq (get-in recursive-thresholds [(best-threshold recursive-thresholds :union) :union]))
+             :intersect-threshold (best-threshold recursive-thresholds :intersect)
+             :intersect-speedup (speedup intersect-seq (get-in recursive-thresholds [(best-threshold recursive-thresholds :intersect) :intersect]))
+             :diff-threshold (best-threshold recursive-thresholds :diff)
+             :diff-speedup (speedup diff-seq (get-in recursive-thresholds [(best-threshold recursive-thresholds :diff) :diff]))
+             :merge-threshold (best-threshold recursive-thresholds :merge)
+             :merge-speedup (speedup merge-seq (get-in recursive-thresholds [(best-threshold recursive-thresholds :merge) :merge]))
+             :current-thresholds current-thresholds
+             :current-union-speedup (speedup union-seq (get-in recursive-thresholds [(:union current-thresholds) :union]))
+             :current-intersect-speedup (speedup intersect-seq (get-in recursive-thresholds [(:intersect current-thresholds) :intersect]))
+             :current-diff-speedup (speedup diff-seq (get-in recursive-thresholds [(:diff current-thresholds) :diff]))
+             :current-merge-speedup (speedup merge-seq (get-in recursive-thresholds [(:merge current-thresholds) :merge]))})
+          results)))
+
+(defn run-recursive-benchmark
+  [& {:keys [sizes warmup-iters bench-iters sample-runs recursive-thresholds key-profiles]
+      :or {sizes [4096 16384 65536 131072 262144 524288 1048576]
+           warmup-iters 5
+           bench-iters 20
+           sample-runs 9
+           recursive-thresholds default-recursive-threshold-candidates
+           key-profiles [:long :string]}}]
+  (println "Running recursive threshold benchmark...")
+  (println "Testing sizes:" sizes)
+  (println "Warmup iterations:" warmup-iters)
+  (println "Benchmark iterations:" bench-iters)
+  (println "Sample runs:" sample-runs)
+  (println "Recursive threshold candidates:" recursive-thresholds)
+  (println "Key profiles:" key-profiles)
+  (println)
+
+  (let [results-by-profile
+        (into {}
+              (for [key-profile key-profiles]
+                [key-profile
+                 (vec (for [size sizes]
+                        (do
+                          (print (str "  Testing " (name key-profile) " size " size "... "))
+                          (flush)
+                          (let [r (bench-recursive-threshold-for-size size
+                                    :warmup-iters warmup-iters
+                                    :bench-iters bench-iters
+                                    :sample-runs sample-runs
+                                    :recursive-thresholds recursive-thresholds
+                                    :key-profile key-profile)]
+                            (println "done")
+                            r))))]))
+        summaries-by-profile
+        (into {}
+              (map (fn [[key-profile results]]
+                     [key-profile (find-recursive-crossover results)])
+                   results-by-profile))]
+    (doseq [key-profile key-profiles]
+      (let [results   (get results-by-profile key-profile)
+            summaries (get summaries-by-profile key-profile)]
+        (print-recursive-results-table key-profile results)
+        (println)
+        (println "Per-size recursive-threshold analysis:")
+        (doseq [{:keys [size union-threshold union-speedup
+                        intersect-threshold intersect-speedup
+                        diff-threshold diff-speedup
+                        merge-threshold merge-speedup
+                        current-thresholds current-union-speedup
+                        current-intersect-speedup current-diff-speedup
+                        current-merge-speedup]} summaries]
+          (printf "  size=%d  union=%d (%4.2fx)  intersect=%d (%4.2fx)  diff=%d (%4.2fx)  merge=%d (%4.2fx)  current=[%d %d %d %d] [%4.2fx %4.2fx %4.2fx %4.2fx]%n"
+                  size
+                  union-threshold union-speedup
+                  intersect-threshold intersect-speedup
+                  diff-threshold diff-speedup
+                  merge-threshold merge-speedup
+                  (:union current-thresholds)
+                  (:intersect current-thresholds)
+                  (:diff current-thresholds)
+                  (:merge current-thresholds)
+                  current-union-speedup current-intersect-speedup current-diff-speedup current-merge-speedup))
+        (println)))
     {:results-by-profile results-by-profile
      :summaries-by-profile summaries-by-profile}))
 
@@ -331,11 +590,25 @@
                  :bench-iters 10
                  :sample-runs 5))
 
+(defn quick-recursive-bench
+  []
+  (run-recursive-benchmark :sizes [65536 131072 262144 524288 1048576]
+                           :warmup-iters 3
+                           :bench-iters 10
+                           :sample-runs 5))
+
 (defn -main
   "Entry point for lein bench-parallel."
   [& args]
-  (if (has-flag? args "--quick" "-q")
+  (cond
+    (has-flag? args "--recursive")
+    (if (has-flag? args "--quick" "-q")
+      (quick-recursive-bench)
+      (run-recursive-benchmark))
+
+    (has-flag? args "--quick" "-q")
     (quick-bench)
+    :else
     (run-benchmark))
   (shutdown-agents))
 
@@ -348,4 +621,7 @@
 
   ;; Fine-grained around and above current threshold
   (run-benchmark :sizes [131072 196608 262144 393216 524288 786432 1048576])
+
+  ;; Recursive-threshold sweep with current root thresholds held fixed
+  (run-recursive-benchmark)
   )

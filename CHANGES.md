@@ -16,9 +16,9 @@
 - **Positional**: `rank-of`, `slice`, `median`, `percentile`
 - **Navigation**: `nearest` (floor/ceiling with keyword tests `:<=`, `:>=`, `:<`, `:>`), `subrange`, `split-key`, `split-at`
 - **Interval**: `overlapping`, `span`
-- **Range map**: `ranges`, `spanning-range`, `gaps`, `assoc-coalescing`, `get-entry`, `range-remove`
+- **Range map**: `ranges`, `span`, `gaps`, `assoc-coalescing`, `get-entry`, `range-remove`
 - **Segment tree**: `query`, `aggregate`, `update-val`, `update-fn`
-- **Priority queue**: `push`, `push-all`, `peek-min`, `peek-val`, `pop-min`, `peek-max`, `peek-max-val`, `pop-max`
+- **Priority queue**: `push`, `push-all`, `peek-min`, `peek-min-val`, `pop-min`, `peek-max`, `peek-max-val`, `pop-max`
 - **Multiset**: `multiplicity`, `disj-one`, `disj-all`, `distinct-elements`, `element-frequencies`
 - **Fuzzy**: `fuzzy-nearest`, `fuzzy-exact-contains?`, `fuzzy-exact-get`
 - **Map**: `assoc-new`, `ordered-merge-with`
@@ -26,13 +26,13 @@
 ### Specialized Constructors
 
 - Type-specific: `long-ordered-set`, `long-ordered-map`, `double-ordered-set`, `double-ordered-map`, `string-ordered-set`, `string-ordered-map`
-- Custom comparator: `ordered-set-by`, `ordered-map-by`, `ordered-set-with`, `ordered-map-with`, `ordered-multiset-by`, `fuzzy-set-by`, `fuzzy-map-by`
+- Custom comparator: `ordered-set-by`, `ordered-map-by`, `ordered-set-with`, `ordered-map-with`, `ordered-multiset-by`, `fuzzy-set-by`, `fuzzy-map-by`, `segment-tree-by`, `segment-tree-with`
 - Exported comparators: `long-compare`, `double-compare`, `string-compare`, `compare-by`
 
 ### Interface Implementations
 
 - `clojure.lang.Sorted` — native `subseq`/`rsubseq` on ordered-set and ordered-map
-- `clojure.core.reducers/CollFold` — fork-join parallel fold on all collection types (threshold: 8,192 elements)
+- `clojure.core.reducers/CollFold` — chunked parallel fold; ordered-set/map and compatible tree-backed types split into larger chunks before delegating to `r/fold`
 - `clojure.lang.IHashEq` — correct `hash` for use in hash-based collections
 - `java.io.Serializable` — Java serialization support
 - `IReduceInit`/`IReduce` — direct tree traversal for fast `reduce`
@@ -44,7 +44,7 @@ Round-trip serialization via `data_readers.clj`: `#ordered/set`, `#ordered/map`,
 
 ### Performance
 
-- **Parallel set operations** via ForkJoinPool (threshold: 210,000 combined elements; sequential cutoff: 64)
+- **Parallel set operations** via ForkJoinPool with operation-specific root thresholds (`65,536-131,072`), `65,536` recursive thresholds, and `64` sequential cutoff
 - **Primitive node types** (`LongKeyNode`, `DoubleKeyNode`) — unboxed key storage
 - **Primitive lookup fast path** — `long-ordered-set` bypasses `Comparator` dispatch
 

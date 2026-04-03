@@ -348,7 +348,8 @@
 (defn ordered-merge-with
   "Merge ordered maps with a function to resolve conflicts.
    When the same key appears in multiple maps, (f key val-in-result val-in-latter) is called.
-   Uses parallel divide-and-conquer for large maps (threshold: 10000 elements).
+   Uses the same conservative parallel threshold as ordered-set algebra for
+   large compatible ordered-maps.
 
    Examples:
      (ordered-merge-with (fn [k a b] (+ a b)) m1 m2)
@@ -371,7 +372,7 @@
                     root2 (.getRoot m2c)
                     cmp (.getCmp ^IOrderedCollection m1)
                     use-parallel? (>= (+ (tree/node-size root1) (tree/node-size root2))
-                                      tree/+parallel-threshold+)]
+                                      tree/+parallel-merge-root-threshold+)]
                 (binding [order/*compare* cmp]
                   (->OrderedMap
                     (if use-parallel?

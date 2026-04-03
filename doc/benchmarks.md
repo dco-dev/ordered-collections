@@ -31,37 +31,73 @@ Relative ratios are more meaningful than absolute times.
 
 ## Set Operations
 
-Two sets of size N with 50% overlap. Adams' divide-and-conquer with optional fork-join parallelism. The current configured threshold is 524,288 combined elements. The threshold benchmark now measures the real production dispatch path for long keys, string keys, and ordered-map merge; on this machine, that showed the old 210,000 cutoff was too aggressive.
+Two sets of size N with 50% overlap. Adams' divide-and-conquer with optional
+fork-join parallelism. The current production policy uses operation-specific
+root thresholds:
+
+- union `131,072`
+- intersection `65,536`
+- difference `131,072`
+- ordered-map merge `65,536`
+
+Recursive re-forking currently uses `65,536` for all four operations, plus a
+`65,536` minimum-branch guard and a `64` sequential cutoff for tiny subtrees.
 
 ### vs sorted-set (speedup)
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **9.8x** | **9.6x** | **7.5x** |
-| Intersection | **6.1x** | **6.8x** | **5.1x** |
-| Difference | **6.9x** | **10.3x** | **5.6x** |
+| Union | **13.9x** | **22.4x** | **44.3x** |
+| Intersection | **8.7x** | **15.8x** | **32.4x** |
+| Difference | **9.4x** | **21.7x** | **46.1x** |
 
 ### vs data.avl (speedup)
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **7.5x** | **7.0x** | **5.7x** |
-| Intersection | **5.3x** | **5.4x** | **4.0x** |
-| Difference | **5.1x** | **5.8x** | **3.5x** |
+| Union | **11.5x** | **19.3x** | **39.6x** |
+| Intersection | **7.2x** | **13.5x** | **27.5x** |
+| Difference | **7.3x** | **13.6x** | **32.3x** |
+
+### vs clojure.set on hash-set (exploratory, unfair baseline)
+
+This is not an ordered-collection comparison, so it should be read as an
+exploratory stress test rather than as the main benchmark story. Even so, the
+current split/join implementation still wins decisively.
+
+| Operation | N=10K | N=100K | N=500K |
+|-----------|------:|-------:|-------:|
+| Union | **4.1x** | **7.3x** | **19.7x** |
+| Intersection | **4.3x** | **7.6x** | **17.3x** |
+| Difference | **5.1x** | **9.2x** | **24.2x** |
 
 ### Raw times (ms)
 
 | Operation | N | sorted-set | data.avl | ordered-set |
 |-----------|---|----------:|----------:|----------:|
-| Union | 10K | 3.44 | 2.64 | **0.35** |
-| | 100K | 45.94 | 33.43 | **4.81** |
-| | 500K | 258.84 | 195.35 | **34.38** |
-| Intersection | 10K | 2.32 | 2.00 | **0.38** |
-| | 100K | 30.69 | 24.56 | **4.53** |
-| | 500K | 168.55 | 131.18 | **33.09** |
-| Difference | 10K | 1.97 | 1.46 | **0.29** |
-| | 100K | 31.70 | 17.78 | **3.06** |
-| | 500K | 158.92 | 100.15 | **28.38** |
+| Union | 10K | 3.09 | 2.55 | **0.22** |
+| | 100K | 38.23 | 33.03 | **1.71** |
+| | 500K | 207.15 | 184.85 | **4.67** |
+| Intersection | 10K | 2.14 | 1.78 | **0.25** |
+| | 100K | 27.14 | 23.29 | **1.72** |
+| | 500K | 145.60 | 123.64 | **4.49** |
+| Difference | 10K | 1.84 | 1.44 | **0.20** |
+| | 100K | 28.21 | 17.63 | **1.30** |
+| | 500K | 136.14 | 95.32 | **2.95** |
+
+### Raw times vs clojure.set on hash-set (ms)
+
+| Operation | N | clojure.set/hash-set | ordered-set |
+|-----------|---|---------------------:|------------:|
+| Union | 10K | 0.89 | **0.21** |
+| | 100K | 10.94 | **1.50** |
+| | 500K | 70.94 | **3.61** |
+| Intersection | 10K | 0.95 | **0.22** |
+| | 100K | 11.90 | **1.56** |
+| | 500K | 64.85 | **3.75** |
+| Difference | 10K | 0.87 | **0.17** |
+| | 100K | 10.38 | **1.13** |
+| | 500K | 57.86 | **2.40** |
 
 ## Fold (r/fold)
 
@@ -69,11 +105,11 @@ Chunked parallel fold via `r/fold`. The tree is split into equal subtrees and fo
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| sorted-set | 0.31ms | 3.14ms | 16.11ms |
-| data.avl | 0.08ms | 1.23ms | 5.59ms |
-| **ordered-set** | **0.08ms** | **0.44ms** | **1.77ms** |
-| vs sorted-set | **3.7x** | **7.2x** | **9.1x** |
-| vs data.avl | 1.0x | **2.8x** | **3.2x** |
+| sorted-set | 0.31ms | 3.10ms | 15.56ms |
+| data.avl | 0.08ms | 1.26ms | 5.48ms |
+| **ordered-set** | **0.08ms** | **0.42ms** | **1.61ms** |
+| vs sorted-set | **3.7x** | **7.3x** | **9.7x** |
+| vs data.avl | 1.0x | **3.0x** | **3.4x** |
 
 ## Construction
 
@@ -81,11 +117,11 @@ Batch from collection (parallel fold + union).
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| sorted-set | 4.53ms | 77.06ms | 558.07ms |
-| data.avl | 2.40ms | 36.31ms | 299.92ms |
-| **ordered-set** | **1.75ms** | **30.52ms** | **217.67ms** |
-| vs sorted-set | **2.6x** | **2.5x** | **2.6x** |
-| vs data.avl | **1.4x** | **1.2x** | **1.4x** |
+| sorted-set | 4.52ms | 72.12ms | 530.02ms |
+| data.avl | 2.32ms | 35.56ms | 297.27ms |
+| **ordered-set** | **1.56ms** | **25.71ms** | **194.96ms** |
+| vs sorted-set | **2.9x** | **2.8x** | **2.7x** |
+| vs data.avl | **1.5x** | **1.4x** | **1.5x** |
 
 ## Split
 
@@ -93,29 +129,31 @@ Batch from collection (parallel fold + union).
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| data.avl | 0.43ms | 0.74ms | 0.98ms |
-| **ordered-set** | **0.17ms** | **0.23ms** | **0.29ms** |
-| vs data.avl | **2.6x** | **3.3x** | **3.3x** |
+| data.avl | 0.42ms | 0.68ms | 0.93ms |
+| **ordered-set** | **0.14ms** | **0.19ms** | **0.25ms** |
+| vs data.avl | **3.1x** | **3.6x** | **3.7x** |
 
 ## Lookup
 
-10K random lookups. Set lookups are within roughly 10-15% across implementations; map lookups stay within roughly 20%.
+10K random lookups. These are all in the same practical performance tier; small
+differences are not especially meaningful compared with the much larger wins in
+set algebra, split/join-derived operations, construction, and fold.
 
 ### Set (ms)
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| sorted-set | 1.70 | 2.43 | 3.09 |
-| data.avl | 1.59 | 2.22 | 2.94 |
-| ordered-set | 1.32 | 2.10 | 2.79 |
+| sorted-set | 1.47 | 2.14 | 2.89 |
+| data.avl | 1.51 | 2.13 | 2.85 |
+| ordered-set | 1.42 | 2.58 | 2.94 |
 
 ### Map (ms)
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| sorted-map | 1.48 | 2.64 | 3.49 |
-| data.avl | 1.52 | 2.20 | 2.96 |
-| ordered-map | 1.22 | 2.24 | 2.97 |
+| sorted-map | 1.55 | 2.21 | 3.12 |
+| data.avl | 1.45 | 2.11 | 2.85 |
+| ordered-map | 1.21 | 1.87 | 2.71 |
 
 ## Last Element
 
@@ -123,8 +161,8 @@ Batch from collection (parallel fold + union).
 
 | | N=10K | N=100K |
 |--|------:|-------:|
-| sorted-set | 506ms | 5,340ms |
-| data.avl | 533ms | 5,180ms |
+| sorted-set | 424ms | 5,085ms |
+| data.avl | 538ms | 5,376ms |
 | **ordered-set** | **0.12ms** | **0.13ms** |
 
 ~40,000x faster at N=100K. Gap grows linearly with N.
@@ -183,14 +221,14 @@ ordered-set is ~1.2-2.1x faster in the current run.
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| interval-set | 13.1 | 176 | 2,970 |
-| interval-map | 12.7 | 195 | 3,140 |
+| interval-set | 9.3 | 191.9 | 1,367.3 |
+| interval-map | 10.4 | 233.0 | 1,667.2 |
 
 ### Lookup (1K overlap queries, ms)
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| interval-map | 5.7 | 21.1 | 172.6 |
+| interval-map | 61.4 | 80.3 | 94.9 |
 
 Sub-linear growth — O(log n + k) means query time depends more on result count than collection size.
 
@@ -198,8 +236,8 @@ Sub-linear growth — O(log n + k) means query time depends more on result count
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| sorted-map | 3.09ms | 55.42ms | 437.76ms |
-| data.avl | 2.38ms | 37.28ms | 322.27ms |
-| ordered-map | **1.69ms** | **32.56ms** | **210.03ms** |
+| sorted-map | 3.14ms | 55.25ms | 436.80ms |
+| data.avl | 2.37ms | 37.41ms | 335.96ms |
+| ordered-map | **1.45ms** | **28.81ms** | **191.14ms** |
 
-2.1x faster than sorted-map and 1.5x faster than data.avl at N=500K in the current run.
+2.3x faster than sorted-map and 1.8x faster than data.avl at N=500K in the current run.

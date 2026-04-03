@@ -192,39 +192,48 @@
 (defn bench-set-union [n]
   (let [elems1 (range n)
         elems2 (range (quot n 2) (+ n (quot n 2)))
+        hs1    (set elems1)
+        hs2    (set elems2)
         ss1    (into (sorted-set) elems1)
         ss2    (into (sorted-set) elems2)
         as1    (into (avl/sorted-set) elems1)
         as2    (into (avl/sorted-set) elems2)
         os1    (core/ordered-set elems1)
         os2    (core/ordered-set elems2)]
-    {:sorted-set  (do (print ".") (flush) (bench-expr (cset/union ss1 ss2)))
+    {:clojure-set (do (print ".") (flush) (bench-expr (cset/union hs1 hs2)))
+     :sorted-set  (do (print ".") (flush) (bench-expr (cset/union ss1 ss2)))
      :data-avl    (do (print ".") (flush) (bench-expr (cset/union as1 as2)))
      :ordered-set (do (print ".") (flush) (bench-expr (core/union os1 os2)))}))
 
 (defn bench-set-intersection [n]
   (let [elems1 (range n)
         elems2 (range (quot n 2) (+ n (quot n 2)))
+        hs1    (set elems1)
+        hs2    (set elems2)
         ss1    (into (sorted-set) elems1)
         ss2    (into (sorted-set) elems2)
         as1    (into (avl/sorted-set) elems1)
         as2    (into (avl/sorted-set) elems2)
         os1    (core/ordered-set elems1)
         os2    (core/ordered-set elems2)]
-    {:sorted-set  (do (print ".") (flush) (bench-expr (cset/intersection ss1 ss2)))
+    {:clojure-set (do (print ".") (flush) (bench-expr (cset/intersection hs1 hs2)))
+     :sorted-set  (do (print ".") (flush) (bench-expr (cset/intersection ss1 ss2)))
      :data-avl    (do (print ".") (flush) (bench-expr (cset/intersection as1 as2)))
      :ordered-set (do (print ".") (flush) (bench-expr (core/intersection os1 os2)))}))
 
 (defn bench-set-difference [n]
   (let [elems1 (range n)
         elems2 (range (quot n 2) (+ n (quot n 2)))
+        hs1    (set elems1)
+        hs2    (set elems2)
         ss1    (into (sorted-set) elems1)
         ss2    (into (sorted-set) elems2)
         as1    (into (avl/sorted-set) elems1)
         as2    (into (avl/sorted-set) elems2)
         os1    (core/ordered-set elems1)
         os2    (core/ordered-set elems2)]
-    {:sorted-set  (do (print ".") (flush) (bench-expr (cset/difference ss1 ss2)))
+    {:clojure-set (do (print ".") (flush) (bench-expr (cset/difference hs1 hs2)))
+     :sorted-set  (do (print ".") (flush) (bench-expr (cset/difference ss1 ss2)))
      :data-avl    (do (print ".") (flush) (bench-expr (cset/difference as1 as2)))
      :ordered-set (do (print ".") (flush) (bench-expr (core/difference os1 os2)))}))
 

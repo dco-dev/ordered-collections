@@ -65,31 +65,32 @@ hood — and in the new things you can do.
 
 Across the measured set-heavy workloads, `ordered-collections` is faster than
 both `sorted-set` and `data.avl` at every cardinality measured. Lookups stay
-close to parity; some map lookups still slightly favor `data.avl`. Set algebra
-is the standout — Adams' split-based algorithm delivers order-of-magnitude
-gains even at modest sizes.
+close to parity and are not a headline differentiator. Set algebra is the standout:
+the current Criterium run ranges from high-single-digit wins at 10K to
+30-46x wins at 500K. Even against the unfair `clojure.set` + hash-set baseline,
+the current set-algebra benchmarks still show roughly 4-24x wins.
 
 ### vs sorted-set (speedup)
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Construction | **2.6x** | **2.5x** | **2.6x** |
-| Lookup | 1.3x | 1.2x | 1.1x |
-| Union | **9.8x** | **9.6x** | **7.5x** |
-| Intersection | **6.1x** | **6.8x** | **5.1x** |
-| Difference | **6.9x** | **10.3x** | **5.6x** |
-| Fold | **3.7x** | **7.2x** | **9.1x** |
+| Construction | **2.9x** | **2.8x** | **2.7x** |
+| Lookup | 1.3x | 1.2x | 1.2x |
+| Union | **13.9x** | **22.4x** | **44.3x** |
+| Intersection | **8.7x** | **15.8x** | **32.4x** |
+| Difference | **9.4x** | **21.7x** | **46.1x** |
+| Fold | **3.7x** | **7.3x** | **9.7x** |
 
 ### vs data.avl (speedup)
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **7.5x** | **7.0x** | **5.7x** |
-| Intersection | **5.3x** | **5.4x** | **4.0x** |
-| Difference | **5.1x** | **5.8x** | **3.5x** |
-| Split | **2.6x** | **3.3x** | **3.3x** |
-| Fold | 1.0x | **2.8x** | **3.2x** |
-| Construction | **1.4x** | **1.2x** | **1.4x** |
+| Union | **11.5x** | **19.3x** | **39.6x** |
+| Intersection | **7.2x** | **13.5x** | **27.5x** |
+| Difference | **7.3x** | **13.6x** | **32.3x** |
+| Split | **3.1x** | **3.6x** | **3.7x** |
+| Fold | 1.0x | **3.0x** | **3.4x** |
+| Construction | **1.5x** | **1.4x** | **1.5x** |
 
 *[Criterium](https://github.com/hugoduncan/criterium) at all sizes.
 See [Benchmarks](doc/benchmarks.md) for full results.*

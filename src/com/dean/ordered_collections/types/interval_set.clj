@@ -71,7 +71,7 @@
         (.isCompatible this that)
         (let [that-root (.getRoot ^INodeCollection that)
               use-parallel? (>= (+ (tree/node-size root) (tree/node-size that-root))
-                                tree/+parallel-threshold+)]
+                                tree/+parallel-intersection-root-threshold+)]
           (IntervalSet.
            (if use-parallel?
              (tree/node-set-intersection-parallel root that-root)
@@ -85,7 +85,7 @@
         (.isCompatible this that)
         (let [that-root (.getRoot ^INodeCollection that)
               use-parallel? (>= (+ (tree/node-size root) (tree/node-size that-root))
-                                tree/+parallel-threshold+)]
+                                tree/+parallel-union-root-threshold+)]
           (IntervalSet.
            (if use-parallel?
              (tree/node-set-union-parallel root that-root)
@@ -99,7 +99,7 @@
         (.isCompatible this that)
         (let [that-root (.getRoot ^INodeCollection that)
               use-parallel? (>= (+ (tree/node-size root) (tree/node-size that-root))
-                                tree/+parallel-threshold+)]
+                                tree/+parallel-difference-root-threshold+)]
           (IntervalSet.
            (if use-parallel?
              (tree/node-set-difference-parallel root that-root)

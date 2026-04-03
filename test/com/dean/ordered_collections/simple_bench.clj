@@ -442,49 +442,58 @@
   "Benchmark set union operations."
   [sizes]
   (print-header "SET UNION: union of two sets of size N (overlapping 50%)"
-                ["clojure.set" "ordered-set"])
+                ["clojure.set/hash-set" "clojure.set/sorted-set" "ordered-set"])
   (doseq [n sizes]
     (let [;; Create two sets with 50% overlap
           s1-elems (range 0 n)
           s2-elems (range (quot n 2) (+ n (quot n 2)))
+          hs1 (set s1-elems)
+          hs2 (set s2-elems)
           cs1 (into (sorted-set) s1-elems)
           cs2 (into (sorted-set) s2-elems)
           os1 (core/ordered-set s1-elems)
           os2 (core/ordered-set s2-elems)]
       (print-row n
-        [(bench 2 5 (clojure.set/union cs1 cs2))
+        [(bench 2 5 (clojure.set/union hs1 hs2))
+         (bench 2 5 (clojure.set/union cs1 cs2))
          (bench 2 5 (core/union os1 os2))]))))
 
 (defn bench-set-intersection
   "Benchmark set intersection operations."
   [sizes]
   (print-header "SET INTERSECTION: intersection of two sets of size N"
-                ["clojure.set" "ordered-set"])
+                ["clojure.set/hash-set" "clojure.set/sorted-set" "ordered-set"])
   (doseq [n sizes]
     (let [s1-elems (range 0 n)
           s2-elems (range (quot n 2) (+ n (quot n 2)))
+          hs1 (set s1-elems)
+          hs2 (set s2-elems)
           cs1 (into (sorted-set) s1-elems)
           cs2 (into (sorted-set) s2-elems)
           os1 (core/ordered-set s1-elems)
           os2 (core/ordered-set s2-elems)]
       (print-row n
-        [(bench 2 5 (clojure.set/intersection cs1 cs2))
+        [(bench 2 5 (clojure.set/intersection hs1 hs2))
+         (bench 2 5 (clojure.set/intersection cs1 cs2))
          (bench 2 5 (core/intersection os1 os2))]))))
 
 (defn bench-set-difference
   "Benchmark set difference operations."
   [sizes]
   (print-header "SET DIFFERENCE: difference of two sets of size N"
-                ["clojure.set" "ordered-set"])
+                ["clojure.set/hash-set" "clojure.set/sorted-set" "ordered-set"])
   (doseq [n sizes]
     (let [s1-elems (range 0 n)
           s2-elems (range (quot n 2) (+ n (quot n 2)))
+          hs1 (set s1-elems)
+          hs2 (set s2-elems)
           cs1 (into (sorted-set) s1-elems)
           cs2 (into (sorted-set) s2-elems)
           os1 (core/ordered-set s1-elems)
           os2 (core/ordered-set s2-elems)]
       (print-row n
-        [(bench 2 5 (clojure.set/difference cs1 cs2))
+        [(bench 2 5 (clojure.set/difference hs1 hs2))
+         (bench 2 5 (clojure.set/difference cs1 cs2))
          (bench 2 5 (core/difference os1 os2))]))))
 
 (defn run-set-operations-benchmarks

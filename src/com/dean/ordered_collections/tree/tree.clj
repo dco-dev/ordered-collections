@@ -1,12 +1,12 @@
 (ns com.dean.ordered-collections.tree.tree
   (:require [clojure.core.reducers       :as r]
+            [com.dean.ordered-collections.parallel :as parallel]
             [com.dean.ordered-collections.tree.interval :as interval]
             [com.dean.ordered-collections.tree.order    :as order]
             [com.dean.ordered-collections.tree.node     :as node
              :refer [leaf? leaf -k -v -l -r -x -z -kv]])
   (:import  [clojure.lang ASeq MapEntry RT ISeq Seqable Sequential IPersistentCollection]
-            [java.util Comparator]
-            [java.util.concurrent ForkJoinPool ForkJoinTask]))
+            [java.util Comparator]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1498,58 +1498,104 @@
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; Threshold for entering the ForkJoin path in ordered set algebra and
-;; ordered-map merge. Below this threshold, task setup dominates the work and
-;; the top-level operations should stay sequential. The exact crossover varies
-;; by operation, comparator cost, and machine; keep this conservative and tune
-;; it against `parallel_threshold_bench.clj`.
-(def ^:const ^long +parallel-threshold+ 524288)
+;; Root-entry thresholds for the parallel path. These are operation-specific
+;; because the current benchmark data does not support one universal crossover:
+;; comparator cost and result reconstruction differ enough between union,
+;; intersection, difference, and merge that a single conservative threshold
+;; would leave many practical wins on the table.
+(def ^:const ^long +parallel-union-root-threshold+ 131072)
+(def ^:const ^long +parallel-intersection-root-threshold+ 65536)
+(def ^:const ^long +parallel-difference-root-threshold+ 131072)
+(def ^:const ^long +parallel-merge-root-threshold+ 65536)
+
+;; Recursive re-fork thresholds, again kept operation-specific. Once we have
+;; paid the top-level entry cost and the spawn guard has filtered out lopsided
+;; subproblems, the benchmark evidence supports lower cutoffs than a single
+;; conservative recursive threshold.
+(def ^:const ^long +parallel-union-recursive-threshold+ 65536)
+(def ^:const ^long +parallel-intersection-recursive-threshold+ 65536)
+(def ^:const ^long +parallel-difference-recursive-threshold+ 65536)
+(def ^:const ^long +parallel-merge-recursive-threshold+ 65536)
+
+;; Once we are in the parallel path, only fork a recursive split when both
+;; branches are substantive enough to amortize task overhead. This keeps the
+;; recursive kernels from spawning on highly lopsided splits, where a single
+;; large branch can still recurse and find better-shaped parallel work deeper
+;; in the tree.
+(def ^:const ^long +parallel-min-branch+ 65536)
 
 ;; Secondary threshold for very small subtrees where even sequential
 ;; divide-and-conquer has overhead. Use direct linear merge instead.
 (def ^:const ^long +sequential-cutoff+ 64)
 
-;; ForkJoinPool for parallel operations. Uses the common pool for efficiency.
-(def ^ForkJoinPool ^:private fork-join-pool (ForkJoinPool/commonPool))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Parallel Spawn Heuristics
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; The top-level threshold decides whether an operation enters the ForkJoin
+;; regime at all. Once there, each recursive split still needs a local spawn
+;; decision: balanced subproblems benefit from forking, but lopsided splits
+;; often do better by continuing in one worker and letting the larger branch
+;; find parallelism lower in the tree.
 
-(defmacro ^:private fork-join
-  "Execute left-expr in a forked task, compute right-expr inline,
-   then join and combine results."
-  [[left-sym left-expr right-sym right-expr] combine-expr]
-  `(let [left-task# (ForkJoinTask/adapt ^java.util.concurrent.Callable (fn [] ~left-expr))
-         _# (.fork ^ForkJoinTask left-task#)
-         ~right-sym ~right-expr
-         ~left-sym (.join ^ForkJoinTask left-task#)]
-     ~combine-expr))
+(defn- parallel-spawn-side
+  [^long left-total ^long right-total]
+  (let [smaller (min left-total right-total)]
+    (when (>= smaller +parallel-min-branch+)
+      (if (>= left-total right-total)
+        :left
+        :right))))
+
+(defn- parallel-recursive?
+  [^long total ^long threshold]
+  (>= total threshold))
 
 (defn- node-set-union-parallel*
-  [n1 n2 ^Comparator cmp create]
+  [n1 n2 ^Comparator cmp create recursive-threshold]
   (cond
     (leaf? n1) n2
     (leaf? n2) n1
     :else
     (let [total (+ (node-size n1) (node-size n2))]
       (kvlr [ak av l r] n2
-        (let [[l1 _ r1] (node-split* n1 ak cmp create)]
-          (if (< total +parallel-threshold+)
+        (let [[l1 _ r1] (node-split* n1 ak cmp create)
+              left-total (+ (node-size l1) (node-size l))
+              right-total (+ (node-size r1) (node-size r))
+              spawn-side (parallel-spawn-side left-total right-total)]
+          (if-not (parallel-recursive? total recursive-threshold)
             (node-concat3* ak av
                            (node-set-union* l1 l cmp create)
                            (node-set-union* r1 r cmp create)
                            cmp create)
-            (fork-join [left-result (node-set-union-parallel* l1 l cmp create)
-                        right-result (node-set-union-parallel* r1 r cmp create)]
-              (node-concat3* ak av left-result right-result cmp create))))))))
+            (case spawn-side
+              :left
+              (parallel/fork-join [left-result (node-set-union-parallel* l1 l cmp create recursive-threshold)
+                                   right-result (node-set-union-parallel* r1 r cmp create recursive-threshold)]
+                (node-concat3* ak av left-result right-result cmp create))
+
+              :right
+              (parallel/fork-join [right-result (node-set-union-parallel* r1 r cmp create recursive-threshold)
+                                   left-result (node-set-union-parallel* l1 l cmp create recursive-threshold)]
+                (node-concat3* ak av left-result right-result cmp create))
+
+              (node-concat3* ak av
+                             (node-set-union-parallel* l1 l cmp create recursive-threshold)
+                             (node-set-union-parallel* r1 r cmp create recursive-threshold)
+                             cmp create))))))))
 
 (defn- node-set-intersection-parallel*
-  [n1 n2 ^Comparator cmp create]
+  [n1 n2 ^Comparator cmp create recursive-threshold]
   (cond
     (leaf? n1) (leaf)
     (leaf? n2) (leaf)
     :else
     (let [total (+ (node-size n1) (node-size n2))]
       (kvlr [ak av l r] n2
-        (let [[l1 x r1] (node-split* n1 ak cmp create)]
-          (if (< total +parallel-threshold+)
+        (let [[l1 x r1] (node-split* n1 ak cmp create)
+              left-total (+ (node-size l1) (node-size l))
+              right-total (+ (node-size r1) (node-size r))
+              spawn-side (parallel-spawn-side left-total right-total)]
+          (if-not (parallel-recursive? total recursive-threshold)
             (if x
               (node-concat3* ak av
                              (node-set-intersection* l1 l cmp create)
@@ -1558,31 +1604,60 @@
               (node-concat2* (node-set-intersection* l1 l cmp create)
                              (node-set-intersection* r1 r cmp create)
                              create))
-            (fork-join [left-result (node-set-intersection-parallel* l1 l cmp create)
-                        right-result (node-set-intersection-parallel* r1 r cmp create)]
-              (if x
-                (node-concat3* ak av left-result right-result cmp create)
-                (node-concat2* left-result right-result create)))))))))
+            (case spawn-side
+              :left
+              (parallel/fork-join [left-result (node-set-intersection-parallel* l1 l cmp create recursive-threshold)
+                                   right-result (node-set-intersection-parallel* r1 r cmp create recursive-threshold)]
+                (if x
+                  (node-concat3* ak av left-result right-result cmp create)
+                  (node-concat2* left-result right-result create)))
+
+              :right
+              (parallel/fork-join [right-result (node-set-intersection-parallel* r1 r cmp create recursive-threshold)
+                                   left-result (node-set-intersection-parallel* l1 l cmp create recursive-threshold)]
+                (if x
+                  (node-concat3* ak av left-result right-result cmp create)
+                  (node-concat2* left-result right-result create)))
+
+              (let [left-result (node-set-intersection-parallel* l1 l cmp create recursive-threshold)
+                    right-result (node-set-intersection-parallel* r1 r cmp create recursive-threshold)]
+                (if x
+                  (node-concat3* ak av left-result right-result cmp create)
+                  (node-concat2* left-result right-result create))))))))))
 
 (defn- node-set-difference-parallel*
-  [n1 n2 ^Comparator cmp create]
+  [n1 n2 ^Comparator cmp create recursive-threshold]
   (cond
     (leaf? n1) (leaf)
     (leaf? n2) n1
     :else
     (let [total (+ (node-size n1) (node-size n2))]
       (kvlr [ak _ l r] n2
-        (let [[l1 _ r1] (node-split* n1 ak cmp create)]
-          (if (< total +parallel-threshold+)
+        (let [[l1 _ r1] (node-split* n1 ak cmp create)
+              left-total (+ (node-size l1) (node-size l))
+              right-total (+ (node-size r1) (node-size r))
+              spawn-side (parallel-spawn-side left-total right-total)]
+          (if-not (parallel-recursive? total recursive-threshold)
             (node-concat2* (node-set-difference* l1 l cmp create)
                            (node-set-difference* r1 r cmp create)
                            create)
-            (fork-join [left-result (node-set-difference-parallel* l1 l cmp create)
-                        right-result (node-set-difference-parallel* r1 r cmp create)]
-              (node-concat2* left-result right-result create))))))))
+            (case spawn-side
+              :left
+              (parallel/fork-join [left-result (node-set-difference-parallel* l1 l cmp create recursive-threshold)
+                                   right-result (node-set-difference-parallel* r1 r cmp create recursive-threshold)]
+                (node-concat2* left-result right-result create))
+
+              :right
+              (parallel/fork-join [right-result (node-set-difference-parallel* r1 r cmp create recursive-threshold)
+                                   left-result (node-set-difference-parallel* l1 l cmp create recursive-threshold)]
+                (node-concat2* left-result right-result create))
+
+              (node-concat2* (node-set-difference-parallel* l1 l cmp create recursive-threshold)
+                             (node-set-difference-parallel* r1 r cmp create recursive-threshold)
+                             create))))))))
 
 (defn- node-map-merge-parallel*
-  [n1 n2 merge-fn ^Comparator cmp create]
+  [n1 n2 merge-fn ^Comparator cmp create recursive-threshold]
   (cond
     (leaf? n1) n2
     (leaf? n2) n1
@@ -1590,15 +1665,30 @@
     (let [total (+ (node-size n1) (node-size n2))]
       (kvlr [ak av l r] n2
         (let [[l1 x r1] (node-split* n1 ak cmp create)
-              val (if x (merge-fn ak av (second x)) av)]
-          (if (< total +parallel-threshold+)
+              val (if x (merge-fn ak av (second x)) av)
+              left-total (+ (node-size l1) (node-size l))
+              right-total (+ (node-size r1) (node-size r))
+              spawn-side (parallel-spawn-side left-total right-total)]
+          (if-not (parallel-recursive? total recursive-threshold)
             (node-concat3* ak val
                            (node-map-merge* l1 l merge-fn cmp create)
                            (node-map-merge* r1 r merge-fn cmp create)
                            cmp create)
-            (fork-join [left-result (node-map-merge-parallel* l1 l merge-fn cmp create)
-                        right-result (node-map-merge-parallel* r1 r merge-fn cmp create)]
-              (node-concat3* ak val left-result right-result cmp create))))))))
+            (case spawn-side
+              :left
+              (parallel/fork-join [left-result (node-map-merge-parallel* l1 l merge-fn cmp create recursive-threshold)
+                                   right-result (node-map-merge-parallel* r1 r merge-fn cmp create recursive-threshold)]
+                (node-concat3* ak val left-result right-result cmp create))
+
+              :right
+              (parallel/fork-join [right-result (node-map-merge-parallel* r1 r merge-fn cmp create recursive-threshold)
+                                   left-result (node-map-merge-parallel* l1 l merge-fn cmp create recursive-threshold)]
+                (node-concat3* ak val left-result right-result cmp create))
+
+              (node-concat3* ak val
+                             (node-map-merge-parallel* l1 l merge-fn cmp create recursive-threshold)
+                             (node-map-merge-parallel* r1 r merge-fn cmp create recursive-threshold)
+                             cmp create))))))))
 
 (defn node-set-union-parallel
   "Parallel set union using ForkJoinPool.
@@ -1615,11 +1705,10 @@
   [n1 n2]
   (let [cmp order/*compare*
         join *t-join*]
-    (if (ForkJoinTask/inForkJoinPool)
-      (node-set-union-parallel* n1 n2 cmp join)
-      (.invoke fork-join-pool
-        (ForkJoinTask/adapt ^java.util.concurrent.Callable
-          (fn [] (node-set-union-parallel* n1 n2 cmp join)))))))
+    (if (parallel/in-fork-join-pool?)
+      (node-set-union-parallel* n1 n2 cmp join +parallel-union-recursive-threshold+)
+      (parallel/invoke-root
+        #(node-set-union-parallel* n1 n2 cmp join +parallel-union-recursive-threshold+)))))
 
 (defn node-set-intersection-parallel
   "Parallel set intersection using ForkJoinPool.
@@ -1631,11 +1720,10 @@
   [n1 n2]
   (let [cmp order/*compare*
         join *t-join*]
-    (if (ForkJoinTask/inForkJoinPool)
-      (node-set-intersection-parallel* n1 n2 cmp join)
-      (.invoke fork-join-pool
-        (ForkJoinTask/adapt ^java.util.concurrent.Callable
-          (fn [] (node-set-intersection-parallel* n1 n2 cmp join)))))))
+    (if (parallel/in-fork-join-pool?)
+      (node-set-intersection-parallel* n1 n2 cmp join +parallel-intersection-recursive-threshold+)
+      (parallel/invoke-root
+        #(node-set-intersection-parallel* n1 n2 cmp join +parallel-intersection-recursive-threshold+)))))
 
 (defn node-set-difference-parallel
   "Parallel set difference using ForkJoinPool.
@@ -1647,11 +1735,10 @@
   [n1 n2]
   (let [cmp order/*compare*
         join *t-join*]
-    (if (ForkJoinTask/inForkJoinPool)
-      (node-set-difference-parallel* n1 n2 cmp join)
-      (.invoke fork-join-pool
-        (ForkJoinTask/adapt ^java.util.concurrent.Callable
-          (fn [] (node-set-difference-parallel* n1 n2 cmp join)))))))
+    (if (parallel/in-fork-join-pool?)
+      (node-set-difference-parallel* n1 n2 cmp join +parallel-difference-recursive-threshold+)
+      (parallel/invoke-root
+        #(node-set-difference-parallel* n1 n2 cmp join +parallel-difference-recursive-threshold+)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Fundamental Map Operations (Worst-Case Linear Time)
@@ -1672,11 +1759,10 @@
   [n1 n2 merge-fn]
   (let [cmp order/*compare*
         join *t-join*]
-    (if (ForkJoinTask/inForkJoinPool)
-      (node-map-merge-parallel* n1 n2 merge-fn cmp join)
-      (.invoke fork-join-pool
-        (ForkJoinTask/adapt ^java.util.concurrent.Callable
-          (fn [] (node-map-merge-parallel* n1 n2 merge-fn cmp join)))))))
+    (if (parallel/in-fork-join-pool?)
+      (node-map-merge-parallel* n1 n2 merge-fn cmp join +parallel-merge-recursive-threshold+)
+      (parallel/invoke-root
+        #(node-map-merge-parallel* n1 n2 merge-fn cmp join +parallel-merge-recursive-threshold+)))))
 
 (defn node-map-compare
   "Compare two map trees element-by-element. Keys are compared using

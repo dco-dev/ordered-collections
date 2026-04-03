@@ -6,25 +6,53 @@ Results are in `bench-results/<timestamp>.edn`. Run with `lein bench --full` (~3
 
 ## Set Operations
 
-The dominant advantage. Adams' divide-and-conquer with optional fork-join parallelism still dominates the set-heavy workloads. The configured threshold is now 524,288 combined elements. The refreshed `lein bench-parallel` harness measures the real production dispatch path across long keys, string keys, and ordered-map merge, and on this machine it showed that the old 210,000 threshold entered the fork-join path too early, especially for string keys. Treat 524,288 as a conservative tuning choice for the current implementation and hardware, not a universal law.
+The dominant advantage. Adams' divide-and-conquer with optional fork-join
+parallelism still dominates the set-heavy workloads. The current production
+policy no longer uses one universal threshold:
+
+- union root threshold: `131,072`
+- intersection root threshold: `65,536`
+- difference root threshold: `131,072`
+- ordered-map merge root threshold: `65,536`
+- recursive re-fork threshold: `65,536`
+- minimum branch for spawning: `65,536`
+- direct sequential cutoff: `64`
+
+The corrected `lein bench-parallel` harness now measures the real production
+dispatch path across long keys, string keys, and ordered-map merge. On this
+machine, the per-operation thresholds outperform the older one-size-fits-all
+cutoffs and let parallelism pay off at more practical collection sizes.
+
+As an exploratory check, the current benchmark suite also includes
+`clojure.set` on plain hash-sets. That is not a fair ordered-collection
+comparison, but it is still informative: ordered-set remains about 4-24x faster
+for union/intersection/difference across the measured sizes.
 
 ### vs sorted-set
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **9.8x** | **9.6x** | **7.5x** |
-| Intersection | **6.1x** | **6.8x** | **5.1x** |
-| Difference | **6.9x** | **10.3x** | **5.6x** |
+| Union | **13.9x** | **22.4x** | **44.3x** |
+| Intersection | **8.7x** | **15.8x** | **32.4x** |
+| Difference | **9.4x** | **21.7x** | **46.1x** |
 
 ### vs data.avl
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **7.5x** | **7.0x** | **5.7x** |
-| Intersection | **5.3x** | **5.4x** | **4.0x** |
-| Difference | **5.1x** | **5.8x** | **3.5x** |
+| Union | **11.5x** | **19.3x** | **39.6x** |
+| Intersection | **7.2x** | **13.5x** | **27.5x** |
+| Difference | **7.3x** | **13.6x** | **32.3x** |
 
 Why: `clojure.set/union` etc. insert element-by-element, O(n log n). data.avl uses the same split-based algorithm but without parallelism and with higher constant factors for split/join (AVL height recomputation).
+
+### vs clojure.set on hash-set (exploratory)
+
+| Operation | N=10K | N=100K | N=500K |
+|-----------|------:|-------:|-------:|
+| Union | **4.1x** | **7.3x** | **19.7x** |
+| Intersection | **4.3x** | **7.6x** | **17.3x** |
+| Difference | **5.1x** | **9.2x** | **24.2x** |
 
 ## Fold (r/fold)
 
@@ -32,18 +60,18 @@ ordered-set implements `CollFold` via chunked tree splitting plus `r/fold`. The 
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| vs sorted-set | **3.7x** | **7.2x** | **9.1x** |
-| vs data.avl | 1.0x | **2.8x** | **3.2x** |
+| vs sorted-set | **3.7x** | **7.3x** | **9.7x** |
+| vs data.avl | 1.0x | **3.0x** | **3.4x** |
 
-Raw times at N=500K: sorted-set 16.1ms, data.avl 5.6ms, ordered-set 1.8ms.
+Raw times at N=500K: sorted-set 15.6ms, data.avl 5.5ms, ordered-set 1.6ms.
 
 ## Split
 
-About 2.6-3.3x faster than data.avl across the measured sizes (100 splits per benchmark).
+About 3.1-3.7x faster than data.avl across the measured sizes (100 splits per benchmark).
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| vs data.avl | **2.6x** | **3.3x** | **3.3x** |
+| vs data.avl | **3.1x** | **3.6x** | **3.7x** |
 
 Why: weight composes trivially after split/join — no height recomputation needed.
 
@@ -55,13 +83,13 @@ Batch construction (from collection) uses parallel fold + union.
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| Set | **2.6x** | **2.5x** | **2.6x** |
+| Set | **2.9x** | **2.8x** | **2.7x** |
 
 ### vs data.avl
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| Set | **1.4x** | **1.2x** | **1.4x** |
+| Set | **1.5x** | **1.4x** | **1.5x** |
 
 Use the collection constructor, not sequential `conj`:
 
@@ -78,31 +106,33 @@ At N=100K (1000 calls each):
 
 | | Time | vs ordered-set |
 |--|-----:|---------------:|
-| sorted-set | 5,340ms | 41,000x slower |
-| data.avl | 5,180ms | 40,000x slower |
+| sorted-set | 5,085ms | 39,000x slower |
+| data.avl | 5,376ms | 41,000x slower |
 | **ordered-set** | **0.13ms** | baseline |
 
 This gap grows linearly with N.
 
 ## Lookup
 
-Point queries remain close to both competitors. Set lookup stays within roughly 10-15%; map lookup stays within roughly 20%, with `ordered-map` very close to `data.avl`.
+Point queries remain close to both competitors. Treat the current lookup numbers
+as near-parity rather than as a meaningful advantage or disadvantage; the real
+performance story is in split/join-heavy operations.
 
 ### Set lookup (10K lookups)
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| sorted-set | 1.70ms | 2.43ms | 3.09ms |
-| data.avl | 1.59ms | 2.22ms | 2.94ms |
-| ordered-set | 1.32ms | 2.10ms | 2.79ms |
+| sorted-set | 1.47ms | 2.14ms | 2.89ms |
+| data.avl | 1.51ms | 2.13ms | 2.85ms |
+| ordered-set | 1.42ms | 2.58ms | 2.94ms |
 
 ### Map lookup (10K lookups)
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| sorted-map | 1.48ms | 2.64ms | 3.49ms |
-| data.avl | 1.52ms | 2.20ms | 2.96ms |
-| ordered-map | 1.22ms | 2.24ms | 2.97ms |
+| sorted-map | 1.55ms | 2.21ms | 3.12ms |
+| data.avl | 1.45ms | 2.11ms | 2.85ms |
+| ordered-map | 1.21ms | 1.87ms | 2.71ms |
 
 ### Specialized node types
 
@@ -176,14 +206,14 @@ Construction is slower than regular sets (interval augmentation overhead: max-en
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| interval-set | 13.1ms | 176ms | 2,970ms |
-| interval-map | 12.7ms | 195ms | 3,140ms |
+| interval-set | 9.3ms | 191.9ms | 1,367.3ms |
+| interval-map | 10.4ms | 233.0ms | 1,667.2ms |
 
 ### Lookup (1K overlap queries)
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| interval-map | 5.7ms | 21.1ms | 172.6ms |
+| interval-map | 61.4ms | 80.3ms | 94.9ms |
 
 Sub-linear growth — the O(log n + k) complexity means query time depends more on result count than collection size.
 
@@ -209,13 +239,13 @@ From `memory_test.clj` at N=100,000 (clj-memory-meter):
 
 | Area | Result |
 |------|--------|
-| Set algebra | **5–10x** vs sorted-set, **3.5–7.5x** vs data.avl |
-| Fold | **3.7–9.1x** vs sorted-set, **1.0–3.2x** vs data.avl |
-| Split | **2.6–3.3x** vs data.avl |
-| Construction | **2.5–2.6x** vs sorted-set |
+| Set algebra | **8.7–46.1x** vs sorted-set, **7.2–39.6x** vs data.avl |
+| Fold | **3.7–9.7x** vs sorted-set, **1.0–3.4x** vs data.avl |
+| Split | **3.1–3.7x** vs data.avl |
+| Construction | **2.7–2.9x** vs sorted-set |
 | Last element | **~40,000x** at N=100K (O(log n) vs O(n)) |
 | Iteration | **4–5x** vs sorted-set, on par with data.avl |
-| Lookup | Within 10% of both |
+| Lookup | Roughly comparable to both; not a headline differentiator |
 | nth | data.avl ~1.4x faster |
 | rank-of | ordered-set ~1.1x faster |
 | Memory | 6% more than core, same as data.avl |

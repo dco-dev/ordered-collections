@@ -56,7 +56,8 @@
   "Return a set that is the union of the input sets.
 
    For ordered-sets: Uses Adams' divide-and-conquer algorithm with parallel
-   execution for large sets. 7-9x faster than clojure.set/union at scale.
+   execution for large sets. In the current benchmark suite, roughly 4-20x
+   faster than clojure.set/union on the tested workloads.
 
    Complexity: O(m log(n/m + 1)) where m <= n
 
@@ -69,7 +70,8 @@
   "Return a set that is the intersection of the input sets.
 
    For ordered-sets: Uses Adams' divide-and-conquer algorithm with parallel
-   execution for large sets. 7-9x faster than clojure.set/intersection at scale.
+   execution for large sets. In the current benchmark suite, roughly 4-17x
+   faster than clojure.set/intersection on the tested workloads.
 
    Complexity: O(m log(n/m + 1)) where m <= n
 
@@ -81,7 +83,8 @@
   "Return a set that is s1 without elements in s2.
 
    For ordered-sets: Uses Adams' divide-and-conquer algorithm with parallel
-   execution for large sets. 7-9x faster than clojure.set/difference at scale.
+   execution for large sets. In the current benchmark suite, roughly 5-24x
+   faster than clojure.set/difference on the tested workloads.
 
    Complexity: O(m log(n/m + 1)) where m <= n
 

@@ -25,13 +25,17 @@ All three libraries support union, intersection, and difference.
 
 **clojure.core** uses `clojure.set/union` etc., which iterate element-by-element. O(n log n) regardless of overlap.
 
+In the current benchmark suite, ordered-collections also beats the unfair
+`clojure.set` + hash-set baseline on these workloads, but that comparison is
+best treated as exploratory rather than as the main competitive claim.
+
 **data.avl** and **ordered-collections** both use Adams' divide-and-conquer algorithm: split one tree at the other's root, recurse on halves, join. O(m log(n/m + 1)) where m ≤ n — information-theoretically optimal. When one set is much smaller, this is dramatically better than linear.
 
-**ordered-collections** additionally parallelizes the two independent recursive calls via `ForkJoinPool`. Two thresholds control granularity:
-- **524,288** (combined subtree size) — current configured threshold for switching from fork-join recursion to sequential recursion
-- **64** — below this, direct linear merge replaces divide-and-conquer entirely
-
-In practice, the April 2, 2026 rerun shows roughly 5-10x speedups over `sorted-set` and 3.5-7.5x over `data.avl` across N=10K-500K. The exact parallel crossover depends strongly on hardware and workload; the corrected `lein bench-parallel` harness now measures the real production dispatch path and showed that the old 210K threshold was too aggressive on this machine, especially for string keys. See [Benchmarks](benchmarks.md).
+**ordered-collections** additionally parallelizes the two independent recursive
+calls via `ForkJoinPool`, with granularity tuned from the benchmark suite.
+In practice, this yields very large wins over `sorted-set` and clear wins over
+`data.avl` on set algebra, especially as collections grow. See
+[Benchmarks](benchmarks.md) for current measurements.
 
 ### Split and Join
 
@@ -41,7 +45,12 @@ In practice, the April 2, 2026 rerun shows roughly 5-10x speedups over `sorted-s
 | `split-at` | — | O(log n) | O(log n) |
 | `join` | — | O(log n) | O(log n) |
 
-Both data.avl and ordered-collections expose split/join, but ordered-collections has roughly 2.6-3.3x lower constant factors in the current run because weight composes trivially: `weight(join(L, k, R)) = weight(L) + 1 + weight(R)`. AVL trees must recompute heights bottom-up after joining. Red-black trees must reconcile color invariants. This difference compounds in set operations, which call split/join at every level of recursion.
+Both data.avl and ordered-collections expose split/join, but ordered-collections
+has materially lower constant factors in the current benchmark suite because
+weight composes trivially: `weight(join(L, k, R)) = weight(L) + 1 + weight(R)`.
+AVL trees must recompute heights bottom-up after joining. Red-black trees must
+reconcile color invariants. This difference compounds in set operations, which
+call split/join at every level of recursion.
 
 ### Positional Access
 
@@ -155,7 +164,7 @@ Not available elsewhere in the Clojure ecosystem:
 1. **JVM-only** — no ClojureScript (Java interop throughout)
 2. **No transient builders** — persistent construction only (mitigated by parallel batch construction)
 3. **6% more memory** than core sorted collections (same as data.avl)
-4. **Point lookup within 10%** of both competitors (slightly taller trees, not a meaningful difference)
+4. **Point lookup is roughly comparable** to both competitors; small differences are not a meaningful basis for choosing the library
 
 ## References
 
