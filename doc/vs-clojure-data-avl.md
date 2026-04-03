@@ -28,7 +28,7 @@ The core operations are the same, with one syntax difference: ordered-collection
 (oc/subrange s :>= 3 :< 7)         ;=> #{3 4 5 6}  ← keywords
 (oc/split-key 5 s)                  ;=> [#{1 2 3 4} 5 #{6 7 8 9}]
 (oc/split-at 3 s)                   ;=> [#{1 2 3} #{4 5 6 7 8 9}]
-(oc/rank-of s 5)                    ;=> 4
+(oc/rank s 5)                       ;=> 4
 (nth s 2)                           ;=> 3
 ```
 

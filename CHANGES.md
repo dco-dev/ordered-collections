@@ -37,6 +37,7 @@
 - `java.io.Serializable` — Java serialization support
 - `IReduceInit`/`IReduce` — direct tree traversal for fast `reduce`
 - Direct `ISeq` implementations (`KeySeq`, `EntrySeq`) replace lazy-seq wrappers
+- Tree-rooted seq helpers are explicitly named `node-key-seq`, `node-entry-seq`, and reverse variants
 
 ### EDN Tagged Literals
 
@@ -47,6 +48,7 @@ Round-trip serialization via `data_readers.clj`: `#ordered/set`, `#ordered/map`,
 - **Parallel set operations** via ForkJoinPool with operation-specific root thresholds (`65,536-131,072`), `65,536` recursive thresholds, and `64` sequential cutoff
 - **Primitive node types** (`LongKeyNode`, `DoubleKeyNode`) — unboxed key storage
 - **Primitive lookup fast path** — `long-ordered-set` bypasses `Comparator` dispatch
+- Fold benchmarking now includes a non-trivial frequency-map workload comparing `ordered-set` fold against `hash-set` reduce, `sorted-set` fold/reduce, and `data.avl` fold/reduce
 
 See [benchmarks](doc/benchmarks.md) and [performance analysis](doc/perf-analysis.md) for numbers.
 

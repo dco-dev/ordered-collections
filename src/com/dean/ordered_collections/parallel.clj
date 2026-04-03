@@ -25,7 +25,12 @@
   (.invoke common-fork-join-pool ^ForkJoinTask (recursive-task f)))
 
 (defmacro fork-join
-  "Fork left-expr as a RecursiveTask, compute right-expr inline, then join."
+  "Fork left-expr as a RecursiveTask, compute right-expr inline, then join.
+
+   Important: ForkJoin worker threads do not propagate Clojure dynamic
+   bindings. Forked bodies must therefore rely only on explicit arguments
+   captured at the parallel entry point, not on dynamic vars such as
+   `order/*compare*` or `tree/*t-join*`."
   [[left-sym left-expr right-sym right-expr] combine-expr]
   `(let [left-task# (recursive-task (fn [] ~left-expr))
          _# (.fork ^ForkJoinTask left-task#)
