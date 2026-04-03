@@ -14,7 +14,7 @@ you could solve efficiently:
 - **Fuzzy collections** for nearest-neighbor lookup ("snap 9.3 to the closest valid size")
 - **Priority queues**, **multisets**, and more
 
-All built from a fast, modular, extensible weight-balanced tree platform with shared
+All built from a modular, extensible, weight-balanced tree platform with shared
 foundation for splitting, joining, and parallel operations.
 
 ![tests](https://github.com/dco-dev/ordered-collections/actions/workflows/clojure.yml/badge.svg)
