@@ -171,15 +171,7 @@ Kazu Yamamoto subsequently [patched MIT Scheme and SLIB](https://github.com/kazu
 
 ## Performance
 
-Weight-balanced trees are competitive with red-black and AVL trees on basic operations (lookup, insert, iteration) and significantly faster on operations that leverage split/join:
-
-- **Set algebra**: about 8.7-46.1x faster than sorted-set and 7.2-39.6x faster than data.avl in the current Criterium suite
-- **Fold**: about 3.7-9.7x faster than sorted-set and 1.0-3.4x faster than data.avl in the current benchmark suite
-- **Construction**: about 2.7-2.9x faster than sorted-set and 1.4-1.5x faster than data.avl
-- **Split**: about 3.1-3.7x faster than data.avl
-- **Lookup**: roughly comparable to both competitors; not the main reason to choose this design
-
-See [Benchmarks](benchmarks.md) for detailed Criterium measurements at N=10K, 100K, and 500K.
+Weight-balanced trees are competitive with red-black and AVL trees on basic operations (lookup, insert, iteration) and significantly faster on operations that leverage split/join.
 
 ## Historical Context
 
