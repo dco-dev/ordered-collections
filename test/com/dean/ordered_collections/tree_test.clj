@@ -1,7 +1,10 @@
 (ns com.dean.ordered-collections.tree-test
   (:require [clojure.test :refer :all]
             [com.dean.ordered-collections.tree.node :as node]
-            [com.dean.ordered-collections.tree.tree :as tree]))
+            [com.dean.ordered-collections.tree.tree :as tree]
+            [clojure.test.check.clojure-test :refer [defspec]]
+            [clojure.test.check.generators :as gen]
+            [clojure.test.check.properties :as prop]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -289,3 +292,18 @@
                                    (tree/node-remove-least %2))))]
     (doseq [size [1 10 100 1000 10000 100000]]
       (chk (tree size) (tree size)))))
+
+(defspec prop-tree-health-after-random-edit 100
+  (prop/for-all [size  (gen/choose 1 500)
+                 extra gen/small-integer]
+    (let [t        (make-integer-tree size)
+          idx      (rand-int size)
+          victim   (-> t (tree/node-nth idx) node/-k)
+          added    (tree/node-add t extra)
+          removed  (tree/node-remove t victim)
+          trimmedl (tree/node-remove-least t)
+          trimmedr (tree/node-remove-greatest t)]
+      (and (tree/node-healthy? added)
+           (tree/node-healthy? removed)
+           (tree/node-healthy? trimmedl)
+           (tree/node-healthy? trimmedr)))))
