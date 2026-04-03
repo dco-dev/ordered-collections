@@ -153,26 +153,3 @@ Not available elsewhere in the Clojure ecosystem:
 (def fs (oc/fuzzy-set [1.0 2.0 3.0 10.0]))
 (fs 2.1)  ;=> 2.0
 ```
-
-## When to Use Each
-
-**clojure.core sorted collections** — zero dependencies, basic operations only. Fine if you just need lookup, insert, delete, and `subseq`.
-
-**clojure.data.avl** — ClojureScript support, transient builders, nth/rank. Good choice when you need rank operations but not intervals, segments, or parallelism.
-
-**ordered-collections** — specialized collections (intervals, segments, ranges, fuzzy), parallel set operations and fold, fast endpoint access, and O(log n) `median`/`percentile`/`slice`. Best when you need capabilities beyond basic sorted access.
-
-## Limitations
-
-1. **JVM-only** — no ClojureScript (Java interop throughout)
-2. **No transient builders** — persistent construction only (mitigated by parallel batch construction)
-3. **6% more memory** than core sorted collections (same as data.avl)
-4. **Point lookup is roughly comparable** to both competitors; small differences are not a meaningful basis for choosing the library
-
-## References
-
-1. Adams, S. (1992). "Implementing Sets Efficiently in a Functional Language". CSTR 92-10.
-2. Hirai, Y. & Yamamoto, K. (2011). "Balancing Weight-Balanced Trees". JFP 21(3):287-307.
-3. Blelloch, G., Ferizovic, D., & Sun, Y. (2016). "Just Join for Parallel Ordered Sets". SPAA '16.
-4. [clojure.data.avl](https://github.com/clojure/data.avl)
-5. [Haskell containers (Data.Set, Data.Map)](https://hackage.haskell.org/package/containers)

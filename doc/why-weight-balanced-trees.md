@@ -21,9 +21,8 @@ Red-black trees maintain balance through a coloring invariant: no root-to-leaf p
 
 **Weaknesses:**
 - No efficient split or join — Tarjan showed that red-black join requires O(log^2 n) color fixups in the worst case, compared to O(log n) for weight-balanced
-- No size information at nodes — positional access (`nth`, rank) requires O(n) traversal
-- `last` is O(n) because there is no cached maximum
-- Set operations (union, intersection, difference) must fall back to element-by-element insertion: O(n log n) vs O(m log(n/m + 1))
+- No cached subtree sizes by default — positional access (`nth`, `rank`) and split-at-by-index are not natural parts of the representation
+- No native split/join-centered set algebra in Clojure's built-in sorted collections
 
 ### AVL Trees (data.avl)
 
@@ -79,7 +78,7 @@ union(T₁, T₂):
 
 This divide-and-conquer structure has two remarkable properties:
 
-1. **Work-optimality**: The total work is O(m log(n/m + 1)) where m ≤ n are the set sizes. This is information-theoretically optimal — it matches the lower bound for comparison-based set operations. When one set is much smaller than the other, this is significantly better than the O(n) linear merge that `clojure.set` uses on sorted sets.
+1. **Work-optimality**: The total work is O(m log(n/m + 1)) where m ≤ n are the set sizes. This is information-theoretically optimal — it matches the lower bound for comparison-based set operations. When one set is much smaller than the other, this is significantly better than generic element-wise set-algebra paths over ordered collections.
 
 2. **Low span**: The two recursive calls are independent and can execute in parallel. Blelloch, Ferizovic, and Sun (2016) proved the span is O(log² n), giving near-linear speedup on many cores.
 
@@ -126,7 +125,7 @@ The weight-balanced structure supports *augmentation*: storing additional per-no
 
 Augmentation works naturally with weight-balanced trees because rotations update a fixed number of nodes, and the aggregate at each node is a function of its children's aggregates. The same approach is harder with red-black trees, where color changes can propagate unpredictably.
 
-The PAM framework (Sun, Ferizovic, Blelloch 2018) formalized this: any augmented map where the augment is a *commutative monoid* over subtree values can be maintained in O(log n) per update, and the full suite of split/join/union/intersection operations carries augmentation through automatically.
+The PAM framework (Sun, Ferizovic, Blelloch 2018) formalized this: any augmented map where the augment is a monoid over subtree values can be maintained in O(log n) per update, and the full suite of split/join/union/intersection operations carries augmentation through automatically.
 
 ## Parallel Fold
 
@@ -137,7 +136,7 @@ The ability to efficiently split trees enables true parallel reduction:
 (r/fold + (ordered-set (range 500000)))
 ```
 
-The tree is split into larger balanced chunks, and those chunks are reduced in parallel via `r/fold`. Clojure's `sorted-set` falls back to sequential reduce because red-black trees cannot efficiently split.
+The tree is split into larger balanced chunks, and those chunks are reduced in parallel via `r/fold`. In this library, `CollFold` is implemented explicitly by eager chunking with `node-split` and a minimum chunk-size floor of `4096`, so fold only enters the parallel regime when splitting overhead is worth paying. Clojure's `sorted-set` and `data.avl` do not provide an equivalent tree-aware `CollFold` implementation here, so they effectively remain sequential in these benchmarks.
 
 In the current run, parallel fold is about 9.7x faster than sorted-set and 3.4x
 faster than data.avl at N=500K.

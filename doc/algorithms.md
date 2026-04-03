@@ -105,6 +105,53 @@ rebuild the correct node type automatically. Different collection variants
 inherit the same operation structure while choosing different storage or
 augmentation behavior at node construction time.
 
+## Enumerators: The Fundamental Traversal Interface
+
+Below split/join, the tree's basic traversal primitive is the **enumerator**.
+An enumerator is a compact explicit traversal state: a chain of frames
+representing the current node plus the remaining path to the next node in
+sorted order.
+
+The forward enumerator descends the left spine:
+
+```
+node-enumerator(root)
+  = [current-node | continuation]
+```
+
+Advancing the enumerator does two things:
+- if the current node has a right subtree, descend that subtree's left spine
+- otherwise, resume from the saved continuation
+
+The reverse enumerator is symmetric: descend the right spine, then resume
+outward through saved continuations.
+
+Why this matters:
+- it gives in-order traversal without recursion or lazy-seq allocation in the hot path
+- it is the common substrate for `node-reduce`, `node-fold-left`, `node-fold-right`, sequence construction, and tree-to-tree linear merges
+- it keeps traversal mechanics separate from collection presentation (`seq`, `rseq`, key seqs, entry seqs)
+
+This is close in spirit to Oleg Kiselyov's "Towards the best collection API:
+A design of the overall optimal collection traversal interface", which argues
+for enumerator-style traversal as the fundamental collection-walking primitive.
+The tree code applies that idea at the node level and then builds the public
+seq/reduce interfaces on top of it.
+
+Conceptually, the layering is:
+
+```
+enumerator         ; explicit tree-walk state
+  ↓
+node-reduce        ; eager traversal API
+node-seq / direct seq types
+  ↓
+collection seq/reduce interfaces
+```
+
+This is why the tree code treats enumerators as fundamental rather than as a
+small helper for `seq`. They are the shared low-level traversal interface from
+which both eager reduction and Clojure-facing sequence behavior are derived.
+
 ## The Join-Based Paradigm
 
 All tree operations reduce to split and join (Adams 1992, Blelloch et al. 2016):
