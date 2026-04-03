@@ -92,6 +92,14 @@ the current set-algebra benchmarks still show roughly 4-24x wins.
 | Fold | 1.0x | **3.0x** | **3.4x** |
 | Construction | **1.5x** | **1.4x** | **1.5x** |
 
+### vs clojure.set on hash-set (speedup)
+
+| Operation | N=10K | N=100K | N=500K |
+|-----------|------:|-------:|-------:|
+| Union | **4.1x** | **7.3x** | **19.7x** |
+| Intersection | **4.3x** | **7.6x** | **17.3x** |
+| Difference | **5.1x** | **9.2x** | **24.2x** |
+
 *[Criterium](https://github.com/hugoduncan/criterium) at all sizes.
 See [Benchmarks](doc/benchmarks.md) for full results.*
 
