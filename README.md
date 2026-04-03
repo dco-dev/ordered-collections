@@ -107,7 +107,7 @@ See [Benchmarks](doc/benchmarks.md) for full results.*
 
 | | sorted-set | data.avl | ordered-set |
 |--|:---:|:---:|:---:|
-| `last` | O(n) | O(n) | **O(log n)** |
+| Endpoint access | O(1) `first`, O(n) seq `last` | O(1) `first`, O(n) seq `last` | **O(1) `first`, O(log n) `.last`** |
 | `nth` / rank | — | O(log n) | O(log n) |
 | `nearest` / subrange | — | O(log n) | O(log n) |
 | `split` | — | O(log n) | O(log n) |

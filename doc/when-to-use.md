@@ -7,7 +7,7 @@
 | Drop-in `sorted-set`/`sorted-map` replacement | `ordered-set` / `ordered-map` |
 | Fast set algebra (union, intersection, difference) | `ordered-set` / `ordered-map` |
 | O(log n) nth, rank, median, percentile | `ordered-set` / `ordered-map` |
-| O(log n) `last` | `ordered-set` / `ordered-map` |
+| Fast endpoint access | `ordered-set` / `ordered-map` |
 | Parallel `r/fold` | `ordered-set` / `ordered-map` |
 | Overlapping interval queries ("what's scheduled at 3pm?") | `interval-set` / `interval-map` |
 | Non-overlapping range allocation ("which subnet owns this IP?") | `range-map` |

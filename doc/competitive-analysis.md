@@ -9,7 +9,7 @@ Comparison with `clojure.core/sorted-set`, `clojure.core/sorted-map`, and `cloju
 | **Tree type** | Weight-balanced | Red-black | AVL |
 | **Set operations** | O(m log(n/m+1)), parallel | O(n) via clojure.set | O(m log(n/m+1)) |
 | **O(log n) nth/rank** | Yes | No | Yes |
-| **O(log n) last** | Yes | O(n) | O(n) |
+| **Fast endpoint access** | Yes | Seq `last` is O(n) | Seq `last` is O(n) |
 | **Parallel fold** | Yes (fork-join) | No | No |
 | **Interval trees** | Yes | No | No |
 | **Segment trees** | Yes | No | No |
@@ -66,9 +66,12 @@ ordered-collections additionally provides `slice`, `median`, and `percentile` �
 | Operation | clojure.core | data.avl | ordered-collections |
 |-----------|:---:|:---:|:---:|
 | `(first coll)` | O(1) | O(1) | O(1) |
-| `(last coll)` | **O(n)** | **O(n)** | **O(log n)** |
+| `java.util.SortedSet.last()` | — | — | **O(log n)** |
+| seq-based `last` | **O(n)** | **O(n)** | **O(n)** |
 
-`last` on a 1M-element sorted-set scans the entire collection. ordered-collections traverses ~20 nodes via `java.util.SortedSet.last()`.
+`last` on a 1M-element sorted-set scans the entire collection. ordered-collections
+also supports fast endpoint access through `java.util.SortedSet.last()`, which
+traverses only the right spine of the tree.
 
 ### Parallel Fold
 
@@ -157,7 +160,7 @@ Not available elsewhere in the Clojure ecosystem:
 
 **clojure.data.avl** — ClojureScript support, transient builders, nth/rank. Good choice when you need rank operations but not intervals, segments, or parallelism.
 
-**ordered-collections** — specialized collections (intervals, segments, ranges, fuzzy), parallel set operations and fold, O(log n) `last`/`median`/`percentile`/`slice`. Best when you need capabilities beyond basic sorted access.
+**ordered-collections** — specialized collections (intervals, segments, ranges, fuzzy), parallel set operations and fold, fast endpoint access, and O(log n) `median`/`percentile`/`slice`. Best when you need capabilities beyond basic sorted access.
 
 ## Limitations
 
