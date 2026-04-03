@@ -1,8 +1,8 @@
 # com.dean/ordered-collections
 
-**Collections that do more than sort.**
+**Fast collections that do more than sort.**
 
-Fast, complete ordered collections. Drop-in replacements for
+Fast, versitile, ordered collections. Drop-in replacements for
 `sorted-set` and `sorted-map` — with O(log n) positional access,
 parallel fold, and specialized collections for problems you didn't know
 you could solve efficiently:
