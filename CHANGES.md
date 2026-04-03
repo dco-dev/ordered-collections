@@ -49,8 +49,9 @@ Round-trip serialization via `data_readers.clj`: `#ordered/set`, `#ordered/map`,
 - **Primitive node types** (`LongKeyNode`, `DoubleKeyNode`) — unboxed key storage
 - **Primitive lookup fast path** — `long-ordered-set` bypasses `Comparator` dispatch
 - Fold benchmarking now includes a non-trivial frequency-map workload comparing `ordered-set` fold against `hash-set` reduce, `sorted-set` fold/reduce, and `data.avl` fold/reduce
+- Benchmark/test infrastructure now shares more common workload generators, reference helpers, and competitor builders via `test-utils` and `bench-utils`
 
-See [benchmarks](doc/benchmarks.md) and [performance analysis](doc/perf-analysis.md) for numbers.
+See [benchmarks](doc/benchmarks.md) for current numbers and analysis.
 
 ### Build
 
@@ -61,7 +62,14 @@ See [benchmarks](doc/benchmarks.md) and [performance analysis](doc/perf-analysis
 - `SortedSet.tailSet` now returns elements >= x (was exclusive)
 - `SortedSet.subSet` now returns elements >= from, < to
 - Interval tree construction uses sequential reduce (parallel fold lost dynamic binding for node allocator at >2048 elements)
+- `segment-tree` range queries are generic over ordered keys again rather than assuming integer-only query bounds
 - Priority queue now documents comparator-relative endpoint semantics, uses direct seq adapters instead of lazy `map` wrappers, supports Java serialization in the test suite, and has stronger coverage for duplicate-priority ordering and boundary cases
+
+### Documentation
+
+- Performance documentation is consolidated in `doc/benchmarks.md`; the older separate `perf-analysis.md` document is removed
+- Cookbook examples were refreshed to better match the collection lineup and current semantics, including new `priority-queue` and `ordered-multiset` examples
+- Generated `doc/api` output is no longer tracked in the repository
 
 ### Breaking Changes
 

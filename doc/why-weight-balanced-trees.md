@@ -138,8 +138,8 @@ The ability to efficiently split trees enables true parallel reduction:
 
 The tree is split into larger balanced chunks, and those chunks are reduced in parallel via `r/fold`. In this library, `CollFold` is implemented explicitly by eager chunking with `node-split` and a minimum chunk-size floor of `4096`, so fold only enters the parallel regime when splitting overhead is worth paying. Clojure's `sorted-set` and `data.avl` do not provide an equivalent tree-aware `CollFold` implementation here, so they effectively remain sequential in these benchmarks.
 
-In the current run, parallel fold is about 9.7x faster than sorted-set and 3.4x
-faster than data.avl at N=500K.
+In these measurements, parallel fold is about 9.7x faster than sorted-set and
+3.4x faster than data.avl at N=500K.
 
 ## The Balance Invariant
 

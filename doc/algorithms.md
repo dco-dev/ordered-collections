@@ -292,9 +292,10 @@ splits when `r/fold`'s default chunk size (512) would create too many chunks.
 
 `parallel_threshold_bench.clj` is useful for local tuning, but it does not
 produce one stable crossover point across machines. In the April 2, 2026
-reruns, the corrected production-path benchmark favored per-operation entry
-thresholds plus a lower recursive threshold and a branch-shape guard over the
-older one-size-fits-all policy.
+reruns, the production-path benchmark favored per-operation entry thresholds
+plus a lower recursive threshold and a branch-shape guard. That matches the
+actual workload differences between union, intersection, difference, and
+ordered-map merge more closely than a single universal threshold.
 
 ### Operations using this pattern
 

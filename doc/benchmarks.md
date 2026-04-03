@@ -1,5 +1,9 @@
 # Benchmarks
 
+This is the canonical performance document for the project: benchmark
+methodology, current numbers, and the implementation details that most directly
+explain those numbers.
+
 ## Running
 
 ```
@@ -32,8 +36,7 @@ Relative ratios are more meaningful than absolute times.
 ## Set Operations
 
 Two sets of size N with 50% overlap. Adams' divide-and-conquer with optional
-fork-join parallelism. The current production policy uses operation-specific
-root thresholds:
+fork-join parallelism. Set algebra uses operation-specific root thresholds:
 
 - union `131,072`
 - intersection `65,536`
@@ -42,6 +45,10 @@ root thresholds:
 
 Recursive re-forking currently uses `65,536` for all four operations, plus a
 `65,536` minimum-branch guard and a `64` sequential cutoff for tiny subtrees.
+
+This is the library's dominant advantage. The split/join structure gives
+work-optimal set algebra, and fork-join parallelism helps extend that advantage
+to larger multicore workloads.
 
 ### vs sorted-set (speedup)
 
@@ -58,6 +65,14 @@ Recursive re-forking currently uses `65,536` for all four operations, plus a
 | Union | **11.5x** | **19.3x** | **39.6x** |
 | Intersection | **7.2x** | **13.5x** | **27.5x** |
 | Difference | **7.3x** | **13.6x** | **32.3x** |
+
+Interpretation:
+- against `sorted-set`, the gap is mainly algorithmic: generic `clojure.set`
+  paths over built-in sorted collections do not exploit a native split/join
+  algebra
+- against `data.avl`, both libraries benefit from ordered trees, but this
+  library's split/join constant factors are lower and the set operations also
+  parallelize
 
 ### vs clojure.set on hash-set (exploratory, unfair baseline)
 
@@ -103,6 +118,12 @@ current split/join implementation still wins decisively.
 
 Chunked parallel fold via `r/fold`. The tree is split into equal subtrees and folded in parallel. sorted-set and data.avl fall back to sequential reduce.
 
+Implementation note: `CollFold` is not just delegated blindly to `r/fold`.
+`node-chunked-fold` splits the tree eagerly in the caller thread, enforces a
+minimum chunk size of `4096`, and then folds chunk indices in parallel. That
+keeps split overhead under control and avoids depending on dynamic bindings
+inside worker tasks.
+
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
 | sorted-set | 0.31ms | 3.10ms | 15.56ms |
@@ -114,6 +135,10 @@ Chunked parallel fold via `r/fold`. The tree is split into equal subtrees and fo
 ## Construction
 
 Batch from collection (parallel fold + union).
+
+This is why constructor-based bulk loading is the right path to benchmark and
+the right path to use. Sequential `conj` is a different workload and is covered
+separately below.
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
@@ -127,6 +152,9 @@ Batch from collection (parallel fold + union).
 
 100 splits at random keys. Weight-balanced trees have lower constant factors — no height recomputation.
 
+This is one of the cleanest demonstrations of the representation choice. Weight
+composes trivially after join; AVL trees must recompute heights bottom-up.
+
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
 | data.avl | 0.42ms | 0.68ms | 0.93ms |
@@ -138,6 +166,8 @@ Batch from collection (parallel fold + union).
 10K random lookups. These are all in the same practical performance tier; small
 differences are not especially meaningful compared with the much larger wins in
 set algebra, split/join-derived operations, construction, and fold.
+
+Treat these as near-parity numbers, not as a headline differentiator.
 
 ### Set (ms)
 
@@ -159,6 +189,8 @@ set algebra, split/join-derived operations, construction, and fold.
 
 1000 calls. O(log n) via `java.util.SortedSet.last()` vs O(n) seq traversal.
 
+This is endpoint access, not a claim about `clojure.core/last`.
+
 | | N=10K | N=100K |
 |--|------:|-------:|
 | sorted-set | 424ms | 5,085ms |
@@ -169,6 +201,9 @@ set algebra, split/join-derived operations, construction, and fold.
 
 ## Iteration (reduce)
 
+Both ordered-collections and data.avl implement direct tree reduction paths,
+which is why both are much faster than seq-driven reduction over `sorted-set`.
+
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
 | sorted-set | 0.31ms | 3.43ms | 17.81ms |
@@ -178,6 +213,9 @@ set algebra, split/join-derived operations, construction, and fold.
 4–5x faster than sorted-set at larger sizes. On par with data.avl.
 
 ## Insert (sequential conj, not batch)
+
+This section is deliberately separate from construction. It measures repeated
+single-element mutation, not bulk loading.
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
@@ -197,6 +235,9 @@ set algebra, split/join-derived operations, construction, and fold.
 
 Both O(log n). sorted-set has no nth/rank.
 
+These are enabled by subtree sizes. For this library, size is part of the core
+tree invariant rather than an add-on feature.
+
 ### nth (10K accesses by index)
 
 | | N=10K | N=100K | N=500K |
@@ -204,7 +245,7 @@ Both O(log n). sorted-set has no nth/rank.
 | data.avl | 0.85ms | 1.73ms | 2.83ms |
 | ordered-set | 1.40ms | 2.00ms | 2.80ms |
 
-data.avl is usually faster, but the gap narrows substantially at 500K in the current run.
+data.avl is usually faster, but the gap narrows substantially at 500K.
 
 ### rank-of (10K lookups)
 
@@ -213,7 +254,7 @@ data.avl is usually faster, but the gap narrows substantially at 500K in the cur
 | data.avl | 2.39ms | 3.49ms | 6.03ms |
 | ordered-set | 1.15ms | 2.62ms | 4.99ms |
 
-ordered-set is ~1.2-2.1x faster in the current run.
+ordered-set is ~1.2-2.1x faster in these measurements.
 
 ## Interval Collections
 
@@ -240,4 +281,18 @@ Sub-linear growth — O(log n + k) means query time depends more on result count
 | data.avl | 2.37ms | 37.41ms | 335.96ms |
 | ordered-map | **1.45ms** | **28.81ms** | **191.14ms** |
 
-2.3x faster than sorted-map and 1.8x faster than data.avl at N=500K in the current run.
+2.3x faster than sorted-map and 1.8x faster than data.avl at N=500K in these measurements.
+
+## Specialized Node Types
+
+Primitive-specialized node types reduce boxing and comparison overhead for
+common homogeneous-key cases:
+
+```clojure
+(long-ordered-set data)     ;; unboxed long keys
+(double-ordered-set data)   ;; unboxed double keys
+(string-ordered-set data)   ;; String.compareTo
+```
+
+These are constant-factor optimizations on top of the same tree algebra, not a
+separate implementation strategy.

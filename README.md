@@ -23,7 +23,7 @@ foundation for splitting, joining, and parallel operations.
 ### Documentation
 
 - [Zorp's Sneaker Emporium](doc/zorp-example.md) — Narrative guide with extended examples
-- [Cookbook](doc/cookbook.md) — Practical patterns: leaderboards, time-series, scheduling, IP ranges
+- [Cookbook](doc/cookbook.md) — Practical patterns: leaderboards, time-series, scheduling, queues, multisets, and more
 - [Benchmarks](doc/benchmarks.md) — Detailed performance measurements
 - [Competitive Analysis](doc/competitive-analysis.md) — Comparison with other libraries
 - [vs clojure.data.avl](doc/vs-clojure-data-avl.md) — For data.avl users considering a switch

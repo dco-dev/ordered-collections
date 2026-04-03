@@ -1,6 +1,6 @@
 # Migrating from clojure.data.avl
 
-This guide is for data.avl users considering ordered-collections. For the full feature and performance comparison, see [Competitive Analysis](competitive-analysis.md) and [Performance Analysis](perf-analysis.md).
+This guide is for data.avl users considering ordered-collections. For the full feature and performance comparison, see [Competitive Analysis](competitive-analysis.md) and [Benchmarks](benchmarks.md).
 
 ## API Mapping
 
