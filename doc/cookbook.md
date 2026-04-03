@@ -14,7 +14,7 @@ Practical examples showing where ordered-collections shines.
 ## 1. Leaderboard with Rank Queries
 
 **Problem:** Maintain a leaderboard where you need to:
-- Add/update player scores
+- Add player scores
 - Get a player's rank
 - Get the top N players
 - Get players around a specific rank
@@ -150,7 +150,7 @@ Practical examples showing where ordered-collections shines.
 (conflicts-at room-a 930)
 ;; => [{:title "Standup", :organizer "alice"}]
 
-(conflicts-during room-a 1000 1100)
+(conflicts-during room-a 1030 1100)
 ;; => [{:title "Design Review", :organizer "bob"}]
 
 (is-available? room-a 1200 1400)  ;; => true
@@ -161,56 +161,43 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 4. Rate Limiter with Tiered Limits
+## 4. Persistent Work Queue
 
-**Problem:** Implement a rate limiter where different user tiers have different limits, and track request counts in sliding time windows.
-
-**Combines:** `fuzzy-map` (tier lookup) + `ordered-map` (time-windowed request log) + `segment-tree` (fast count queries)
+**Problem:** Schedule work by priority, while keeping stable ordering among equal priorities.
 
 ```clojure
-;; Tier thresholds: points -> requests per minute
-(def tier-limits
-  (oc/fuzzy-map {0    10      ; bronze: 10 req/min
-                 100  50      ; silver: 50 req/min
-                 500  200     ; gold: 200 req/min
-                 2000 1000})) ; platinum: 1000 req/min
+(defn make-work-queue []
+  (oc/priority-queue))
 
-(defn make-rate-limiter []
-  {:request-log (oc/ordered-map)   ; timestamp -> user-id
-   :user-counts (oc/segment-tree + 0 {})})  ; for range counting
+(defn enqueue [q priority task]
+  (oc/push q priority task))
 
-(defn get-limit [user-points]
-  (tier-limits user-points))
+(defn next-task [q]
+  (oc/peek-min q))
 
-(defn requests-in-window [limiter user-id now window-ms]
-  ;; Count requests in [now - window, now] using ordered-map range
-  (let [cutoff (- now window-ms)
-        recent (subseq (:request-log limiter) >= cutoff)]
-    (count (filter #(= user-id (val %)) recent))))
-
-(defn allow-request? [limiter user-id user-points now]
-  (let [limit (get-limit user-points)
-        recent-count (requests-in-window limiter user-id now 60000)]
-    (< recent-count limit)))
-
-(defn record-request [limiter user-id now]
-  (update limiter :request-log assoc now user-id))
+(defn run-next [q]
+  (let [[priority task] (oc/peek-min q)]
+    {:task task
+     :remaining (oc/pop-min q)}))
 
 ;; Usage
-(def limiter (make-rate-limiter))
+(def q (-> (make-work-queue)
+           (enqueue 5 {:job :backup})
+           (enqueue 1 {:job :page-oncall})
+           (enqueue 2 {:job :send-email})
+           (enqueue 1 {:job :invalidate-cache})))
 
-;; Bronze user (50 points) gets 10 req/min
-(get-limit 50)   ;; => 10
+(next-task q)
+;; => [1 {:job :page-oncall}]
 
-;; Gold user (750 points) gets 200 req/min
-(get-limit 750)  ;; => 200
+(-> q run-next :task)
+;; => {:job :page-oncall}
 
-;; Check and record
-(allow-request? limiter "user-123" 750 1000000)  ;; => true
-(def limiter (record-request limiter "user-123" 1000000))
+(-> q run-next :remaining next-task)
+;; => [1 {:job :invalidate-cache}]
 ```
 
-**Why this combination?** Fuzzy-map gives O(log n) tier lookup without exact key match. Ordered-map enables O(log n) time-window queries via `subseq`. A segment-tree is a good fit when counts can be projected onto integer time buckets and queried repeatedly.
+**Why ordered-collections?** A persistent priority queue gives O(log n) enqueue/dequeue while preserving insertion order among equal priorities.
 
 ---
 
@@ -296,13 +283,8 @@ Practical examples showing where ordered-collections shines.
 
 (defn add-sample [{:keys [data max-age] :as window} timestamp value]
   (let [cutoff (- timestamp max-age)
-        ;; Remove old entries efficiently
-        fresh-data (if-let [first-key (first (keys data))]
-                     (if (< first-key cutoff)
-                       ;; Split off old data
-                       (let [[_ _ fresh] (oc/split-key cutoff data)] fresh)
-                       data)
-                     data)]
+        ;; Keep samples at or after the cutoff.
+        fresh-data (oc/subrange data :>= cutoff)]
     (assoc window :data (assoc fresh-data timestamp value))))
 
 (defn window-stats [{:keys [data]}]
@@ -419,7 +401,37 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 10. Fuzzy Lookup / Nearest Neighbor
+## 10. Ordered Multiset
+
+**Problem:** Track duplicate values while keeping them sorted.
+
+```clojure
+(def readings
+  (oc/ordered-multiset [72 68 72 70 68 72 71]))
+
+(seq readings)
+;; => (68 68 70 71 72 72 72)
+
+(oc/multiplicity readings 72)
+;; => 3
+
+(oc/distinct-elements readings)
+;; => (68 70 71 72)
+
+(oc/element-frequencies readings)
+;; => {68 2, 70 1, 71 1, 72 3}
+
+(-> readings
+    (oc/disj-one 72)
+    (oc/multiplicity 72))
+;; => 2
+```
+
+**Why ordered-collections?** You get sorted duplicate-preserving semantics with efficient counting and removal of one occurrence.
+
+---
+
+## 11. Fuzzy Lookup / Nearest Neighbor
 
 **Problem:** Find the closest matching value when exact match doesn't exist.
 
@@ -458,7 +470,7 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 11. Splitting Collections
+## 12. Splitting Collections
 
 **Problem:** Partition a collection at a key or index for divide-and-conquer algorithms.
 
@@ -498,7 +510,7 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 12. Subrange Extraction
+## 13. Subrange Extraction
 
 **Problem:** Extract a contiguous range of elements by key bounds.
 
@@ -528,11 +540,11 @@ Practical examples showing where ordered-collections shines.
 (count (oc/subrange ids :>= 50 :<= 80))  ;; => 7
 ```
 
-**Why ordered-collections?** Returns a view backed by the original tree. O(log n) to create, efficient iteration.
+**Why ordered-collections?** Returns a new ordered collection that shares structure with the original tree. O(log n) to create, efficient to iterate.
 
 ---
 
-## 13. Floor/Ceiling Queries
+## 14. Floor/Ceiling Queries
 
 **Problem:** Find the nearest element at or above/below a target.
 

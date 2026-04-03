@@ -27,23 +27,14 @@
                              {:id id :score score :data data}))))
 
 (defn rank-of-player [board player-id score]
-  ;; Compute rank via iteration (no built-in rank-of for ordered-map)
-  (let [key [score player-id]]
-    (loop [i 0, entries (seq board)]
-      (when entries
-        (if (= (ffirst entries) key)
-          i
-          (recur (inc i) (next entries)))))))
+  (oc/rank board [score player-id]))
 
 (defn players-around-rank [board rank window]
-  ;; Use drop/take instead of nth for custom-comparator maps
   (let [start (max 0 (- rank window))
-        n (inc (* 2 window))]
-    (->> board
-         (drop start)
-         (take n)
-         (map-indexed (fn [i [[score id] _]]
-                        {:rank (+ start i) :id id :score score})))))
+        end   (min (count board) (+ rank window 1))]
+    (map-indexed (fn [i [[score id] _]]
+                   {:rank (+ start i) :id id :score score})
+                 (oc/slice board start end))))
 
 (deftest leaderboard-test
   (let [board (-> (make-leaderboard)
@@ -146,7 +137,7 @@
 
     (testing "conflicts-during range query"
       ;; Range [1000, 1100] overlaps with [900, 1000] (at endpoint) and [1030, 1130]
-      (let [conflicts (set (conflicts-during room-a 1000 1100))]
+      (let [conflicts (set (conflicts-during room-a 1030 1100))]
         (is (contains? conflicts {:title "Design Review" :organizer "bob"}))))
 
     (testing "is-available? for non-overlapping slot"
@@ -158,61 +149,36 @@
       (is (not (empty? (conflicts-during room-a 1430 1530)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; 4. Rate Limiter with Tiered Limits
+;; 4. Persistent Work Queue
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def tier-limits
-  (oc/fuzzy-map {0    10      ; bronze: 10 req/min
-                 100  50      ; silver: 50 req/min
-                 500  200     ; gold: 200 req/min
-                 2000 1000})) ; platinum: 1000 req/min
+(defn make-work-queue []
+  (oc/priority-queue))
 
-(defn make-rate-limiter []
-  {:request-log (oc/ordered-map)})
+(defn enqueue [q priority task]
+  (oc/push q priority task))
 
-(defn get-limit [user-points]
-  (tier-limits user-points))
+(defn next-task [q]
+  (oc/peek-min q))
 
-(defn requests-in-window [limiter user-id now window-ms]
-  (let [cutoff (- now window-ms)
-        recent (subseq (:request-log limiter) >= cutoff)]
-    (count (filter #(= user-id (val %)) recent))))
+(defn run-next [q]
+  (let [[_ task] (oc/peek-min q)]
+    {:task task
+     :remaining (oc/pop-min q)}))
 
-(defn allow-request? [limiter user-id user-points now]
-  (let [limit (get-limit user-points)
-        recent-count (requests-in-window limiter user-id now 60000)]
-    (< recent-count limit)))
+(deftest priority-queue-cookbook-test
+  (let [q (-> (make-work-queue)
+              (enqueue 5 {:job :backup})
+              (enqueue 1 {:job :page-oncall})
+              (enqueue 2 {:job :send-email})
+              (enqueue 1 {:job :invalidate-cache}))]
+    (testing "peek-min returns first element in queue order"
+      (is (= [1 {:job :page-oncall}] (next-task q))))
 
-(defn record-request [limiter user-id now]
-  (update limiter :request-log assoc now user-id))
-
-(deftest rate-limiter-test
-  (testing "tier limits via fuzzy-map"
-    (is (= 10 (get-limit 50)))     ; bronze
-    (is (= 50 (get-limit 100)))    ; silver exact
-    (is (= 50 (get-limit 150)))    ; silver (closer to 100 than 500)
-    (is (= 200 (get-limit 750)))   ; gold
-    (is (= 1000 (get-limit 2000)))) ; platinum
-
-  (testing "request tracking"
-    (let [limiter (-> (make-rate-limiter)
-                      (record-request "user-1" 1000)
-                      (record-request "user-1" 2000)
-                      (record-request "user-2" 3000))]
-      (is (= 2 (requests-in-window limiter "user-1" 60000 60000)))
-      (is (= 1 (requests-in-window limiter "user-2" 60000 60000)))))
-
-  (testing "allow-request? respects limits"
-    (let [limiter (make-rate-limiter)
-          ;; Add 9 requests for bronze user (limit 10)
-          limiter (reduce (fn [l i] (record-request l "bronze-user" (* i 1000)))
-                          limiter (range 9))]
-      ;; 9 requests, limit 10 -> allowed
-      (is (allow-request? limiter "bronze-user" 50 60000))
-      ;; Add one more
-      (let [limiter (record-request limiter "bronze-user" 9000)]
-        ;; 10 requests, limit 10 -> not allowed
-        (is (not (allow-request? limiter "bronze-user" 50 60000)))))))
+    (testing "pop-min preserves stable equal-priority ordering"
+      (is (= {:job :page-oncall} (:task (run-next q))))
+      (is (= [1 {:job :invalidate-cache}]
+             (-> q run-next :remaining next-task))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 5. Parallel Aggregation
@@ -281,12 +247,7 @@
 
 (defn add-sample [{:keys [data max-age] :as window} timestamp value]
   (let [cutoff (- timestamp max-age)
-        fresh-data (if-let [first-key (first (keys data))]
-                     (if (< first-key cutoff)
-                       (let [[_ _ right] (oc/split-key cutoff data)]
-                         right)
-                       data)
-                     data)]
+        fresh-data (oc/subrange data :>= cutoff)]
     (assoc window :data (assoc fresh-data timestamp value))))
 
 (defn window-stats [{:keys [data]}]
@@ -390,7 +351,25 @@
         (is (= #{"user-3"} (index-lookup idx' 25)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; 10. Fuzzy Lookup / Nearest Neighbor
+;; 10. Ordered Multiset
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest ordered-multiset-cookbook-test
+  (let [readings (oc/ordered-multiset [72 68 72 70 68 72 71])]
+    (testing "duplicates stay sorted"
+      (is (= [68 68 70 71 72 72 72] (vec (seq readings)))))
+
+    (testing "multiplicity and distinct-elements"
+      (is (= 3 (oc/multiplicity readings 72)))
+      (is (= [68 70 71 72] (vec (oc/distinct-elements readings)))))
+
+    (testing "frequency map and disj-one"
+      (is (= {68 2, 70 1, 71 1, 72 3}
+             (oc/element-frequencies readings)))
+      (is (= 2 (-> readings (oc/disj-one 72) (oc/multiplicity 72)))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 11. Fuzzy Lookup / Nearest Neighbor
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftest fuzzy-lookup-test
