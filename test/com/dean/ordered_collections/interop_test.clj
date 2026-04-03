@@ -99,66 +99,56 @@
   (prop/for-all [xs gen-non-empty-int-set, k gen/small-integer]
     (let [ts (->ss xs)
           proto-result (proto/nearest ts :<= k)
-          ref-result (first (rsubseq ts <= k))]
+          ref-result (tu/nearest-ref ts :<= k)]
       (= proto-result ref-result))))
 
 (defspec prop-tree-set-nearest-ceiling 100
   (prop/for-all [xs gen-non-empty-int-set, k gen/small-integer]
     (let [ts (->ss xs)
           proto-result (proto/nearest ts :>= k)
-          ref-result (first (subseq ts >= k))]
+          ref-result (tu/nearest-ref ts :>= k)]
       (= proto-result ref-result))))
 
 (defspec prop-tree-set-nearest-predecessor 100
   (prop/for-all [xs gen-non-empty-int-set, k gen/small-integer]
     (let [ts (->ss xs)
           proto-result (proto/nearest ts :< k)
-          ref-result (first (rsubseq ts < k))]
+          ref-result (tu/nearest-ref ts :< k)]
       (= proto-result ref-result))))
 
 (defspec prop-tree-set-nearest-successor 100
   (prop/for-all [xs gen-non-empty-int-set, k gen/small-integer]
     (let [ts (->ss xs)
           proto-result (proto/nearest ts :> k)
-          ref-result (first (subseq ts > k))]
+          ref-result (tu/nearest-ref ts :> k)]
       (= proto-result ref-result))))
 
 (defspec prop-tree-set-subrange 100
   (prop/for-all [xs gen-non-empty-int-set, k gen/small-integer, test gen-test-symbol]
     (let [ts (->ss xs)
           proto-result (proto/subrange ts test k)
-          ref-result (into (sorted-set)
-                           (case test
-                             :<  (subseq ts < k)
-                             :<= (subseq ts <= k)
-                             :>  (subseq ts > k)
-                             :>= (subseq ts >= k)))]
+          ref-result (into (sorted-set) (tu/subrange-ref ts test k))]
       (= (vec proto-result) (vec ref-result)))))
 
 (defspec prop-tree-map-nearest-floor 100
   (prop/for-all [xs gen-non-empty-int-map-entries, k gen/small-integer]
     (let [tm (->sm xs)
           proto-result (proto/nearest tm :<= k)
-          ref-entry (first (rsubseq tm <= k))]
+          ref-entry (tu/nearest-ref tm :<= k)]
       (= proto-result (when ref-entry [(key ref-entry) (val ref-entry)])))))
 
 (defspec prop-tree-map-nearest-ceiling 100
   (prop/for-all [xs gen-non-empty-int-map-entries, k gen/small-integer]
     (let [tm (->sm xs)
           proto-result (proto/nearest tm :>= k)
-          ref-entry (first (subseq tm >= k))]
+          ref-entry (tu/nearest-ref tm :>= k)]
       (= proto-result (when ref-entry [(key ref-entry) (val ref-entry)])))))
 
 (defspec prop-tree-map-subrange 100
   (prop/for-all [xs gen-non-empty-int-map-entries, k gen/small-integer, test gen-test-symbol]
     (let [tm (->sm xs)
           proto-result (proto/subrange tm test k)
-          ref-result (into (sorted-map)
-                           (case test
-                             :<  (subseq tm < k)
-                             :<= (subseq tm <= k)
-                             :>  (subseq tm > k)
-                             :>= (subseq tm >= k)))]
+          ref-result (into (sorted-map) (tu/subrange-ref tm test k))]
       (= (vec proto-result) (vec ref-result)))))
 
 ;; Cross-implementation: tree-set/map and ordered-set/map produce same nearest results
@@ -197,8 +187,7 @@
 (defspec prop-tree-set-rank-of-absent 100
   (prop/for-all [xs gen-non-empty-int-set]
     (let [ts (->ss xs)
-          ;; Find a value not in the set
-          absent (first (filter #(not (contains? ts %)) (range -1000 1000)))]
+          absent (tu/absent-small-int ts)]
       (when absent
         (= (proto/rank-of ts absent) -1)))))
 
@@ -209,7 +198,7 @@
           start (rand-int n)
           end (+ start (rand-int (inc (- n start))))]
       (let [proto-result (proto/slice ts start end)
-            expected (->> ts seq (drop start) (take (- end start)))]
+            expected (tu/slice-ref ts start end)]
         (= (vec proto-result) (vec expected))))))
 
 (defspec prop-tree-set-median 100
@@ -225,7 +214,7 @@
     (let [ts (->ss xs)
           n (count ts)
           proto-result (proto/percentile ts pct)
-          idx (min (dec n) (long (* (/ (double pct) 100.0) n)))
+          idx (tu/percentile-index n pct)
           expected (nth (seq ts) idx)]
       (= proto-result expected))))
 
@@ -244,7 +233,7 @@
           start (rand-int n)
           end (+ start (rand-int (inc (- n start))))]
       (let [proto-result (proto/slice tm start end)
-            expected (->> tm seq (drop start) (take (- end start)))]
+            expected (tu/slice-ref tm start end)]
         (= (vec proto-result) (vec expected))))))
 
 ;; Cross-implementation: rank-of produces same results
@@ -271,8 +260,12 @@
   (prop/for-all [xs gen-non-empty-int-set]
     (let [ts (->ss xs)
           k (rand-nth (vec ts))
-          [left entry right] (proto/split-key ts k)]
+          [left entry right] (proto/split-key ts k)
+          [ref-left ref-entry ref-right] (tu/split-key-ref ts k)]
       (and (= entry k)
+           (= entry ref-entry)
+           (= (vec left) (vec ref-left))
+           (= (vec right) (vec ref-right))
            (every? #(< % k) left)
            (every? #(> % k) right)
            (= (count ts) (+ (count left) 1 (count right)))))))
@@ -280,10 +273,14 @@
 (defspec prop-tree-set-split-key-absent 100
   (prop/for-all [xs gen-non-empty-int-set]
     (let [ts (->ss xs)
-          absent (first (filter #(not (contains? ts %)) (range -1000 1000)))]
+          absent (tu/absent-small-int ts)]
       (when absent
-        (let [[left entry right] (proto/split-key ts absent)]
+        (let [[left entry right] (proto/split-key ts absent)
+              [ref-left ref-entry ref-right] (tu/split-key-ref ts absent)]
           (and (nil? entry)
+               (= entry ref-entry)
+               (= (vec left) (vec ref-left))
+               (= (vec right) (vec ref-right))
                (every? #(< % absent) left)
                (every? #(> % absent) right)
                (= (count ts) (+ (count left) (count right)))))))))
@@ -293,17 +290,24 @@
     (let [ts (->ss xs)
           n (count ts)
           i (rand-int (inc n))
-          [left right] (proto/split-at ts i)]
+          [left right] (proto/split-at ts i)
+          [ref-left ref-right] (tu/split-at-ref ts i)]
       (and (= (count left) i)
            (= (count right) (- n i))
+           (= (vec left) (vec ref-left))
+           (= (vec right) (vec ref-right))
            (= (vec ts) (vec (concat left right)))))))
 
 (defspec prop-tree-map-split-key-present 100
   (prop/for-all [xs gen-non-empty-int-map-entries]
     (let [tm (->sm xs)
           [k v] (rand-nth (vec tm))
-          [left entry right] (proto/split-key tm k)]
+          [left entry right] (proto/split-key tm k)
+          [ref-left ref-entry ref-right] (tu/split-key-ref tm k)]
       (and (= entry [k v])
+           (= entry ref-entry)
+           (= (vec left) (vec ref-left))
+           (= (vec right) (vec ref-right))
            (every? #(< (key %) k) left)
            (every? #(> (key %) k) right)
            (= (count tm) (+ (count left) 1 (count right)))))))
@@ -311,10 +315,14 @@
 (defspec prop-tree-map-split-key-absent 100
   (prop/for-all [xs gen-non-empty-int-map-entries]
     (let [tm (->sm xs)
-          absent (first (filter #(not (contains? tm %)) (range -1000 1000)))]
+          absent (tu/absent-small-int tm)]
       (when absent
-        (let [[left entry right] (proto/split-key tm absent)]
+        (let [[left entry right] (proto/split-key tm absent)
+              [ref-left ref-entry ref-right] (tu/split-key-ref tm absent)]
           (and (nil? entry)
+               (= entry ref-entry)
+               (= (vec left) (vec ref-left))
+               (= (vec right) (vec ref-right))
                (every? #(< (key %) absent) left)
                (every? #(> (key %) absent) right)
                (= (count tm) (+ (count left) (count right)))))))))
@@ -324,9 +332,12 @@
     (let [tm (->sm xs)
           n (count tm)
           i (rand-int (inc n))
-          [left right] (proto/split-at tm i)]
+          [left right] (proto/split-at tm i)
+          [ref-left ref-right] (tu/split-at-ref tm i)]
       (and (= (count left) i)
            (= (count right) (- n i))
+           (= (vec left) (vec ref-left))
+           (= (vec right) (vec ref-right))
            (= (vec tm) (vec (concat left right)))))))
 
 ;; Cross-implementation: split operations produce equivalent results

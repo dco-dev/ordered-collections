@@ -1,6 +1,10 @@
 (ns com.dean.ordered-collections.fuzzy-test
   (:require [clojure.test :refer [deftest testing is are]]
             [clojure.core.reducers :as r]
+            [clojure.test.check.clojure-test :refer [defspec]]
+            [clojure.test.check.generators :as gen]
+            [clojure.test.check.properties :as prop]
+            [com.dean.ordered-collections.test-utils :as tu]
             [com.dean.ordered-collections.core :as oc]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -226,3 +230,31 @@
       (is (= :b (fm 0.7)))
       (is (= :b (fm 1.4)))
       (is (= :c (fm 1.6))))))
+
+(defspec prop-fuzzy-set-nearest-bruteforce 100
+  (prop/for-all [xs tu/gen-non-empty-int-set
+                 q  gen/small-integer
+                 tiebreak (gen/elements [:< :>])]
+    (let [fs (oc/fuzzy-set xs :tiebreak tiebreak)
+          expected (tu/fuzzy-nearest-ref (set xs) q tiebreak)]
+      (= expected (fs q)))))
+
+(defspec prop-fuzzy-map-nearest-bruteforce 100
+  (prop/for-all [entries tu/gen-non-empty-int-map-entries
+                 q       gen/small-integer
+                 tiebreak (gen/elements [:< :>])]
+    (let [m (into {} entries)
+          fm (oc/fuzzy-map m :tiebreak tiebreak)
+          [expected-k expected-v] (tu/fuzzy-nearest-map-ref m q tiebreak)]
+      (= expected-v (fm q)))))
+
+(defspec prop-fuzzy-map-nearest-triplet-bruteforce 100
+  (prop/for-all [entries tu/gen-non-empty-int-map-entries
+                 q       gen/small-integer
+                 tiebreak (gen/elements [:< :>])]
+    (let [m (into {} entries)
+          fm (oc/fuzzy-map m :tiebreak tiebreak)
+          [expected-k expected-v] (tu/fuzzy-nearest-map-ref m q tiebreak)
+          expected-dist (double (Math/abs ^long (- (long q) (long expected-k))))]
+      (= [expected-k expected-v expected-dist]
+         (oc/fuzzy-nearest fm q)))))

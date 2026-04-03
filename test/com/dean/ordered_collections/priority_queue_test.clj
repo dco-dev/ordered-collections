@@ -1,6 +1,9 @@
 (ns com.dean.ordered-collections.priority-queue-test
   (:require [clojure.test :refer :all]
             [clojure.core.reducers :as r]
+            [clojure.test.check.clojure-test :refer [defspec]]
+            [clojure.test.check.properties :as prop]
+            [com.dean.ordered-collections.test-utils :as tu]
             [com.dean.ordered-collections.core :as oc]))
 
 (defn- pop-all
@@ -141,10 +144,7 @@
                    [[5 :e] [5 :e2] [1 :a] [3 :c] [3 :c2] [2 :b]]
                    [[9 :i] [7 :g] [8 :h] [1 :a] [2 :b] [6 :f]]]]
       (let [pq (oc/priority-queue pairs)
-            expected (->> pairs
-                          (map-indexed (fn [idx [p v]] [p idx v]))
-                          (sort-by (juxt first second))
-                          (mapv (fn [[p _ v]] [p v])))]
+            expected (tu/priority-queue-order pairs)]
         (is (= expected (pop-all pq)))))))
 
 (deftest priority-queue-meta
@@ -152,3 +152,15 @@
     (let [pq (with-meta (oc/priority-queue [[1 :a] [2 :b]]) {:tag :pq})]
       (is (= {:tag :pq} (meta pq)))
       (is (= {} (meta (empty pq)))))))
+
+(defspec prop-priority-queue-pop-order 100
+  (prop/for-all [pairs tu/gen-priority-pairs]
+    (let [pq (oc/priority-queue pairs)
+          expected (tu/priority-queue-order pairs)]
+      (= expected (pop-all pq)))))
+
+(defspec prop-priority-queue-pop-order-descending 100
+  (prop/for-all [pairs tu/gen-priority-pairs]
+    (let [pq (oc/priority-queue pairs :comparator >)
+          expected (tu/priority-queue-order pairs true)]
+      (= expected (pop-all pq)))))

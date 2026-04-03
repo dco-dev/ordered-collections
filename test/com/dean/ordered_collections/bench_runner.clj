@@ -17,7 +17,10 @@
             [clojure.pprint :as pp]
             [com.dean.ordered-collections.bench-utils :as bu
              :refer [generate-pairs generate-elements generate-lookup-keys
-                     generate-string-keys format-ns parse-standard-args]]
+                     generate-string-keys build-map-variants build-set-variants
+                     build-string-map-variants overlapping-set-variants
+                     split-workload fold-frequency-workload format-ns
+                     parse-standard-args]]
             [com.dean.ordered-collections.core :as core]
             [com.dean.ordered-collections.tree.order :as order])
   (:import [java.time Instant LocalDateTime]
@@ -90,13 +93,11 @@
 
 (defn bench-map-lookup [n & {:keys [num-lookups] :or {num-lookups 10000}}]
   (let [pairs (generate-pairs n)
-        sm    (into (sorted-map) pairs)
-        am    (into (avl/sorted-map) pairs)
-        om    (core/ordered-map pairs)
+        {:keys [sorted-map data-avl ordered-map]} (build-map-variants pairs)
         ^ints ks (generate-lookup-keys n num-lookups)]
-    {:sorted-map  (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (get sm (aget ks i)))))
-     :data-avl    (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (get am (aget ks i)))))
-     :ordered-map (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (om (aget ks i)))))}))
+    {:sorted-map  (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (get sorted-map (aget ks i)))))
+     :data-avl    (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (get data-avl (aget ks i)))))
+     :ordered-map (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (ordered-map (aget ks i)))))}))
 
 (defn bench-map-iteration [n]
   (let [pairs (generate-pairs n)
@@ -109,14 +110,12 @@
 
 (defn bench-map-fold [n]
   (let [pairs (generate-pairs n)
-        sm    (into (sorted-map) pairs)
-        am    (into (avl/sorted-map) pairs)
-        om    (core/ordered-map pairs)
+        {:keys [sorted-map data-avl ordered-map]} (build-map-variants pairs)
         sum-keys (fn [^long acc entry] (+ acc (long (key entry))))]
-    {:sorted-map-reduce  (do (print ".") (flush) (bench-expr (reduce sum-keys 0 sm)))
-     :data-avl-reduce    (do (print ".") (flush) (bench-expr (reduce sum-keys 0 am)))
-     :ordered-map-reduce (do (print ".") (flush) (bench-expr (reduce sum-keys 0 om)))
-     :ordered-map-fold   (do (print ".") (flush) (bench-expr (r/fold + sum-keys om)))}))
+    {:sorted-map-reduce  (do (print ".") (flush) (bench-expr (reduce sum-keys 0 sorted-map)))
+     :data-avl-reduce    (do (print ".") (flush) (bench-expr (reduce sum-keys 0 data-avl)))
+     :ordered-map-reduce (do (print ".") (flush) (bench-expr (reduce sum-keys 0 ordered-map)))
+     :ordered-map-fold   (do (print ".") (flush) (bench-expr (r/fold + sum-keys ordered-map)))}))
 
 (defn bench-set-construction [n]
   (let [elems (generate-elements n)]
@@ -151,13 +150,11 @@
 
 (defn bench-set-lookup [n & {:keys [num-lookups] :or {num-lookups 10000}}]
   (let [elems (generate-elements n)
-        ss    (into (sorted-set) elems)
-        as    (into (avl/sorted-set) elems)
-        os    (core/ordered-set elems)
+        {:keys [sorted-set data-avl ordered-set]} (build-set-variants elems)
         ^ints ks (generate-lookup-keys n num-lookups)]
-    {:sorted-set  (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (contains? ss (aget ks i)))))
-     :data-avl    (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (contains? as (aget ks i)))))
-     :ordered-set (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (contains? os (aget ks i)))))}))
+    {:sorted-set  (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (contains? sorted-set (aget ks i)))))
+     :data-avl    (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (contains? data-avl (aget ks i)))))
+     :ordered-set (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (contains? ordered-set (aget ks i)))))}))
 
 (defn bench-set-iteration [n]
   (let [elems (generate-elements n)
@@ -170,82 +167,59 @@
 
 (defn bench-set-fold [n]
   (let [elems (generate-elements n)
-        ss    (into (sorted-set) elems)
-        as    (into (avl/sorted-set) elems)
-        os    (core/ordered-set elems)
+        {:keys [sorted-set data-avl ordered-set]} (build-set-variants elems)
         sum-elems (fn [^long acc x] (+ acc (long x)))]
-    {:sorted-set-fold  (do (print ".") (flush) (bench-expr (r/fold + sum-elems ss)))
-     :data-avl-fold    (do (print ".") (flush) (bench-expr (r/fold + sum-elems as)))
-     :ordered-set-fold (do (print ".") (flush) (bench-expr (r/fold + sum-elems os)))}))
+    {:sorted-set-fold  (do (print ".") (flush) (bench-expr (r/fold + sum-elems sorted-set)))
+     :data-avl-fold    (do (print ".") (flush) (bench-expr (r/fold + sum-elems data-avl)))
+     :ordered-set-fold (do (print ".") (flush) (bench-expr (r/fold + sum-elems ordered-set)))}))
 
 (defn bench-set-fold-freq [n]
   (let [elems (generate-elements n)
-        ss    (into (sorted-set) elems)
-        as    (into (avl/sorted-set) elems)
-        os    (core/ordered-set elems)
-        combinef (fn ([] {}) ([m1 m2] (merge-with + m1 m2)))
-        reducef  (fn [m x] (update m (mod (long x) 100) (fnil inc 0)))]
-    {:sorted-set-fold-freq  (do (print ".") (flush) (bench-expr (r/fold combinef reducef ss)))
-     :data-avl-fold-freq    (do (print ".") (flush) (bench-expr (r/fold combinef reducef as)))
-     :ordered-set-fold-freq (do (print ".") (flush) (bench-expr (r/fold combinef reducef os)))}))
+        {:keys [sets combinef reducef]} (fold-frequency-workload elems)
+        {:keys [sorted-set data-avl ordered-set]} sets]
+    {:sorted-set-fold-freq  (do (print ".") (flush) (bench-expr (r/fold combinef reducef sorted-set)))
+     :data-avl-fold-freq    (do (print ".") (flush) (bench-expr (r/fold combinef reducef data-avl)))
+     :ordered-set-fold-freq (do (print ".") (flush) (bench-expr (r/fold combinef reducef ordered-set)))}))
 
 (defn bench-set-reduce-vs-fold-freq [n]
   (let [elems (generate-elements n)
-        ss    (into (sorted-set) elems)
-        as    (into (avl/sorted-set) elems)
-        os    (core/ordered-set elems)
-        combinef (fn ([] {}) ([m1 m2] (merge-with + m1 m2)))
-        reducef  (fn [m x] (update m (mod (long x) 100) (fnil inc 0)))]
-    {:sorted-set-reduce-freq  (do (print ".") (flush) (bench-expr (reduce reducef {} ss)))
-     :sorted-set-fold-freq    (do (print ".") (flush) (bench-expr (r/fold combinef reducef ss)))
-     :data-avl-reduce-freq    (do (print ".") (flush) (bench-expr (reduce reducef {} as)))
-     :data-avl-fold-freq      (do (print ".") (flush) (bench-expr (r/fold combinef reducef as)))
-     :ordered-set-reduce-freq (do (print ".") (flush) (bench-expr (reduce reducef {} os)))
-     :ordered-set-fold-freq   (do (print ".") (flush) (bench-expr (r/fold combinef reducef os)))}))
+        {:keys [sets combinef reducef]} (fold-frequency-workload elems)
+        {:keys [sorted-set data-avl ordered-set]} sets]
+    {:sorted-set-reduce-freq  (do (print ".") (flush) (bench-expr (reduce reducef {} sorted-set)))
+     :sorted-set-fold-freq    (do (print ".") (flush) (bench-expr (r/fold combinef reducef sorted-set)))
+     :data-avl-reduce-freq    (do (print ".") (flush) (bench-expr (reduce reducef {} data-avl)))
+     :data-avl-fold-freq      (do (print ".") (flush) (bench-expr (r/fold combinef reducef data-avl)))
+     :ordered-set-reduce-freq (do (print ".") (flush) (bench-expr (reduce reducef {} ordered-set)))
+     :ordered-set-fold-freq   (do (print ".") (flush) (bench-expr (r/fold combinef reducef ordered-set)))}))
 
 (defn bench-set-union [n]
-  (let [elems1 (range n)
-        elems2 (range (quot n 2) (+ n (quot n 2)))
-        hs1    (set elems1)
-        hs2    (set elems2)
-        ss1    (into (sorted-set) elems1)
-        ss2    (into (sorted-set) elems2)
-        as1    (into (avl/sorted-set) elems1)
-        as2    (into (avl/sorted-set) elems2)
-        os1    (core/ordered-set elems1)
-        os2    (core/ordered-set elems2)]
+  (let [{left :left right :right} (overlapping-set-variants n)
+        hs1 (:hash-set left), hs2 (:hash-set right)
+        ss1 (:sorted-set left), ss2 (:sorted-set right)
+        as1 (:data-avl left), as2 (:data-avl right)
+        os1 (:ordered-set left), os2 (:ordered-set right)]
     {:clojure-set (do (print ".") (flush) (bench-expr (cset/union hs1 hs2)))
      :sorted-set  (do (print ".") (flush) (bench-expr (cset/union ss1 ss2)))
      :data-avl    (do (print ".") (flush) (bench-expr (cset/union as1 as2)))
      :ordered-set (do (print ".") (flush) (bench-expr (core/union os1 os2)))}))
 
 (defn bench-set-intersection [n]
-  (let [elems1 (range n)
-        elems2 (range (quot n 2) (+ n (quot n 2)))
-        hs1    (set elems1)
-        hs2    (set elems2)
-        ss1    (into (sorted-set) elems1)
-        ss2    (into (sorted-set) elems2)
-        as1    (into (avl/sorted-set) elems1)
-        as2    (into (avl/sorted-set) elems2)
-        os1    (core/ordered-set elems1)
-        os2    (core/ordered-set elems2)]
+  (let [{left :left right :right} (overlapping-set-variants n)
+        hs1 (:hash-set left), hs2 (:hash-set right)
+        ss1 (:sorted-set left), ss2 (:sorted-set right)
+        as1 (:data-avl left), as2 (:data-avl right)
+        os1 (:ordered-set left), os2 (:ordered-set right)]
     {:clojure-set (do (print ".") (flush) (bench-expr (cset/intersection hs1 hs2)))
      :sorted-set  (do (print ".") (flush) (bench-expr (cset/intersection ss1 ss2)))
      :data-avl    (do (print ".") (flush) (bench-expr (cset/intersection as1 as2)))
      :ordered-set (do (print ".") (flush) (bench-expr (core/intersection os1 os2)))}))
 
 (defn bench-set-difference [n]
-  (let [elems1 (range n)
-        elems2 (range (quot n 2) (+ n (quot n 2)))
-        hs1    (set elems1)
-        hs2    (set elems2)
-        ss1    (into (sorted-set) elems1)
-        ss2    (into (sorted-set) elems2)
-        as1    (into (avl/sorted-set) elems1)
-        as2    (into (avl/sorted-set) elems2)
-        os1    (core/ordered-set elems1)
-        os2    (core/ordered-set elems2)]
+  (let [{left :left right :right} (overlapping-set-variants n)
+        hs1 (:hash-set left), hs2 (:hash-set right)
+        ss1 (:sorted-set left), ss2 (:sorted-set right)
+        as1 (:data-avl left), as2 (:data-avl right)
+        os1 (:ordered-set left), os2 (:ordered-set right)]
     {:clojure-set (do (print ".") (flush) (bench-expr (cset/difference hs1 hs2)))
      :sorted-set  (do (print ".") (flush) (bench-expr (cset/difference ss1 ss2)))
      :data-avl    (do (print ".") (flush) (bench-expr (cset/difference as1 as2)))
@@ -280,19 +254,17 @@
      :ordered-set (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (.indexOf ^java.util.List os (aget ks i)))))}))
 
 (defn bench-split [n & {:keys [num-ops] :or {num-ops 100}}]
-  (let [elems (generate-elements n)
-        as    (into (avl/sorted-set) elems)
-        os    (core/ordered-set elems)
-        ^ints ks (generate-lookup-keys n num-ops)]
+  (let [{:keys [data-avl ordered-set keys]} (split-workload n num-ops)
+        ^ints ks keys]
     {:data-avl    (do (print ".") (flush)
-                      (bench-expr (dotimes [i num-ops] (avl/split-key (aget ks i) as))))
+                      (bench-expr (dotimes [i num-ops] (avl/split-key (aget ks i) data-avl))))
      :ordered-set (do (print ".") (flush)
                       (bench-expr
                         (dotimes [i num-ops]
                           (let [k (aget ks i)]
-                            [(.headSet ^java.util.SortedSet os k)
-                             (contains? os k)
-                             (.tailSet ^java.util.SortedSet os k)]))))}))
+                            [(.headSet ^java.util.SortedSet ordered-set k)
+                             (contains? ordered-set k)
+                             (.tailSet ^java.util.SortedSet ordered-set k)]))))}))
 
 (def ^:private string-cmp
   (order/compare-by #(neg? (compare (str %1) (str %2)))))
@@ -309,13 +281,11 @@
   (let [ks    (generate-string-keys n)
         pairs (mapv (fn [k] [k k]) ks)
         cmp   #(compare (str %1) (str %2))
-        sm    (into (sorted-map-by cmp) pairs)
-        am    (into (avl/sorted-map-by cmp) pairs)
-        om    (core/ordered-map-with string-cmp pairs)
+        {:keys [sorted-map-by data-avl ordered-map]} (build-string-map-variants pairs cmp string-cmp)
         ^objects look (object-array (repeatedly num-lookups #(nth ks (rand-int n))))]
-    {:sorted-map-by (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (get sm (aget look i)))))
-     :data-avl      (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (get am (aget look i)))))
-     :ordered-map   (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (om (aget look i)))))}))
+    {:sorted-map-by (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (get sorted-map-by (aget look i)))))
+     :data-avl      (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (get data-avl (aget look i)))))
+     :ordered-map   (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (ordered-map (aget look i)))))}))
 
 (defn bench-string-iteration [n]
   (let [ks    (generate-string-keys n)

@@ -20,7 +20,9 @@
             [clojure.string :as str]
             [com.dean.ordered-collections.bench-utils :as bu
              :refer [bench format-ns format-result print-header print-row
-                     has-flag? get-arg-value parse-sizes parse-standard-args]]
+                     has-flag? get-arg-value parse-sizes parse-standard-args
+                     build-map-variants build-set-variants overlapping-set-variants
+                     split-workload fold-frequency-workload]]
             [com.dean.ordered-collections.core :as core]
             [com.dean.ordered-collections.tree.node :as node]
             [com.dean.ordered-collections.tree.tree :as tree]
@@ -84,14 +86,12 @@
                 ["sorted-map" "data.avl" "ordered-map"])
   (doseq [n sizes]
     (let [pairs (mapv (fn [k] [k (str k)]) (shuffle (range n)))
-          sm    (into (sorted-map) pairs)
-          am    (into (avl/sorted-map) pairs)
-          om    (core/ordered-map pairs)
+          {:keys [sorted-map data-avl ordered-map]} (build-map-variants pairs)
           ks    (int-array (repeatedly 10000 #(rand-int n)))]
       (print-row n
-        [(bench 20 10 (dotimes [i 10000] (get sm (aget ks i))))
-         (bench 20 10 (dotimes [i 10000] (get am (aget ks i))))
-         (bench 20 10 (dotimes [i 10000] (om (aget ks i))))]))))
+        [(bench 20 10 (dotimes [i 10000] (get sorted-map (aget ks i))))
+         (bench 20 10 (dotimes [i 10000] (get data-avl (aget ks i))))
+         (bench 20 10 (dotimes [i 10000] (ordered-map (aget ks i))))]))))
 
 (defn bench-map-iteration
   "Benchmark traversing all N entries via reduce."
@@ -180,14 +180,12 @@
                 ["sorted-set" "data.avl" "ordered-set"])
   (doseq [n sizes]
     (let [elems (shuffle (range n))
-          ss    (into (sorted-set) elems)
-          as    (into (avl/sorted-set) elems)
-          os    (core/ordered-set elems)
+          {:keys [sorted-set data-avl ordered-set]} (build-set-variants elems)
           ks    (int-array (repeatedly 10000 #(rand-int n)))]
       (print-row n
-        [(bench 20 10 (dotimes [i 10000] (contains? ss (aget ks i))))
-         (bench 20 10 (dotimes [i 10000] (contains? as (aget ks i))))
-         (bench 20 10 (dotimes [i 10000] (contains? os (aget ks i))))]))))
+        [(bench 20 10 (dotimes [i 10000] (contains? sorted-set (aget ks i))))
+         (bench 20 10 (dotimes [i 10000] (contains? data-avl (aget ks i))))
+         (bench 20 10 (dotimes [i 10000] (contains? ordered-set (aget ks i))))]))))
 
 (defn bench-set-iteration
   "Benchmark traversing all N elements via reduce."
@@ -246,17 +244,15 @@
   (print-header "SPLIT-KEY: split set at random key (100 ops)"
                 ["data.avl" "ordered-set"])
   (doseq [n sizes]
-    (let [elems (shuffle (range n))
-          as    (into (avl/sorted-set) elems)
-          os    (core/ordered-set elems)
-          ks    (int-array (repeatedly 100 #(rand-int n)))]
+    (let [{:keys [data-avl ordered-set keys]} (split-workload n 100)
+          ^ints ks keys]
       (print-row n
-        [(bench 2 5 (dotimes [i 100] (avl/split-key (aget ks i) as)))
+        [(bench 2 5 (dotimes [i 100] (avl/split-key (aget ks i) data-avl)))
          (bench 2 5 (dotimes [i 100]
                       (let [k (aget ks i)]
-                        [(.headSet ^java.util.SortedSet os k)
-                         (contains? os k)
-                         (.tailSet ^java.util.SortedSet os k)])))]))))
+                        [(.headSet ^java.util.SortedSet ordered-set k)
+                         (contains? ordered-set k)
+                         (.tailSet ^java.util.SortedSet ordered-set k)])))]))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Parallel Fold Benchmarks (clojure.core.reducers/fold)
@@ -271,9 +267,7 @@
                 ["sorted-set" "data.avl" "ordered-set"])
   (doseq [n sizes]
     (let [elems (shuffle (range n))
-          ss    (into (sorted-set) elems)
-          as    (into (avl/sorted-set) elems)
-          os    (core/ordered-set elems)
+          {:keys [sorted-set data-avl ordered-set]} (build-set-variants elems)
           ;; Parallel fold with chunk size
           fold-time (fn [coll]
                       (first (bench 20 10
@@ -281,9 +275,9 @@
                                        +   ;; combinef
                                        (fn [^long acc x] (+ acc (long x)))
                                        coll))))
-          ss-fold (fold-time ss)
-          as-fold (fold-time as)
-          os-fold (fold-time os)
+          ss-fold (fold-time sorted-set)
+          as-fold (fold-time data-avl)
+          os-fold (fold-time ordered-set)
           speedup (if (pos? os-fold) (format "%.1fx" (/ (double ss-fold) os-fold)) "N/A")]
       (print-row n
         [[ss-fold 0] [as-fold 0] [os-fold 0]])
@@ -326,19 +320,15 @@
   (println (apply str (repeat 150 "-")))
   (doseq [n sizes]
     (let [elems (shuffle (range n))
-          hs    (set elems)
-          ss    (into (sorted-set) elems)
-          as    (into (avl/sorted-set) elems)
-          os    (core/ordered-set elems)
-          combinef (fn ([] {}) ([m1 m2] (merge-with + m1 m2)))
-          reducef  (fn [m x] (update m (mod (long x) 100) (fnil inc 0)))
-          [hs-reduce _] (bench 20 10 (reduce reducef {} hs))
-          [ss-reduce _] (bench 20 10 (reduce reducef {} ss))
-          [ss-fold _]   (bench 20 10 (r/fold combinef reducef ss))
-          [as-reduce _] (bench 20 10 (reduce reducef {} as))
-          [as-fold _]   (bench 20 10 (r/fold combinef reducef as))
-          [os-reduce _] (bench 20 10 (reduce reducef {} os))
-          [os-fold _]   (bench 20 10 (r/fold combinef reducef os))]
+          {:keys [sets combinef reducef]} (fold-frequency-workload elems)
+          {:keys [hash-set sorted-set data-avl ordered-set]} sets
+          [hs-reduce _] (bench 20 10 (reduce reducef {} hash-set))
+          [ss-reduce _] (bench 20 10 (reduce reducef {} sorted-set))
+          [ss-fold _]   (bench 20 10 (r/fold combinef reducef sorted-set))
+          [as-reduce _] (bench 20 10 (reduce reducef {} data-avl))
+          [as-fold _]   (bench 20 10 (r/fold combinef reducef data-avl))
+          [os-reduce _] (bench 20 10 (reduce reducef {} ordered-set))
+          [os-fold _]   (bench 20 10 (r/fold combinef reducef ordered-set))]
       (println (format "%-10d %-20s %-20s %-20s %-20s %-20s %-20s %-20s"
                        n
                        (format-ns hs-reduce)
@@ -485,15 +475,13 @@
   (print-header "SET UNION: union of two sets of size N (overlapping 50%)"
                 ["clojure.set/hash-set" "clojure.set/sorted-set" "ordered-set"])
   (doseq [n sizes]
-    (let [;; Create two sets with 50% overlap
-          s1-elems (range 0 n)
-          s2-elems (range (quot n 2) (+ n (quot n 2)))
-          hs1 (set s1-elems)
-          hs2 (set s2-elems)
-          cs1 (into (sorted-set) s1-elems)
-          cs2 (into (sorted-set) s2-elems)
-          os1 (core/ordered-set s1-elems)
-          os2 (core/ordered-set s2-elems)]
+    (let [{left :left right :right} (overlapping-set-variants n)
+          hs1 (:hash-set left)
+          hs2 (:hash-set right)
+          cs1 (:sorted-set left)
+          cs2 (:sorted-set right)
+          os1 (:ordered-set left)
+          os2 (:ordered-set right)]
       (print-row n
         [(bench 2 5 (clojure.set/union hs1 hs2))
          (bench 2 5 (clojure.set/union cs1 cs2))
@@ -505,14 +493,13 @@
   (print-header "SET INTERSECTION: intersection of two sets of size N"
                 ["clojure.set/hash-set" "clojure.set/sorted-set" "ordered-set"])
   (doseq [n sizes]
-    (let [s1-elems (range 0 n)
-          s2-elems (range (quot n 2) (+ n (quot n 2)))
-          hs1 (set s1-elems)
-          hs2 (set s2-elems)
-          cs1 (into (sorted-set) s1-elems)
-          cs2 (into (sorted-set) s2-elems)
-          os1 (core/ordered-set s1-elems)
-          os2 (core/ordered-set s2-elems)]
+    (let [{left :left right :right} (overlapping-set-variants n)
+          hs1 (:hash-set left)
+          hs2 (:hash-set right)
+          cs1 (:sorted-set left)
+          cs2 (:sorted-set right)
+          os1 (:ordered-set left)
+          os2 (:ordered-set right)]
       (print-row n
         [(bench 2 5 (clojure.set/intersection hs1 hs2))
          (bench 2 5 (clojure.set/intersection cs1 cs2))
@@ -524,14 +511,13 @@
   (print-header "SET DIFFERENCE: difference of two sets of size N"
                 ["clojure.set/hash-set" "clojure.set/sorted-set" "ordered-set"])
   (doseq [n sizes]
-    (let [s1-elems (range 0 n)
-          s2-elems (range (quot n 2) (+ n (quot n 2)))
-          hs1 (set s1-elems)
-          hs2 (set s2-elems)
-          cs1 (into (sorted-set) s1-elems)
-          cs2 (into (sorted-set) s2-elems)
-          os1 (core/ordered-set s1-elems)
-          os2 (core/ordered-set s2-elems)]
+    (let [{left :left right :right} (overlapping-set-variants n)
+          hs1 (:hash-set left)
+          hs2 (:hash-set right)
+          cs1 (:sorted-set left)
+          cs2 (:sorted-set right)
+          os1 (:ordered-set left)
+          os2 (:ordered-set right)]
       (print-row n
         [(bench 2 5 (clojure.set/difference hs1 hs2))
          (bench 2 5 (clojure.set/difference cs1 cs2))

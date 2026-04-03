@@ -1,6 +1,10 @@
 (ns com.dean.ordered-collections.segment-tree-test
   "Rigorous tests for SegmentTree - range aggregate queries with O(log n) updates."
   (:require [clojure.test :refer [deftest testing is]]
+            [clojure.test.check.clojure-test :refer [defspec]]
+            [clojure.test.check.generators :as gen]
+            [clojure.test.check.properties :as prop]
+            [com.dean.ordered-collections.test-utils :as tu]
             [com.dean.ordered-collections.core :as oc])
   (:import [java.time Instant]))
 
@@ -12,7 +16,7 @@
 (defn- ref-range-sum
   "Reference: sum values for keys in [lo, hi]."
   [m lo hi]
-  (reduce + 0 (for [[k v] m :when (<= lo k hi)] v)))
+  (tu/ref-range-sum m lo hi))
 
 (defn- ref-range-min
   "Reference: min value for keys in [lo, hi]."
@@ -565,3 +569,25 @@
       (is (= (reduce + (vals data)) (oc/aggregate st)))
       ;; Full range query should equal reduce
       (is (= (reduce + (vals data)) (oc/query st 0 (dec n)))))))
+
+(defspec prop-segment-tree-query-equivalence 100
+  (prop/for-all [entries tu/gen-int-map-entries
+                 ranges  (gen/vector tu/gen-query-range 0 30)]
+    (let [m  (into (sorted-map) entries)
+          st (oc/sum-tree entries)]
+      (every? (fn [[lo hi]]
+                (= (tu/ref-range-sum m lo hi)
+                   (oc/query st lo hi)))
+              ranges))))
+
+(defspec prop-segment-tree-update-equivalence 100
+  (prop/for-all [entries  tu/gen-int-map-entries
+                 updates  tu/gen-segment-updates
+                 ranges   (gen/vector tu/gen-query-range 0 20)]
+    (let [m'  (reduce (fn [m [k v]] (assoc m k v)) (into (sorted-map) entries) updates)
+          st' (reduce (fn [st [k v]] (oc/update-val st k v)) (oc/sum-tree entries) updates)]
+      (and (= (reduce + 0 (vals m')) (oc/aggregate st'))
+           (every? (fn [[lo hi]]
+                     (= (tu/ref-range-sum m' lo hi)
+                        (oc/query st' lo hi)))
+                   ranges)))))

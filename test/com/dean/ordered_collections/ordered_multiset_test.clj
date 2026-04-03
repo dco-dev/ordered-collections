@@ -1,6 +1,10 @@
 (ns com.dean.ordered-collections.ordered-multiset-test
   (:require [clojure.test :refer :all]
             [clojure.core.reducers :as r]
+            [clojure.test.check.clojure-test :refer [defspec]]
+            [clojure.test.check.generators :as gen]
+            [clojure.test.check.properties :as prop]
+            [com.dean.ordered-collections.test-utils :as tu]
             [com.dean.ordered-collections.core :as oc]))
 
 (deftest ordered-multiset-basic
@@ -137,3 +141,25 @@
       (is (.contains ms 2))
       (is (.containsAll ms [1 2]))
       (is (not (.containsAll ms [1 2 99]))))))
+
+(defspec prop-ordered-multiset-frequencies 100
+  (prop/for-all [xs tu/gen-multiset-elems]
+    (let [ms (oc/ordered-multiset xs)]
+      (= (frequencies xs)
+         (oc/element-frequencies ms)))))
+
+(defspec prop-ordered-multiset-disj-one 100
+  (prop/for-all [xs tu/gen-multiset-elems
+                 x  gen/small-integer]
+    (let [ms (oc/ordered-multiset xs)
+          ms' (oc/disj-one ms x)
+          expected-freqs (tu/multiset-disj-one-frequencies xs x)]
+      (= expected-freqs (oc/element-frequencies ms')))))
+
+(defspec prop-ordered-multiset-disj-all 100
+  (prop/for-all [xs tu/gen-multiset-elems
+                 x  gen/small-integer]
+    (let [ms (oc/ordered-multiset xs)
+          ms' (oc/disj-all ms x)
+          expected (vec (sort (remove #(= x %) xs)))]
+      (= expected (vec (seq ms'))))))

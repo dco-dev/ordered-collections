@@ -101,6 +101,124 @@
                   (gen/return [lo (inc hi)])
                   (gen/return [lo hi]))))))
 
+(def gen-query-range
+  "Generator for inclusive query ranges [lo hi] with lo <= hi."
+  (gen/let [a gen/small-integer
+            b gen/small-integer]
+    [(min a b) (max a b)]))
+
+(def gen-priority-pairs
+  "Generator for [priority value] pairs, allowing duplicate priorities."
+  (gen/vector (gen/tuple gen/small-integer gen/small-integer) 0 200))
+
+(def gen-multiset-elems
+  "Generator for duplicate-heavy multiset inputs."
+  (gen/vector gen/small-integer 0 300))
+
+(def gen-segment-updates
+  "Generator for segment-tree [k v] updates, allowing repeated keys."
+  (gen/vector (gen/tuple gen/small-integer gen/small-integer) 0 50))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Reference Models for Property Tests
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn priority-queue-order
+  "Reference queue order for [priority value] pairs.
+
+   Equal priorities are FIFO in forward queue order."
+  ([pairs]
+   (priority-queue-order pairs false))
+  ([pairs descending?]
+   (->> pairs
+        (map-indexed (fn [idx [p v]] [p idx v]))
+        (sort-by (juxt (if descending? (comp - first) first) second))
+        (mapv (fn [[p _ v]] [p v])))))
+
+(defn multiset-disj-one-frequencies
+  "Reference frequencies after removing one occurrence of x."
+  [xs x]
+  (let [freqs (frequencies xs)]
+    (if (pos? (get freqs x 0))
+      (let [next-n (dec (get freqs x))]
+        (if (zero? next-n)
+          (dissoc freqs x)
+          (assoc freqs x next-n)))
+      freqs)))
+
+(defn fuzzy-nearest-ref
+  "Reference nearest value for integer fuzzy structures."
+  [xs q tiebreak]
+  (when (seq xs)
+    (let [dist (fn [x] (Math/abs ^long (- (long q) (long x))))]
+      (first
+        (sort-by (fn [x]
+                   [(dist x)
+                    (case tiebreak
+                      :< (long x)
+                      :> (- (long x)))])
+                 xs)))))
+
+(defn fuzzy-nearest-map-ref
+  "Reference nearest [key value] pair for integer fuzzy maps."
+  [m q tiebreak]
+  (when (seq m)
+    (let [k (fuzzy-nearest-ref (keys m) q tiebreak)]
+      [k (get m k)])))
+
+(defn ref-range-sum
+  "Reference: sum values for keys in [lo, hi]."
+  [m lo hi]
+  (reduce + 0 (for [[k v] m :when (<= lo k hi)] v)))
+
+(defn absent-small-int
+  "Return a small integer not present in coll, or nil if none is found."
+  [coll]
+  (first (filter #(not (contains? coll %)) (range -1000 1000))))
+
+(defn nearest-ref
+  "Reference nearest result for ordered collections."
+  [coll test k]
+  (case test
+    :<  (first (rsubseq coll < k))
+    :<= (first (rsubseq coll <= k))
+    :>  (first (subseq coll > k))
+    :>= (first (subseq coll >= k))))
+
+(defn subrange-ref
+  "Reference subrange result for ordered collections."
+  [coll test k]
+  (case test
+    :<  (subseq coll < k)
+    :<= (subseq coll <= k)
+    :>  (subseq coll > k)
+    :>= (subseq coll >= k)))
+
+(defn slice-ref
+  "Reference slice by index over an ordered collection."
+  [coll start end]
+  (->> coll seq (drop start) (take (- end start))))
+
+(defn split-key-ref
+  "Reference split-key result over an ordered collection."
+  [coll k]
+  [(into (empty coll) (subrange-ref coll :< k))
+   (when-let [v (get coll k)]
+     (if (map? coll) [k v] v))
+   (into (empty coll) (subrange-ref coll :> k))])
+
+(defn split-at-ref
+  "Reference split-at result over an ordered collection."
+  [coll i]
+  [(into (empty coll) (slice-ref coll 0 i))
+   (into (empty coll) (slice-ref coll i (count coll)))])
+
+(defn percentile-index
+  "Reference percentile index used by ranked collection tests."
+  [n pct]
+  (min (dec n) (long (* (/ (double pct) 100.0) n))))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Collection Constructors

@@ -4,12 +4,15 @@
    Provides:
    1. Simple bench macro for quick iteration (no external deps)
    2. Test data generators
-   3. Table printing utilities
-   4. CLI argument parsing helpers
+   3. Shared benchmark workload/build helpers
+   4. Table printing utilities
+   5. CLI argument parsing helpers
 
    Usage:
      (:require [com.dean.ordered-collections.bench-utils :as bu])"
-  (:require [clojure.string :as str]))
+  (:require [clojure.data.avl :as avl]
+            [clojure.string :as str]
+            [com.dean.ordered-collections.core :as oc]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -84,6 +87,62 @@
   "Generate n formatted string keys."
   [n]
   (mapv #(format "key-%08d" %) (shuffle (range n))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Shared Benchmark Workloads
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn build-map-variants
+  "Build the standard map competitors for the given key/value pairs."
+  [pairs]
+  {:sorted-map  (into (sorted-map) pairs)
+   :data-avl    (into (avl/sorted-map) pairs)
+   :ordered-map (oc/ordered-map pairs)})
+
+(defn build-set-variants
+  "Build the standard set competitors for the given elements."
+  [elems]
+  {:hash-set    (set elems)
+   :sorted-set  (into (sorted-set) elems)
+   :data-avl    (into (avl/sorted-set) elems)
+   :ordered-set (oc/ordered-set elems)})
+
+(defn build-string-map-variants
+  "Build the standard string-key map competitors for [k v] pairs."
+  [pairs cmp ordered-cmp]
+  {:sorted-map-by (into (sorted-map-by cmp) pairs)
+   :data-avl      (into (avl/sorted-map-by cmp) pairs)
+   :ordered-map   (oc/ordered-map-with ordered-cmp pairs)})
+
+(defn overlapping-set-elements
+  "Generate two element ranges of size n with 50% overlap."
+  [n]
+  [(range 0 n)
+   (range (quot n 2) (+ n (quot n 2)))])
+
+(defn overlapping-set-variants
+  "Build the standard set competitors for the 50%-overlap set-op workload."
+  [n]
+  (let [[elems1 elems2] (overlapping-set-elements n)]
+    {:left  (build-set-variants elems1)
+     :right (build-set-variants elems2)}))
+
+(defn split-workload
+  "Build the standard split benchmark workload."
+  [n num-ops]
+  (let [elems (generate-elements n)
+        sets  (build-set-variants elems)]
+    {:data-avl (:data-avl sets)
+     :ordered-set (:ordered-set sets)
+     :keys (generate-lookup-keys n num-ops)}))
+
+(defn fold-frequency-workload
+  "Build the nontrivial frequency-map fold workload and its reducers."
+  [elems]
+  {:sets     (build-set-variants elems)
+   :combinef (fn ([] {}) ([m1 m2] (merge-with + m1 m2)))
+   :reducef  (fn [m x] (update m (mod (long x) 100) (fnil inc 0)))})
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
