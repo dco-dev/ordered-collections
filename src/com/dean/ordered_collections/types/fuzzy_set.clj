@@ -140,11 +140,11 @@
 
   clojure.lang.Seqable
   (seq [_]
-    (tree/key-seq root (tree/node-size root)))
+    (tree/node-key-seq root (tree/node-size root)))
 
   clojure.lang.Reversible
   (rseq [_]
-    (tree/key-seq-reverse root (tree/node-size root)))
+    (tree/node-key-seq-reverse root (tree/node-size root)))
 
   clojure.lang.ILookup
   ;; Fuzzy lookup - returns the nearest element
@@ -233,18 +233,18 @@
     entry)
   (seq [_ ascending]
     (if ascending
-      (tree/key-seq root)
-      (tree/key-seq-reverse root)))
+      (tree/node-key-seq root)
+      (tree/node-key-seq-reverse root)))
   (seqFrom [this k ascending]
     (with-fuzzy-set this
       (let [[lt present gt] (tree/node-split root k)]
         (if ascending
           (if present
-            (cons (first present) (tree/key-seq gt))
-            (tree/key-seq gt))
+            (cons (first present) (tree/node-key-seq gt))
+            (tree/node-key-seq gt))
           (if present
-            (cons (first present) (tree/key-seq-reverse lt))
-            (tree/key-seq-reverse lt))))))
+            (cons (first present) (tree/node-key-seq-reverse lt))
+            (tree/node-key-seq-reverse lt))))))
 
   clojure.lang.IPersistentSet
   (equiv [this o]

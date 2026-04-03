@@ -1886,8 +1886,11 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Efficient Direct Seq Types
 ;;
-;; These implement ISeq directly without lazy-seq or map wrappers,
-;; providing faster iteration for ordered collections.
+;; The tree already supports ordinary lazy iteration via `node-seq`,
+;; `node-seq-reverse`, `seq`, `rseq`, `subseq`, and friends. These direct seq
+;; types exist for the same reason as the enumerators: they preserve normal
+;; seq behavior while avoiding the extra allocation and wrapper overhead of
+;; generic `lazy-seq` and `map` composition in hot collection traversal paths.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn- seq-equiv
@@ -2042,16 +2045,16 @@
   (withMeta [_ m]
     (EntrySeq. enum cnt m)))
 
-(defn key-seq
+(defn node-key-seq
   "Return an efficient seq of keys from tree rooted at n."
-  ([n] (key-seq n nil))
+  ([n] (node-key-seq n nil))
   ([n cnt]
    (when-let [e (node-enumerator n)]
      (KeySeq. e cnt nil))))
 
-(defn entry-seq
+(defn node-entry-seq
   "Return an efficient seq of map entries from tree rooted at n."
-  ([n] (entry-seq n nil))
+  ([n] (node-entry-seq n nil))
   ([n cnt]
    (when-let [e (node-enumerator n)]
      (EntrySeq. e cnt nil))))
@@ -2196,16 +2199,16 @@
   (withMeta [_ m]
     (EntrySeqReverse. enum cnt m)))
 
-(defn key-seq-reverse
+(defn node-key-seq-reverse
   "Return an efficient reverse seq of keys from tree rooted at n."
-  ([n] (key-seq-reverse n nil))
+  ([n] (node-key-seq-reverse n nil))
   ([n cnt]
    (when-let [e (node-enumerator-reverse n)]
      (KeySeqReverse. e cnt nil))))
 
-(defn entry-seq-reverse
+(defn node-entry-seq-reverse
   "Return an efficient reverse seq of map entries from tree rooted at n."
-  ([n] (entry-seq-reverse n nil))
+  ([n] (node-entry-seq-reverse n nil))
   ([n cnt]
    (when-let [e (node-enumerator-reverse n)]
      (EntrySeqReverse. e cnt nil))))

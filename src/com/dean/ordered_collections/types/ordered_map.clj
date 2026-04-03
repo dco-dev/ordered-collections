@@ -69,11 +69,11 @@
 
   clojure.lang.Seqable
   (seq [_]
-    (tree/entry-seq root (tree/node-size root)))
+    (tree/node-entry-seq root (tree/node-size root)))
 
   clojure.lang.Reversible
   (rseq [_]
-    (tree/entry-seq-reverse root (tree/node-size root)))
+    (tree/node-entry-seq-reverse root (tree/node-size root)))
 
   clojure.lang.ILookup
   (valAt [this k not-found]
@@ -227,20 +227,20 @@
     (key entry))
   (seq [_ ascending]
     (if ascending
-      (tree/entry-seq root)
-      (tree/entry-seq-reverse root)))
+      (tree/node-entry-seq root)
+      (tree/node-entry-seq-reverse root)))
   (seqFrom [this k ascending]
     (with-ordered-map this
       (let [[lt present gt] (tree/node-split root k)]
         (if ascending
           (if present
             (cons (clojure.lang.MapEntry. (first present) (second present))
-                  (tree/entry-seq gt))
-            (tree/entry-seq gt))
+                  (tree/node-entry-seq gt))
+            (tree/node-entry-seq gt))
           (if present
             (cons (clojure.lang.MapEntry. (first present) (second present))
-                  (tree/entry-seq-reverse lt))
-            (tree/entry-seq-reverse lt))))))
+                  (tree/node-entry-seq-reverse lt))
+            (tree/node-entry-seq-reverse lt))))))
 
   Object
   (toString [this]

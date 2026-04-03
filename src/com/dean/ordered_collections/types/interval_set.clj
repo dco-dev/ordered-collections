@@ -143,11 +143,11 @@
 
   clojure.lang.Seqable
   (seq [_]
-    (tree/key-seq root (tree/node-size root)))
+    (tree/node-key-seq root (tree/node-size root)))
 
   clojure.lang.Reversible
   (rseq [_]
-    (tree/key-seq-reverse root (tree/node-size root)))
+    (tree/node-key-seq-reverse root (tree/node-size root)))
 
   clojure.lang.ILookup
   (valAt [this k not-found]
