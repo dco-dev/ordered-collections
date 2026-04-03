@@ -61,6 +61,7 @@ See [benchmarks](doc/benchmarks.md) and [performance analysis](doc/perf-analysis
 - `SortedSet.tailSet` now returns elements >= x (was exclusive)
 - `SortedSet.subSet` now returns elements >= from, < to
 - Interval tree construction uses sequential reduce (parallel fold lost dynamic binding for node allocator at >2048 elements)
+- Priority queue now documents comparator-relative endpoint semantics, uses direct seq adapters instead of lazy `map` wrappers, supports Java serialization in the test suite, and has stronger coverage for duplicate-priority ordering and boundary cases
 
 ### Breaking Changes
 

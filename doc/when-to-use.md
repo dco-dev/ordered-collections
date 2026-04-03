@@ -75,7 +75,7 @@ Both answer "aggregate over a range." The tradeoff is query speed vs update spee
 
 ### priority-queue vs (first (ordered-set ...))
 
-Both give you the minimum element. `priority-queue` allows duplicate priorities with FIFO ordering and stores `[priority value]` pairs. `ordered-set` is a full sorted set.
+Both give you the front element in sorted order. `priority-queue` allows duplicate priorities, stores `[priority value]` pairs, and preserves insertion order among equal priorities in forward queue order. `ordered-set` is a full sorted set.
 
 ## API Compatibility
 

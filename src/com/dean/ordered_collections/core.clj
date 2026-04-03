@@ -445,6 +445,8 @@
   "Create a persistent priority queue from [priority value] pairs.
 
   Supports O(log n) push/peek/pop operations, plus parallel fold.
+  Queue order is determined by the priority comparator; `peek` and
+  `peek-min` return the first element in that order.
 
   Options:
     :comparator - priority comparator (default: compare, natural ordering)
@@ -454,7 +456,8 @@
     (priority-queue [[1 :urgent] [5 :low] [3 :medium]])
     (priority-queue [[1 :a] [2 :b]] :comparator >) ; max-heap
 
-  Use (peek-min pq) for min element, (pop-min pq) to remove it."
+  Use (peek-min pq) for the first element in queue order, and
+  (pop-min pq) to remove it."
   ([] (pq/priority-queue))
   ([pairs & opts]
    (apply pq/priority-queue pairs opts)))
@@ -473,35 +476,35 @@
   pq/push-all)
 
 (defalias peek-min
-  "Return [priority value] of the minimum element.
+  "Return [priority value] of the first element in queue order.
   (peek-min pq) => [priority value] or nil"
   pq/peek-min)
 
 (defalias peek-min-val
-  "Return just the value (not priority) of the minimum element.
+  "Return just the value (not priority) of the first element in queue order.
   (peek-min-val pq) => value or nil
 
   Note: (peek-min pq) returns [priority value]."
   pq/peek-min-val)
 
 (defalias pop-min
-  "Remove the minimum-priority element.
+  "Remove the first element in queue order.
   Returns the queue unchanged if empty.
   (pop-min pq) => new-pq"
   pq/pop-min)
 
 (defalias peek-max
-  "Return [priority value] of the maximum element.
+  "Return [priority value] of the last element in queue order.
   (peek-max pq) => [priority value] or nil"
   pq/peek-max)
 
 (defalias peek-max-val
-  "Return just the value of the maximum element.
+  "Return just the value of the last element in queue order.
   (peek-max-val pq) => value or nil"
   pq/peek-max-val)
 
 (defalias pop-max
-  "Remove the maximum-priority element.
+  "Remove the last element in queue order.
   Returns the queue unchanged if empty.
   (pop-max pq) => new-pq"
   pq/pop-max)

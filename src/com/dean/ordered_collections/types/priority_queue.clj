@@ -2,11 +2,12 @@
   "Persistent priority queue implemented using weight-balanced trees.
 
   A priority queue maps priorities to values. Each element is a [priority value]
-  pair. The queue maintains elements ordered by priority, with O(log n) push,
-  peek, and pop operations.
+  pair. The queue maintains elements ordered by the configured priority
+  comparator, with O(log n) push, peek, and pop operations.
 
   Unlike ordered-map, allows duplicate priorities (elements are distinguished
-  by insertion order via an internal sequence counter for stability)."
+  by insertion order via an internal sequence counter for stability in forward
+  queue order)."
   (:require [clojure.core.reducers :as r :refer [coll-fold]]
             [com.dean.ordered-collections.tree.node     :as node]
             [com.dean.ordered-collections.tree.order    :as order]
@@ -42,9 +43,185 @@
   "Create a comparator for priority queue entries.
   Entries are [priority seqnum value] triples.
   Comparison is first by priority (using the user's comparator),
-  then by seqnum (for stable ordering of equal priorities)."
+  then by seqnum (for stable ordering of equal priorities in forward queue order)."
   ^Comparator [^Comparator priority-cmp]
   (->PriorityQueueComparator priority-cmp))
+
+(defn- pq-entry
+  [[p _ v]]
+  [p v])
+
+(defn- seq-equiv
+  "Compare this queue's ordered view to another sequential collection."
+  [s1 o]
+  (if-not (or (instance? clojure.lang.Sequential o)
+              (instance? java.util.List o)
+              (and (instance? clojure.lang.Seqable o)
+                   (not (map? o))
+                   (not (set? o))))
+    false
+    (loop [s1 (seq s1) s2 (seq o)]
+      (cond
+        (nil? s1) (nil? s2)
+        (nil? s2) false
+        (not (clojure.lang.Util/equiv (first s1) (first s2))) false
+        :else (recur (next s1) (next s2))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Direct Seq Views
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; The queue exposes [priority value] pairs, but stores [priority seqnum value]
+;; triples internally. These seq types adapt tree enumerators directly so queue
+;; traversal has the same low-overhead shape as the other collection types.
+
+(deftype PriorityQueueSeq [enum cnt _meta]
+  clojure.lang.ISeq
+  (first [_]
+    (pq-entry (node/-k (tree/node-enum-first enum))))
+  (next [_]
+    (when-let [e (tree/node-enum-rest enum)]
+      (PriorityQueueSeq. e (when cnt (unchecked-dec-int cnt)) nil)))
+  (more [this]
+    (or (.next this) ()))
+  (cons [this o]
+    (clojure.lang.Cons. o this))
+
+  clojure.lang.Seqable
+  (seq [this] this)
+
+  clojure.lang.Sequential
+
+  java.lang.Iterable
+  (iterator [this]
+    (clojure.lang.SeqIterator. this))
+
+  clojure.lang.Counted
+  (count [_]
+    (if cnt cnt
+      (loop [e enum n 0]
+        (if e
+          (recur (tree/node-enum-rest e) (unchecked-inc-int n))
+          n))))
+
+  clojure.lang.IReduceInit
+  (reduce [_ f init]
+    (loop [e enum acc init]
+      (if e
+        (let [ret (f acc (pq-entry (node/-k (tree/node-enum-first e))))]
+          (if (reduced? ret)
+            @ret
+            (recur (tree/node-enum-rest e) ret)))
+        acc)))
+
+  clojure.lang.IReduce
+  (reduce [_ f]
+    (if enum
+      (loop [e   (tree/node-enum-rest enum)
+             acc (pq-entry (node/-k (tree/node-enum-first enum)))]
+        (if e
+          (let [ret (f acc (pq-entry (node/-k (tree/node-enum-first e))))]
+            (if (reduced? ret)
+              @ret
+              (recur (tree/node-enum-rest e) ret)))
+          acc))
+      (f)))
+
+  clojure.lang.IHashEq
+  (hasheq [this]
+    (Murmur3/hashOrdered this))
+
+  clojure.lang.IPersistentCollection
+  (empty [_] ())
+  (equiv [this o]
+    (seq-equiv this o))
+
+  Object
+  (hashCode [this]
+    (clojure.lang.Util/hash this))
+  (equals [this o]
+    (clojure.lang.Util/equals this o))
+
+  clojure.lang.IMeta
+  (meta [_] _meta)
+
+  clojure.lang.IObj
+  (withMeta [_ m]
+    (PriorityQueueSeq. enum cnt m)))
+
+(deftype PriorityQueueSeqReverse [enum cnt _meta]
+  clojure.lang.ISeq
+  (first [_]
+    (pq-entry (node/-k (tree/node-enum-first enum))))
+  (next [_]
+    (when-let [e (tree/node-enum-prior enum)]
+      (PriorityQueueSeqReverse. e (when cnt (unchecked-dec-int cnt)) nil)))
+  (more [this]
+    (or (.next this) ()))
+  (cons [this o]
+    (clojure.lang.Cons. o this))
+
+  clojure.lang.Seqable
+  (seq [this] this)
+
+  clojure.lang.Sequential
+
+  java.lang.Iterable
+  (iterator [this]
+    (clojure.lang.SeqIterator. this))
+
+  clojure.lang.Counted
+  (count [_]
+    (if cnt cnt
+      (loop [e enum n 0]
+        (if e
+          (recur (tree/node-enum-prior e) (unchecked-inc-int n))
+          n))))
+
+  clojure.lang.IReduceInit
+  (reduce [_ f init]
+    (loop [e enum acc init]
+      (if e
+        (let [ret (f acc (pq-entry (node/-k (tree/node-enum-first e))))]
+          (if (reduced? ret)
+            @ret
+            (recur (tree/node-enum-prior e) ret)))
+        acc)))
+
+  clojure.lang.IReduce
+  (reduce [_ f]
+    (if enum
+      (loop [e   (tree/node-enum-prior enum)
+             acc (pq-entry (node/-k (tree/node-enum-first enum)))]
+        (if e
+          (let [ret (f acc (pq-entry (node/-k (tree/node-enum-first e))))]
+            (if (reduced? ret)
+              @ret
+              (recur (tree/node-enum-prior e) ret)))
+          acc))
+      (f)))
+
+  clojure.lang.IHashEq
+  (hasheq [this]
+    (Murmur3/hashOrdered this))
+
+  clojure.lang.IPersistentCollection
+  (empty [_] ())
+  (equiv [this o]
+    (seq-equiv this o))
+
+  Object
+  (hashCode [this]
+    (clojure.lang.Util/hash this))
+  (equals [this o]
+    (clojure.lang.Util/equals this o))
+
+  clojure.lang.IMeta
+  (meta [_] _meta)
+
+  clojure.lang.IObj
+  (withMeta [_ m]
+    (PriorityQueueSeqReverse. enum cnt m)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Priority Queue
@@ -82,15 +259,13 @@
 
   clojure.lang.Seqable
   (seq [_]
-    (when-not (node/leaf? root)
-      (map (fn [n] (let [[p _ v] (node/-k n)] [p v]))
-           (tree/node-seq root))))
+    (when-let [e (tree/node-enumerator root nil)]
+      (PriorityQueueSeq. e (tree/node-size root) nil)))
 
   clojure.lang.Reversible
   (rseq [_]
-    (when-not (node/leaf? root)
-      (map (fn [n] (let [[p _ v] (node/-k n)] [p v]))
-           (tree/node-seq-reverse root))))
+    (when-let [e (tree/node-enumerator-reverse root)]
+      (PriorityQueueSeqReverse. e (tree/node-size root) nil)))
 
   clojure.lang.Counted
   (count [_]
@@ -100,9 +275,7 @@
   (empty [_]
     (PriorityQueue. (node/leaf) cmp 0 {}))
   (equiv [this o]
-    (and (instance? PriorityQueue o)
-         (= (count this) (count o))
-         (= (seq this) (seq o))))
+    (seq-equiv this o))
 
   clojure.lang.IReduceInit
   (reduce [_ f init]
@@ -140,6 +313,11 @@
   (nth [_ i]
     (let [[p _ v] (node/-k (tree/node-nth root i))]
       [p v]))
+  (nth [_ i not-found]
+    (if (and (>= i 0) (< i (tree/node-size root)))
+      (let [[p _ v] (node/-k (tree/node-nth root i))]
+        [p v])
+      not-found))
 
   java.lang.Iterable
   (iterator [this]
@@ -217,33 +395,37 @@
   (proto/push-all pq pairs))
 
 (defn peek-min
-  "Return [priority value] of the minimum element, or nil if empty. O(log n)."
+  "Return the first [priority value] in queue order, or nil if empty. O(log n).
+
+  Queue order is determined by the priority comparator. With the default
+  comparator this is the lowest priority; with `:comparator >` it is the
+  highest priority."
   [pq]
   (proto/peek-min pq))
 
 (defn peek-min-val
-  "Return just the value of the minimum element, or nil if empty. O(log n)."
+  "Return just the value of the first element in queue order, or nil if empty. O(log n)."
   [pq]
   (proto/peek-min-val pq))
 
 (defn pop-min
-  "Remove and return a new queue without the minimum-priority element. O(log n).
+  "Remove and return a new queue without the first element in queue order. O(log n).
   Returns the queue unchanged if empty."
   [pq]
   (proto/pop-min pq))
 
 (defn peek-max
-  "Return [priority value] of the maximum element, or nil if empty. O(log n)."
+  "Return the last [priority value] in queue order, or nil if empty. O(log n)."
   [pq]
   (proto/peek-max pq))
 
 (defn peek-max-val
-  "Return just the value of the maximum element, or nil if empty. O(log n)."
+  "Return just the value of the last element in queue order, or nil if empty. O(log n)."
   [pq]
   (proto/peek-max-val pq))
 
 (defn pop-max
-  "Remove and return a new queue without the maximum-priority element. O(log n).
+  "Remove and return a new queue without the last element in queue order. O(log n).
   Returns the queue unchanged if empty."
   [pq]
   (proto/pop-max pq))

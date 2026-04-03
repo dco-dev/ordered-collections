@@ -3,6 +3,13 @@
             [clojure.core.reducers :as r]
             [com.dean.ordered-collections.core :as oc]))
 
+(defn- pop-all
+  [pq]
+  (loop [pq pq, acc []]
+    (if-let [x (peek pq)]
+      (recur (pop pq) (conj acc x))
+      acc)))
+
 (deftest priority-queue-basic
   (testing "Empty queue"
     (let [pq (oc/priority-queue [])]
@@ -27,6 +34,7 @@
 
   (testing "Multiple elements - max heap"
     (let [pq (oc/priority-queue [[3 :c] [1 :a] [5 :e]] :comparator >)]
+      (is (= [5 :e] (oc/peek-min pq)))
       (is (= [5 :e] (peek pq)))
       (is (= [[5 :e] [3 :c] [1 :a]] (vec (seq pq)))))))
 
@@ -65,6 +73,23 @@
         (is (= 3 (count pq2)))
         (is (= [6 :f] (oc/peek-max pq2)))))))
 
+(deftest priority-queue-comparator-semantics
+  (testing "peek-min/peek-max are relative to queue order, not numeric names"
+    (let [pq (oc/priority-queue [[1 :low] [3 :high] [2 :mid]] :comparator >)]
+      (is (= [3 :high] (peek pq)))
+      (is (= [3 :high] (oc/peek-min pq)))
+      (is (= [1 :low] (oc/peek-max pq)))
+      (is (= [[3 :high] [2 :mid] [1 :low]] (vec (seq pq)))))))
+
+(deftest priority-queue-equal-priority-endpoints
+  (testing "equal priorities are stable in forward queue order"
+    (let [pq (oc/priority-queue [[1 :first] [1 :second] [1 :third]])]
+      (is (= [1 :first] (peek pq)))
+      (is (= [1 :first] (oc/peek-min pq)))
+      (is (= [1 :third] (oc/peek-max pq)))
+      (is (= [[1 :first] [1 :second] [1 :third]] (vec (seq pq))))
+      (is (= [[1 :third] [1 :second] [1 :first]] (vec (rseq pq)))))))
+
 (deftest priority-queue-reduce
   (testing "reduce over [priority value] pairs"
     (let [pq (oc/priority-queue [[1 10] [2 20] [3 30]])]
@@ -85,7 +110,8 @@
       (is (= [2 :b] (nth pq 1)))
       (is (= [3 :c] (nth pq 2)))
       (is (= [5 :e] (nth pq 3)))
-      (is (= [8 :h] (nth pq 4))))))
+      (is (= [8 :h] (nth pq 4)))
+      (is (= :nf (nth pq 5 :nf))))))
 
 (deftest priority-queue-conj
   (testing "conj takes [priority value] pair"
@@ -100,10 +126,29 @@
   (testing "equality"
     (let [pq1 (oc/priority-queue [[1 :a] [2 :b] [3 :c]])
           pq2 (oc/priority-queue [[3 :c] [1 :a] [2 :b]])]
-      (is (= pq1 pq2)))))
+      (is (= pq1 pq2))
+      (is (= pq1 [[1 :a] [2 :b] [3 :c]])))))
 
 (deftest priority-queue-stability
   (testing "stable ordering for equal priorities"
     (let [pq (oc/priority-queue [[1 :first] [1 :second] [1 :third]])]
       ;; Elements with same priority should maintain insertion order
       (is (= [[1 :first] [1 :second] [1 :third]] (vec (seq pq)))))))
+
+(deftest priority-queue-ordering-through-pop
+  (testing "repeated pop returns elements in queue order"
+    (doseq [pairs [[[3 :c] [1 :a] [4 :d] [1 :a2] [2 :b]]
+                   [[5 :e] [5 :e2] [1 :a] [3 :c] [3 :c2] [2 :b]]
+                   [[9 :i] [7 :g] [8 :h] [1 :a] [2 :b] [6 :f]]]]
+      (let [pq (oc/priority-queue pairs)
+            expected (->> pairs
+                          (map-indexed (fn [idx [p v]] [p idx v]))
+                          (sort-by (juxt first second))
+                          (mapv (fn [[p _ v]] [p v])))]
+        (is (= expected (pop-all pq)))))))
+
+(deftest priority-queue-meta
+  (testing "metadata round-trips through with-meta and empty"
+    (let [pq (with-meta (oc/priority-queue [[1 :a] [2 :b]]) {:tag :pq})]
+      (is (= {:tag :pq} (meta pq)))
+      (is (= {} (meta (empty pq)))))))

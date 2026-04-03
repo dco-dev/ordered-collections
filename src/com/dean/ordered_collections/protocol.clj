@@ -139,15 +139,16 @@
 
 (defprotocol PPriorityQueue
   "Protocol for priority queue operations.
-  Elements are [priority value] pairs."
+  Elements are [priority value] pairs. Queue order is determined by the
+  configured priority comparator."
   (push     [pq priority value] "Add element with given priority.")
   (push-all [pq pairs]          "Add multiple [priority value] pairs.")
-  (peek-min [pq]                "Return [priority value] of min element, or nil.")
-  (peek-min-val [pq]            "Return just the value of min element, or nil.")
-  (pop-min  [pq]                "Remove min element. Returns queue unchanged if empty.")
-  (peek-max [pq]                "Return [priority value] of max element, or nil.")
-  (peek-max-val [pq]            "Return just the value of max element, or nil.")
-  (pop-max  [pq]                "Remove max element. Returns queue unchanged if empty."))
+  (peek-min [pq]                "Return first [priority value] in queue order, or nil.")
+  (peek-min-val [pq]            "Return just the value of the first element, or nil.")
+  (pop-min  [pq]                "Remove first element. Returns queue unchanged if empty.")
+  (peek-max [pq]                "Return last [priority value] in queue order, or nil.")
+  (peek-max-val [pq]            "Return just the value of the last element, or nil.")
+  (pop-max  [pq]                "Remove last element. Returns queue unchanged if empty."))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Fuzzy Collection Protocol

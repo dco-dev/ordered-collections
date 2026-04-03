@@ -716,7 +716,7 @@ Zorp's loyalty program tracks customer spending. He needs to answer questions li
 
 ## Chapter 13: The Repair Queue
 
-*Demonstrates: `priority-queue` — a persistent priority queue with O(log n) push/peek/pop. Elements are `[priority value]` pairs, ordered by priority (min-heap by default).*
+*Demonstrates: `priority-queue` — a persistent priority queue with O(log n) push/peek/pop. Elements are `[priority value]` pairs, ordered by the configured priority comparator (min-heap by default).*
 
 Shoes break. It happens. Zorp offers repair services, but some repairs are more urgent than others. A customer's only pair? Rush job. Seventh pair of limited editions? They can wait.
 

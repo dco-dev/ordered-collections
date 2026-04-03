@@ -195,42 +195,32 @@
 ;; Priority Queue Tests
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; Note: Priority queue serialization is complex because the default comparator
-;; (clojure.core/compare) is a Clojure function that may not serialize correctly.
-;; These tests are currently disabled until custom serialization is implemented.
+(deftest priority-queue-serialization
+  (testing "priority-queue round-trip serialization"
+    (doseq [n cardinalities]
+      (testing (str "cardinality " n)
+        (let [data (mapv (fn [_] [(rand-int 100) {:id (rand-int 1000000)}]) (range n))
+              original (oc/priority-queue data)
+              restored (round-trip original)]
+          (is (= (count original) (count restored))
+              "count preserved")
+          (is (= (vec (seq original)) (vec (seq restored)))
+              "queue order preserved")
+          (is (= (peek original) (peek restored))
+              "front element preserved")
+          (is (= (oc/peek-max original) (oc/peek-max restored))
+              "back element preserved"))))))
 
-(comment
-  (deftest priority-queue-serialization
-    (testing "priority-queue round-trip serialization"
-      (doseq [n cardinalities]
-        (testing (str "cardinality " n)
-          (let [data (mapv (fn [_] [(rand-int 100) {:id (rand-int 1000000)}]) (range n))
-                original (oc/priority-queue data)
-                restored (round-trip original)]
-            (is (= (count original) (count restored))
-                "count preserved")
-            (is (= (peek original) (peek restored))
-                "peek (min element) preserved")
-            ;; Verify we can pop all elements in same order
-            (loop [orig original, rest restored, i 0]
-              (when (and (seq orig) (< i 100))  ; check first 100
-                (is (= (peek orig) (peek rest))
-                    (str "element " i " matches after pop"))
-                (recur (pop orig) (pop rest) (inc i)))))))))
-
-  (deftest priority-queue-ordering-preserved
-    (testing "priority-queue maintains heap property after deserialization"
-      (let [data (mapv (fn [i] [i (str "priority-" i)]) (shuffle (range 1000)))
-            original (oc/priority-queue data)
-            restored (round-trip original)]
-        ;; Pop all elements and verify they come out in order
-        (loop [pq restored, prev-priority Long/MIN_VALUE]
-          (when (seq pq)
-            (let [[priority _] (peek pq)]
-              (is (>= (long priority) prev-priority)
-                  "elements come out in priority order")
-              (recur (pop pq) (long priority))))))))
-  ) ; end comment
+(deftest priority-queue-ordering-preserved
+  (testing "priority-queue maintains queue order after deserialization"
+    (let [data (mapv (fn [i] [i (str "priority-" i)]) (shuffle (range 1000)))
+          original (oc/priority-queue data)
+          restored (round-trip original)]
+      (loop [orig original, rest restored, i 0]
+        (when (and (seq orig) (< i 250))
+          (is (= (peek orig) (peek rest))
+              (str "element " i " matches after pop"))
+          (recur (pop orig) (pop rest) (inc i)))))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
