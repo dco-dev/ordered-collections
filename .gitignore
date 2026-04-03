@@ -10,8 +10,10 @@ pom.xml.asc
 *~
 # Benchmark results (local records)
 /bench-results/
+/doc/api/
 
 # Claude Code
 /.claude/
 .DS_Store
 /.cpcache
+/AGENTS.md
