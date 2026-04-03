@@ -70,26 +70,43 @@ the current Criterium run ranges from high-single-digit wins at 10K to
 30-46x wins at 500K. Even against the unfair `clojure.set` + hash-set baseline,
 the current set-algebra benchmarks still show roughly 4-24x wins.
 
-Speedup cells are shown in `N=10K / N=100K / N=500K` order.
-
 ### Set algebra (speedup)
 
-| Operation | vs sorted-set (`10K / 100K / 500K`) | vs data.avl (`10K / 100K / 500K`) | vs hash-set (`10K / 100K / 500K`) |
-|-----------|--------------------------------------|-----------------------------------|-----------------------------------|
-| Union | **13.9x / 22.4x / 44.3x** | **11.5x / 19.3x / 39.6x** | **4.1x / 7.3x / 19.7x** |
-| Intersection | **8.7x / 15.8x / 32.4x** | **7.2x / 13.5x / 27.5x** | **4.3x / 7.6x / 17.3x** |
-| Difference | **9.4x / 21.7x / 46.1x** | **7.3x / 13.6x / 32.3x** | **5.1x / 9.2x / 24.2x** |
+#### vs sorted-set
+
+| Operation | N=10K | N=100K | N=500K |
+|-----------|------:|-------:|-------:|
+| Union | **13.9x** | **22.4x** | **44.3x** |
+| Intersection | **8.7x** | **15.8x** | **32.4x** |
+| Difference | **9.4x** | **21.7x** | **46.1x** |
+
+#### vs data.avl
+
+| Operation | N=10K | N=100K | N=500K |
+|-----------|------:|-------:|-------:|
+| Union | **11.5x** | **19.3x** | **39.6x** |
+| Intersection | **7.2x** | **13.5x** | **27.5x** |
+| Difference | **7.3x** | **13.6x** | **32.3x** |
+
+#### vs clojure.set on hash-set
+
+| Operation | N=10K | N=100K | N=500K |
+|-----------|------:|-------:|-------:|
+| Union | **4.1x** | **7.3x** | **19.7x** |
+| Intersection | **4.3x** | **7.6x** | **17.3x** |
+| Difference | **5.1x** | **9.2x** | **24.2x** |
 
 ### Other operations (speedup)
 
-| Operation | vs sorted-set (`10K / 100K / 500K`) | vs data.avl (`10K / 100K / 500K`) |
-|-----------|--------------------------------------|-----------------------------------|
+| Operation | vs sorted-set | vs data.avl |
+|-----------|---------------|-------------|
 | Construction | **2.9x / 2.8x / 2.7x** | **1.5x / 1.4x / 1.5x** |
 | Lookup | 1.3x / 1.2x / 1.2x | 1.0x / 1.0x / 1.0x |
 | Split | — | **3.1x / 3.6x / 3.7x** |
 | Fold | **3.7x / 7.3x / 9.7x** | 1.0x / **3.0x / 3.4x** |
 
 *[Criterium](https://github.com/hugoduncan/criterium) at all sizes.
+For the compact rows in "Other operations", values are shown in `N=10K / N=100K / N=500K` order.
 See [Benchmarks](doc/benchmarks.md) for full results.*
 
 ### Beyond speed
