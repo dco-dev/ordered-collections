@@ -4,6 +4,12 @@
 
 Each node stores a key, value, left and right children, and **subtree weight** (= 1 + size(left) + size(right)). Specialized node types exist for performance: `LongKeyNode` (unboxed `long` key), `DoubleKeyNode` (unboxed `double` key), and `IntervalNode` (additional max-endpoint field for interval augmentation).
 
+These are not separate tree implementations. The library uses one shared tree
+algebra, parameterized by two hooks: `order/*compare*` for ordering semantics
+and `*t-join*` for node reconstruction. Collection constructors bind those at
+the boundary, so the same split/join/search code serves generic nodes,
+primitive-specialized nodes, and augmented variants.
+
 ```
         ┌─────────────────┐
         │  key: 50        │
@@ -93,6 +99,11 @@ join(left, 50, right):
 **Join without pivot** (`node-concat2`) extracts the greatest element from the left tree and uses it as the pivot for `node-concat3`. Used by intersection and difference when the split key is absent.
 
 Both split and join are O(log n). The key property of weight-balanced trees: weight composes trivially — `weight(join(L, k, R)) = weight(L) + 1 + weight(R)` — so no auxiliary recomputation (height, color) is needed after joining. This gives WBTs lower constant factors for split/join than AVL or red-black trees.
+
+Because `join` is also the representation hook, the same recursive algorithms
+rebuild the correct node type automatically. Different collection variants
+inherit the same operation structure while choosing different storage or
+augmentation behavior at node construction time.
 
 ## The Join-Based Paradigm
 

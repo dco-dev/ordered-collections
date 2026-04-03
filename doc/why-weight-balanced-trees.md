@@ -4,6 +4,10 @@ This document explains why this library uses weight-balanced trees instead of th
 
 Weight-balanced trees have a distinguished lineage in functional programming, powering Haskell's `Data.Set` and `Data.Map`, MIT Scheme's `wt-tree`, and several other persistent collection libraries. This isn't an accident — their structure is uniquely suited to functional programming's needs.
 
+In this library, that split/join structure also serves as the extensibility
+boundary: one shared tree implementation supports generic, primitive-specialized,
+and augmented variants by varying the comparator and node constructor.
+
 ## The Three Contenders
 
 ### Red-Black Trees (Clojure's sorted-map/sorted-set)

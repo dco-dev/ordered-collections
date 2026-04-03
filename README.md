@@ -122,6 +122,10 @@ The core is a **weight-balanced binary tree**.  Each node knows its subtree size
 
 **Split and join** are the fundamental primitives — splitting at a key produces two trees in O(log n); joining is also O(log n). Set operations, subrange extraction, and parallel fold all reduce to split/join. Set operations use Adams' divide-and-conquer algorithm (1992) extended with the parallel join-based approach from Blelloch, Ferizovic & Sun (2016).
 
+Collection constructors provide the comparator and node-construction hooks, so
+the same tree algorithms can back generic, primitive-specialized, and augmented
+variants.
+
 **Augmented trees** extend the basic structure: interval trees store max-endpoint per subtree for O(log n + k) overlap queries; segment trees store aggregates for O(log n) range queries.
 
 See [Algorithms](doc/algorithms.md) for implementation details and [Why Weight-Balanced Trees?](doc/why-weight-balanced-trees.md) for comparison with red-black and AVL trees.

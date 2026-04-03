@@ -134,6 +134,15 @@
 ;; Node Builders (t-join)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; `*compare*` and `*t-join*` are the core representation hooks for the
+;; tree algebra. Dynamic binding lets one split/join/search implementation serve
+;; many concrete node families: generic nodes, primitive-key nodes, interval
+;; nodes, segment/augmented nodes, and future variants with different storage
+;; or augmentation strategy. That is the basis of the library's open
+;; representational polymorphism: collection constructors choose a comparator
+;; and node constructor, then the shared tree algorithms operate uniformly over
+;; that representation.
+
 (defn node-create-weight-balanced
   "Join left and right weight-balanced subtrees at root k/v.
   Assumes all keys in l < k < all keys in r."
@@ -1368,7 +1377,9 @@
 ;; but the recursive set/map kernels are hot enough that repeated lookups of
 ;; `order/*compare*` and `*t-join*` are measurable overhead. These private
 ;; variants thread the comparator and node constructor explicitly so the caller
-;; can capture them once and reuse them through the whole recursion.
+;; can capture them once and reuse them through the whole recursion. This keeps
+;; the extensible dynamic-binding architecture at the public boundary while
+;; avoiding paying for it at every recursive step in the hottest paths.
 
 (defn- node-set-union*
   [n1 n2 ^Comparator cmp create]
