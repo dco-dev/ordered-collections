@@ -28,7 +28,6 @@ jobs:
         with:
           distribution: temurin
           java-version: "25.0.2"
-          cache: maven
 
       - name: Install Clojure tooling
         uses: DeLaGuardo/setup-clojure@13.5.2
@@ -36,6 +35,17 @@ jobs:
           cli: latest
           lein: latest
           bb: latest
+
+      - name: Cache Clojure dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+            ~/.lein
+          key: ${{ runner.os }}-clojure-${{ hashFiles('project.clj', 'deps.edn') }}
+          restore-keys: |
+            ${{ runner.os }}-clojure-
 
       - name: Show tool versions
         run: |
