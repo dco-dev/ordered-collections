@@ -309,11 +309,52 @@
                        (format-ns os-fold)
                        os-speedup)))))
 
+(defn bench-fold-freq-comparison
+  "Compare reduce vs fold on a non-trivial frequency-map workload."
+  [sizes]
+  (println)
+  (println "=== FOLD vs REDUCE: Frequency-map workload ===")
+  (println (format "%-10s %-20s %-20s %-20s %-20s %-20s %-20s %-20s"
+                   "N"
+                   "hs reduce"
+                   "ss reduce"
+                   "ss fold"
+                   "avl reduce"
+                   "avl fold"
+                   "os reduce"
+                   "os fold"))
+  (println (apply str (repeat 150 "-")))
+  (doseq [n sizes]
+    (let [elems (shuffle (range n))
+          hs    (set elems)
+          ss    (into (sorted-set) elems)
+          as    (into (avl/sorted-set) elems)
+          os    (core/ordered-set elems)
+          combinef (fn ([] {}) ([m1 m2] (merge-with + m1 m2)))
+          reducef  (fn [m x] (update m (mod (long x) 100) (fnil inc 0)))
+          [hs-reduce _] (bench 20 10 (reduce reducef {} hs))
+          [ss-reduce _] (bench 20 10 (reduce reducef {} ss))
+          [ss-fold _]   (bench 20 10 (r/fold combinef reducef ss))
+          [as-reduce _] (bench 20 10 (reduce reducef {} as))
+          [as-fold _]   (bench 20 10 (r/fold combinef reducef as))
+          [os-reduce _] (bench 20 10 (reduce reducef {} os))
+          [os-fold _]   (bench 20 10 (r/fold combinef reducef os))]
+      (println (format "%-10d %-20s %-20s %-20s %-20s %-20s %-20s %-20s"
+                       n
+                       (format-ns hs-reduce)
+                       (format-ns ss-reduce)
+                       (format-ns ss-fold)
+                       (format-ns as-reduce)
+                       (format-ns as-fold)
+                       (format-ns os-reduce)
+                       (format-ns os-fold))))))
+
 (defn run-parallel-benchmarks
   "Run parallel fold benchmarks."
   [sizes]
   (bench-set-parallel-fold sizes)
-  (bench-fold-comparison sizes))
+  (bench-fold-comparison sizes)
+  (bench-fold-freq-comparison sizes))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; String Key Benchmarks (Custom Comparator)
