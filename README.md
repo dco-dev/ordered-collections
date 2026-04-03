@@ -7,6 +7,7 @@ Fast, complete ordered collections. Drop-in replacements for
 parallel fold, and specialized collections for problems you didn't know
 you could solve efficiently:
 
+- **Sets and Maps** work exactly as you're used to, but do more, faster
 - **Interval maps** for overlap queries ("what's scheduled at 3pm?")
 - **Range maps** for non-overlapping regions ("which subnet owns this IP?")
 - **Segment trees** for range aggregation ("total sales from day 10 to 50?")
@@ -44,6 +45,7 @@ hood — and in the new things you can do.
 (require '[com.dean.ordered-collections.core :as oc])
 
 ;; Sets
+
 (def s (oc/ordered-set [3 1 4 1 5 9 2 6]))
 (s 4)           ;=> 4
 (s 7)           ;=> nil
@@ -54,6 +56,7 @@ hood — and in the new things you can do.
 (subseq s > 3)  ;=> (4 5 6 9)
 
 ;; Maps
+
 (def m (oc/ordered-map {:b 2 :a 1 :c 3}))
 (m :b)                  ;=> 2
 (assoc m :d 4)          ;=> {:a 1, :b 2, :c 3, :d 4}
@@ -63,16 +66,15 @@ hood — and in the new things you can do.
 
 ## Performance
 
-Across the measured set-heavy workloads, `ordered-collections` is faster than
-both `sorted-set` and `data.avl` at every cardinality measured. Lookups stay
-close to parity and are not a headline differentiator. Set algebra is the standout:
+Across the measured workloads, `ordered-collections` is faster than
+both `clojure.core/sorted-set` and `clojure.data.avl` at every cardinality  Set algebra is the standout:
 the current Criterium run ranges from high-single-digit wins at 10K to
-30-46x wins at 500K. Even against the unfair `clojure.set` + hash-set baseline,
-the current set-algebra benchmarks still show roughly 4-24x wins.
+30-46x wins at 500K. Even against the (unordered) `clojure.core/set` baseline,
+the set-algebra benchmarks still show roughly 4-24x wins.
 
 ### Set algebra (speedup)
 
-#### vs sorted-set
+#### vs clojure.core/sorted-set
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
@@ -80,7 +82,7 @@ the current set-algebra benchmarks still show roughly 4-24x wins.
 | Intersection | **8.7x** | **15.8x** | **32.4x** |
 | Difference | **9.4x** | **21.7x** | **46.1x** |
 
-#### vs data.avl
+#### vs clojure.data.avl
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
@@ -88,7 +90,7 @@ the current set-algebra benchmarks still show roughly 4-24x wins.
 | Intersection | **7.2x** | **13.5x** | **27.5x** |
 | Difference | **7.3x** | **13.6x** | **32.3x** |
 
-#### vs clojure.set on hash-set
+#### vs clojure.core/set
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
@@ -124,40 +126,64 @@ See [Benchmarks](doc/benchmarks.md) for full results.*
 
 ## How It Works
 
-The core is a **weight-balanced binary tree**.  Each node knows its subtree size, enabling O(log n) positional access and efficient parallel decomposition.
+The core is a **weight-balanced binary tree**.  Each node knows its
+subtree size, enabling O(log n) positional access and efficient parallel
+decomposition.
 
-**Split and join** are the fundamental primitives — splitting at a key produces two trees in O(log n); joining is also O(log n). Set operations, subrange extraction, and parallel fold all reduce to split/join. Set operations use Adams' divide-and-conquer algorithm (1992) extended with the parallel join-based approach from Blelloch, Ferizovic & Sun (2016).
+**Split and join** are the fundamental primitives — splitting at a key
+produces two trees in O(log n); joining is also O(log n). Set
+operations, subrange extraction, and parallel fold all reduce to
+split/join. Set operations use Adams' divide-and-conquer algorithm
+(1992) extended with the parallel forkl-join based approach from
+Blelloch, Ferizovic & Sun (2016).
 
 Collection constructors provide the comparator and node-construction hooks, so
 the same tree algorithms can back generic, primitive-specialized, and augmented
 variants.
 
-**Augmented trees** extend the basic structure: interval trees store max-endpoint per subtree for O(log n + k) overlap queries; segment trees store aggregates for O(log n) range queries.
+**Augmented trees** extend the basic structure: interval trees store
+max-endpoint per subtree for O(log n + k) overlap queries; segment trees
+store aggregates for O(log n) range queries.
 
-See [Algorithms](doc/algorithms.md) for implementation details and [Why Weight-Balanced Trees?](doc/why-weight-balanced-trees.md) for comparison with red-black and AVL trees.
+See [Algorithms](doc/algorithms.md) for implementation details and [Why
+Weight-Balanced Trees?](doc/why-weight-balanced-trees.md) for comparison
+with red-black and AVL trees.
 
 ---
 
 ## Collections
 
+The fundamental collection types currently implemented are:
+`ordered-set`, `ordered-map`, `interval-set`, `interval-map`, `range-map`,
+`segment-tree`, `priority-queue`, `ordered-multiset`, `fuzzy-set`, and
+`fuzzy-map`.
+
 | Constructor | Description |
 |-------------|-------------|
+| **Ordered Set** | |
 | `(oc/ordered-set coll)` | Sorted set (drop-in for `sorted-set`) |
 | `(oc/ordered-set-by pred coll)` | Sorted set with custom comparator |
 | `(oc/long-ordered-set coll)` | Sorted set optimized for Long keys |
 | `(oc/string-ordered-set coll)` | Sorted set optimized for String keys |
+| **Ordered Map** | |
 | `(oc/ordered-map coll)` | Sorted map (drop-in for `sorted-map`) |
 | `(oc/ordered-map-by pred coll)` | Sorted map with custom comparator |
 | `(oc/long-ordered-map coll)` | Sorted map optimized for Long keys |
 | `(oc/string-ordered-map coll)` | Sorted map optimized for String keys |
+| **Interval Collections** | |
 | `(oc/interval-set coll)` | Set supporting interval overlap queries |
 | `(oc/interval-map coll)` | Map supporting interval overlap queries |
+| **Range Map** | |
 | `(oc/range-map)` | Non-overlapping ranges (Guava TreeRangeMap) |
+| **Segment Tree** | |
 | `(oc/segment-tree f identity coll)` | O(log n) range aggregate queries |
 | `(oc/segment-tree-by pred f identity coll)` | Segment tree with custom ordering predicate |
 | `(oc/segment-tree-with cmp f identity coll)` | Segment tree with custom Comparator |
+| **Priority Queue** | |
 | `(oc/priority-queue pairs)` | Priority queue from `[priority value]` pairs |
+| **Ordered Multiset** | |
 | `(oc/ordered-multiset coll)` | Sorted multiset (allows duplicates) |
+| **Fuzzy Collections** | |
 | `(oc/fuzzy-set coll)` | Returns closest element to query |
 | `(oc/fuzzy-map coll)` | Returns value for closest key to query |
 
@@ -170,7 +196,7 @@ Operations that `sorted-set` and `sorted-map` don't provide — at any collectio
 ### Positional Access & Rank
 
 ```clojure
-(def s (oc/ordered-set [10 20 30 40 50]))
+(def s (oc/ordered-set [50 30 20 40 10]))
 
 (nth s 2)              ;=> 30     O(log n)
 (oc/rank s 30)         ;=> 2      O(log n)
@@ -182,7 +208,7 @@ Operations that `sorted-set` and `sorted-map` don't provide — at any collectio
 ### Nearest / Floor / Ceiling
 
 ```clojure
-(def s (oc/ordered-set [100 200 300 400 500]))
+(def s (oc/ordered-set [200 200 400 300 500]))
 
 (oc/nearest s :<= 350)  ;=> 300  (floor)
 (oc/nearest s :>= 350)  ;=> 400  (ceiling)
@@ -193,7 +219,7 @@ Operations that `sorted-set` and `sorted-map` don't provide — at any collectio
 ### Split & Subrange
 
 ```clojure
-(def s (oc/ordered-set [1 2 3 4 5]))
+(def s (oc/ordered-set [5 4 3 1 2]))
 
 (oc/split-key 3 s)  ;=> [#{1 2} 3 #{4 5}]    O(log n)
 (oc/split-at 2 s)   ;=> [#{1 2} #{3 4 5}]     O(log n)
@@ -241,6 +267,7 @@ Insert a flash-sale range — bronze and silver are automatically split:
 
 ```clojure
 (oc/ranges (assoc tiers [50 200] :flash))
+
 ;; => ([[0 50]    :bronze]        ← auto-trimmed
 ;;     [[50 200]  :flash]         ← inserted
 ;;     [[200 500] :silver]        ← auto-trimmed
@@ -256,10 +283,12 @@ Insert a flash-sale range — bronze and silver are automatically split:
 (oc/aggregate sales)      ;=> 1000   O(1)
 
 ;; Update and re-query
+
 (def sales' (assoc sales 3 500))
 (oc/query sales' 2 4)     ;=> 1000
 
 ;; Also: min-tree, max-tree, or any associative operation
+
 (def peaks (oc/segment-tree max 0 {1 100, 2 200, 3 150}))
 (oc/query peaks 1 3)      ;=> 200
 ```
@@ -275,27 +304,17 @@ Insert a flash-sale range — bronze and silver are automatically split:
 (tiers 480)                    ;=> :silver
 ```
 
-### Set Operations
-
-```clojure
-(def s1 (oc/ordered-set (range 1000)))
-(def s2 (oc/ordered-set (range 500 1500)))
-
-(oc/union s1 s2)         ;=> #{0..1499}
-(oc/intersection s1 s2)  ;=> #{500..999}
-(oc/difference s1 s2)    ;=> #{0..499}
-(oc/subset? s1 s2)       ;=> false
-```
-
 ### Priority Queue & Multiset
 
 ```clojure
 ;; Priority queue (min-heap)
+
 (def pq (oc/priority-queue [[3 :medium] [1 :urgent] [5 :low]]))
 (peek pq)       ;=> [1 :urgent]
 (peek (pop pq)) ;=> [3 :medium]
 
 ;; Multiset (sorted bag, allows duplicates)
+
 (def ms (oc/ordered-multiset [3 1 4 1 5 9 2 6 5 3 5]))
 (oc/multiplicity ms 5)  ;=> 3
 ```
