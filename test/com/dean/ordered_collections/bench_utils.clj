@@ -144,6 +144,26 @@
    :combinef (fn ([] {}) ([m1 m2] (merge-with + m1 m2)))
    :reducef  (fn [m x] (update m (mod (long x) 100) (fnil inc 0)))})
 
+(defn set-comparison-workload
+  "Build same-content and near-miss set comparison workloads from randomized
+   integer elements.
+
+   Cases:
+   - :equal: same contents
+   - :different: same size, one element replaced
+   - :size-different: second set is missing one element"
+  [n]
+  (let [elems       (generate-elements n)
+        missing     n
+        different   (assoc elems (dec n) missing)
+        shorter     (subvec elems 0 (dec n))]
+    {:equal          {:left  (build-set-variants elems)
+                      :right (build-set-variants elems)}
+     :different      {:left  (build-set-variants elems)
+                      :right (build-set-variants different)}
+     :size-different {:left  (build-set-variants elems)
+                      :right (build-set-variants shorter)}}))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Table Printing

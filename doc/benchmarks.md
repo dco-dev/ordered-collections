@@ -185,6 +185,59 @@ Treat these as near-parity numbers, not as a headline differentiator.
 | data.avl | 1.45 | 2.11 | 2.85 |
 | ordered-map | 1.21 | 1.87 | 2.71 |
 
+## Set Equality
+
+Randomized integer sets, measured in isolation with `lein bench-simple`.
+
+This is not one of the library's headline capabilities, but it is a useful
+sanity check for ordered-set's direct tree comparison path. The most meaningful
+cases are:
+
+- equal sets of the same size
+- same-size sets differing in one element
+
+The cardinality-mismatch case is effectively a count check and is not very
+interesting.
+
+### Equal sets
+
+| | N=1K | N=10K | N=100K |
+|--|-----:|------:|-------:|
+| hash-set | 0.08ms | 0.31ms | 3.98ms |
+| sorted-set | 0.13ms | 1.03ms | 11.87ms |
+| data.avl | 0.15ms | 1.22ms | 13.77ms |
+| ordered-set | 0.27ms | 0.13ms | 1.23ms |
+| vs hash-set | 0.3x | **2.4x** | **3.2x** |
+| vs sorted-set | 0.5x | **8.2x** | **9.7x** |
+| vs data.avl | 0.6x | **9.7x** | **11.2x** |
+
+Interpretation:
+
+- at `1K`, hash-set and sorted-set are still cheaper
+- by `10K`, ordered-set's direct ordered comparison path is clearly better
+- by `100K`, ordered-set is several times faster than hash-set and roughly an
+  order of magnitude faster than sorted-set and data.avl
+
+### Same size, one different element
+
+| | N=1K | N=10K | N=100K |
+|--|-----:|------:|-------:|
+| hash-set | 0.02ms | 0.15ms | 0.38ms |
+| sorted-set | 0.10ms | 1.05ms | 11.96ms |
+| data.avl | 0.12ms | 1.35ms | 14.51ms |
+| ordered-set | 0.06ms | 0.43ms | 0.13ms |
+
+Interpretation:
+
+- hash-set still wins the small and medium unequal cases
+- ordered-set still substantially beats sorted-set and data.avl
+- at `100K`, ordered-set also beats hash-set on this near-miss workload
+
+This is a good example of where direct ordered traversal helps beyond set
+algebra itself: once sets are large enough, the library can compare two
+compatible ordered sets very efficiently without falling back to generic
+membership-oriented equality work.
+
 ## Last Element
 
 1000 calls. O(log n) via `java.util.SortedSet.last()` vs O(n) seq traversal.

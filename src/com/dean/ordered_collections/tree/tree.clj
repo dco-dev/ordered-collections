@@ -307,6 +307,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Tree Rotations (Weight Balanced)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; macros because they are directly in the hot path.
 
 (defmacro rotate-single-left
   "Single left rotation. Move Y (the left subtree of the right subtree of A)
@@ -323,8 +325,7 @@
                  ,---:     :---,            ,---:     :---,
                  | Y |     | Z |            | X |     | Y |
                  '---'     '---'            '---'     '---'
-
-  Macro for inlining in hot rotation paths."
+  "
   [create ak av x b]
   `(let [b# ~b
          bk# (-k b#) bv# (-v b#) y# (-l b#) z# (-r b#)]
@@ -347,8 +348,7 @@
               ,---:     :---,
               | y1|     | y2|
               '---'     '---'
-
-  Macro for inlining in hot rotation paths."
+  "
   [create ak av x c]
   `(let [c# ~c
          ck# (-k c#) cv# (-v c#) b# (-l c#) z# (-r c#)
@@ -370,8 +370,7 @@
      ,---:     :---,                                    ,---:     :---,
      | X |     | Y |                                    | Y |     | Z |
      '---'     '---'                                    '---'     '---'
-
-  Macro for inlining in hot rotation paths."
+  "
   [create bk bv a z]
   `(let [a# ~a
          ak# (-k a#) av# (-v a#) x# (-l a#) y# (-r a#)]
@@ -394,8 +393,7 @@
         ,---:     :---,
         | y1|     | y2|
         '---'     '---'
-
-  Macro for inlining in hot rotation paths."
+  "
   [create ck cv a z]
   `(let [a# ~a
          ak# (-k a#) av# (-v a#) x# (-l a#) b# (-r a#)
@@ -609,11 +607,7 @@
      (rm n))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Tree Search
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Lookup Operations (Performance Critical)
+;; Lookup
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
 ;; These are the hottest paths in the library. Every lookup, contains?, and get
@@ -1136,33 +1130,39 @@
 ;; Instead of element-by-element insertion (O(n log n)), we can implement
 ;; union, intersection, and difference in O(n) time using divide-and-conquer.
 
+(defn- node-split-lesser*
+  [n k ^Comparator cmp create]
+  (loop [n n]
+    (if (leaf? n)
+      n
+      (kvlr [kn vn ln rn] n
+        (let [c (.compare cmp k kn)]
+          (cond
+            (zero? c) ln
+            (neg? c)  (recur ln)
+            :else     (node-concat3 kn vn ln (node-split-lesser* rn k cmp create) cmp create)))))))
+
 (defn node-split-lesser
   "return a tree of all nodes whose key is less than k (Logarithmic time)."
   [n k]
-  (let [^Comparator cmp order/*compare*]
-    (loop [n n]
-      (if (leaf? n)
-        n
-        (kvlr [kn vn ln rn] n
-          (let [c (.compare cmp k kn)]
-            (cond
-              (zero? c) ln
-              (neg? c)  (recur ln)
-              :else     (node-concat3 kn vn ln (node-split-lesser rn k)))))))))
+  (node-split-lesser* n k order/*compare* *t-join*))
+
+(defn- node-split-greater*
+  [n k ^Comparator cmp create]
+  (loop [n n]
+    (if (leaf? n)
+      n
+      (kvlr [kn vn ln rn] n
+        (let [c (.compare cmp k kn)]
+          (cond
+            (zero? c) rn
+            (neg? c)  (node-concat3 kn vn (node-split-greater* ln k cmp create) rn cmp create)
+            :else     (recur rn)))))))
 
 (defn node-split-greater
   "return a tree of all nodes whose key is greater than k (Logarithmic time)."
   [n k]
-  (let [^Comparator cmp order/*compare*]
-    (loop [n n]
-      (if (leaf? n)
-        n
-        (kvlr [kn vn ln rn] n
-          (let [c (.compare cmp k kn)]
-            (cond
-              (zero? c) rn
-              (neg? c)  (node-concat3 kn vn (node-split-greater ln k) rn)
-              :else     (recur rn))))))))
+  (node-split-greater* n k order/*compare* *t-join*))
 
 (defn- node-split*
   [n k ^Comparator cmp create]
@@ -1191,16 +1191,6 @@
 ;; Tree Comparator (Worst-Case Linear Time)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn- enum-frame-extract
-  "Extract current element info from an EnumFrame.
-   Returns [current-node nil next-subtree next-frame] or nil if at end."
-  [^EnumFrame frame]
-  (when frame
-    [(.-node frame)
-     nil  ;; caller uses accessor
-     (.-subtree frame)
-     (.-next frame)]))
-
 (defn node-compare
   "return 3-way comparison of the trees n1 and n2 using an accessor
   to compare specific node consitituent values: :k, :v, :kv, or any
@@ -1215,22 +1205,22 @@
         ^Comparator cmp order/*compare*]
     (loop [e1 (node-enumerator n1 nil)
            e2 (node-enumerator n2 nil)]
-      (let [info1 (enum-frame-extract e1)
-            info2 (enum-frame-extract e2)]
-        (cond
-          (and (nil? info1) (nil? info2))  0
-          (nil? info1)                     -1
-          (nil? info2)                      1
-          :else
-          (let [[x1 _ r1 ee1] info1
-                [x2 _ r2 ee2] info2
-                val1 (acc-fn x1)
-                val2 (acc-fn x2)
-                c    (.compare cmp val1 val2)]
-            (if-not (zero? c)
-              c
-              (recur (node-enumerator r1 ee1)
-                     (node-enumerator r2 ee2)))))))))
+      (cond
+        (and (nil? e1) (nil? e2))  0
+        (nil? e1)                  -1
+        (nil? e2)                   1
+        :else
+        (let [^EnumFrame ef1 e1
+              ^EnumFrame ef2 e2
+              x1   (.-node ef1)
+              x2   (.-node ef2)
+              val1 (acc-fn x1)
+              val2 (acc-fn x2)
+              c    (.compare cmp val1 val2)]
+          (if-not (zero? c)
+            c
+            (recur (node-enumerator (.-subtree ef1) (.-next ef1))
+                   (node-enumerator (.-subtree ef2) (.-next ef2)))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Fundamental Set Operations (Worst-Case Linear Time)
@@ -1718,23 +1708,23 @@
   (let [^java.util.Comparator cmp order/*compare*]
     (loop [e1 (node-enumerator n1 nil)
            e2 (node-enumerator n2 nil)]
-      (let [info1 (enum-frame-extract e1)
-            info2 (enum-frame-extract e2)]
-        (cond
-          (and (nil? info1) (nil? info2))  0
-          (nil? info1)                     -1
-          (nil? info2)                      1
-          :else
-          (let [[x1 _ r1 ee1] info1
-                [x2 _ r2 ee2] info2
-                kc (.compare cmp (-k x1) (-k x2))]
-            (if-not (zero? kc)
-              kc
-              (let [vc (clojure.lang.Util/compare (-v x1) (-v x2))]
-                (if-not (zero? vc)
-                  vc
-                  (recur (node-enumerator r1 ee1)
-                         (node-enumerator r2 ee2)))))))))))
+      (cond
+        (and (nil? e1) (nil? e2))  0
+        (nil? e1)                  -1
+        (nil? e2)                   1
+        :else
+        (let [^EnumFrame ef1 e1
+              ^EnumFrame ef2 e2
+              x1 (.-node ef1)
+              x2 (.-node ef2)
+              kc (.compare cmp (-k x1) (-k x2))]
+          (if-not (zero? kc)
+            kc
+            (let [vc (clojure.lang.Util/compare (-v x1) (-v x2))]
+              (if-not (zero? vc)
+                vc
+                (recur (node-enumerator (.-subtree ef1) (.-next ef1))
+                       (node-enumerator (.-subtree ef2) (.-next ef2)))))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Fundamental Vector Operations

@@ -67,10 +67,10 @@ hood — and in the new things you can do.
 ## Performance
 
 Across the measured workloads, `ordered-collections` is faster than
-both `clojure.core/sorted-set` and `clojure.data.avl` at every cardinality  Set algebra is the standout:
-the current Criterium run ranges from high-single-digit wins at 10K to
-30-46x wins at 500K. Even against the (unordered) `clojure.core/set` baseline,
-the set-algebra benchmarks still show roughly 4-24x wins.
+both `clojure.core/sorted-set` and `clojure.data.avl` at every
+cardinality  Set algebra is the standout, with 30-46x wins at 500K.
+Even against unordered `clojure.core/set`the benchmarks still show
+roughly 4-24x wins.
 
 ### Set algebra (speedup)
 
@@ -98,7 +98,14 @@ the set-algebra benchmarks still show roughly 4-24x wins.
 | Intersection | **4.3x** | **7.6x** | **17.3x** |
 | Difference | **5.1x** | **9.2x** | **24.2x** |
 
-### Other operations (speedup)
+### Set equality
+
+| | vs hash-set | vs sorted-set | vs data.avl |
+|--|------------:|--------------:|------------:|
+| N=10K | **2.4x** | **8.2x** | **9.7x** |
+| N=100K | **3.2x** | **9.7x** | **11.2x** |
+
+### Other operations
 
 | Operation | vs sorted-set | vs data.avl |
 |-----------|---------------|-------------|
@@ -109,6 +116,7 @@ the set-algebra benchmarks still show roughly 4-24x wins.
 
 *[Criterium](https://github.com/hugoduncan/criterium) at all sizes.
 For the compact rows in "Other operations", values are shown in `N=10K / N=100K / N=500K` order.
+Set-equality figures come from the isolated simple benchmark on randomized integer sets.
 See [Benchmarks](doc/benchmarks.md) for full results.*
 
 ### Beyond speed

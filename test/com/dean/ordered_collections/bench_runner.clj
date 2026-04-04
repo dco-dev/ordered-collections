@@ -19,7 +19,7 @@
              :refer [generate-pairs generate-elements generate-lookup-keys
                      generate-string-keys build-map-variants build-set-variants
                      build-string-map-variants overlapping-set-variants
-                     split-workload fold-frequency-workload format-ns
+                     split-workload fold-frequency-workload set-comparison-workload format-ns
                      parse-standard-args]]
             [com.dean.ordered-collections.core :as core]
             [com.dean.ordered-collections.tree.order :as order])
@@ -164,6 +164,24 @@
     {:sorted-set  (do (print ".") (flush) (bench-expr (reduce (fn [^long acc x] (+ acc (long x))) 0 ss)))
      :data-avl    (do (print ".") (flush) (bench-expr (reduce (fn [^long acc x] (+ acc (long x))) 0 as)))
      :ordered-set (do (print ".") (flush) (bench-expr (reduce (fn [^long acc x] (+ acc (long x))) 0 os)))}))
+
+(defn bench-set-equality [n]
+  (let [{equal :equal
+         different :different
+         size-different :size-different} (set-comparison-workload n)
+        cases {:equal equal
+               :different different
+               :size-different size-different}]
+    (into {}
+          (for [[case-key {:keys [left right]}] cases
+                :let [hs1 (:hash-set left), hs2 (:hash-set right)
+                      as1 (:data-avl left), as2 (:data-avl right)
+                      os1 (:ordered-set left), os2 (:ordered-set right)]]
+            [case-key
+             {:hash-set    (do (print ".") (flush) (bench-expr (= hs1 hs2)))
+              :sorted-set  (do (print ".") (flush) (bench-expr (= (:sorted-set left) (:sorted-set right))))
+              :data-avl    (do (print ".") (flush) (bench-expr (= as1 as2)))
+              :ordered-set (do (print ".") (flush) (bench-expr (= os1 os2)))}]))))
 
 (defn bench-set-fold [n]
   (let [elems (generate-elements n)
@@ -396,6 +414,7 @@
       (print "  set-delete") (swap! results assoc-in [n :set-delete] (bench-set-delete n)) (println)
       (print "  set-lookup") (swap! results assoc-in [n :set-lookup] (bench-set-lookup n)) (println)
       (print "  set-iteration") (swap! results assoc-in [n :set-iteration] (bench-set-iteration n)) (println)
+      (print "  set-equality") (swap! results assoc-in [n :set-equality] (bench-set-equality n)) (println)
       (print "  set-fold") (swap! results assoc-in [n :set-fold] (bench-set-fold n)) (println)
       (print "  set-fold-freq") (swap! results assoc-in [n :set-fold-freq] (bench-set-fold-freq n)) (println)
       (print "  set-reduce-vs-fold-freq") (swap! results assoc-in [n :set-reduce-vs-fold-freq] (bench-set-reduce-vs-fold-freq n)) (println)
@@ -444,6 +463,17 @@
     (println)
     (println (str "Results written to: " output-file))))
 
+(defn- leaf-bench-result? [x]
+  (and (map? x) (contains? x :mean-ns)))
+
+(defn- print-summary-node [indent m]
+  (doseq [[k v] (sort-by key m)]
+    (if (leaf-bench-result? v)
+      (println (str indent (name k) ": " (format-time (:mean-ns v))))
+      (do
+        (println (str indent (name k) ":"))
+        (print-summary-node (str indent "  ") v)))))
+
 (defn print-summary [results]
   (println)
   (println "===== SUMMARY =====")
@@ -452,8 +482,7 @@
     (println (str "N = " n))
     (doseq [[bench-name bench-results] (sort-by key benches)]
       (println (str "  " (name bench-name) ":"))
-      (doseq [[impl data] (sort-by key bench-results)]
-        (println (str "    " (name impl) ": " (format-time (:mean-ns data))))))
+      (print-summary-node "    " bench-results))
     (println)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

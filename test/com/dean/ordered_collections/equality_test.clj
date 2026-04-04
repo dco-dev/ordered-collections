@@ -8,6 +8,7 @@
    - Equality symmetry (a = b ↔ b = a)
    - Specialized variant equality (long-ordered-set = ordered-set, etc.)"
   (:require [clojure.data.avl :as avl]
+            [clojure.test :refer [deftest is testing]]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
@@ -236,3 +237,70 @@
           st2 (oc/segment-tree + 0 (shuffle (vec entries)))]
       (and (= st1 st2) (= st2 st1)
            (= (hash st1) (hash st2))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Focused Equality Cases
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest large-set-equality-cases
+  (let [n         10000
+        xs        (vec (shuffle (range n)))
+        ys        (assoc xs (dec n) n)
+        shorter   (subvec xs 0 (dec n))
+        os        (oc/ordered-set xs)
+        os-same   (oc/ordered-set (reverse xs))
+        os-diff   (oc/ordered-set ys)
+        os-short  (oc/ordered-set shorter)
+        ss        (into (sorted-set) xs)
+        hs        (set xs)
+        avl-set   (into (avl/sorted-set) xs)]
+    (testing "equal sets across construction paths and compatible types"
+      (is (= os os-same))
+      (is (= os ss))
+      (is (= os hs))
+      (is (= os avl-set))
+      (is (= (hash os) (hash os-same) (hash ss) (hash hs) (hash avl-set))))
+    (testing "same-size one-different set is not equal"
+      (is (not= os os-diff))
+      (is (not= os-diff os))
+      (is (not= os (into (sorted-set) ys)))
+      (is (not= os (set ys)))
+      (is (not= os (into (avl/sorted-set) ys))))
+    (testing "count-different set is not equal"
+      (is (not= os os-short))
+      (is (not= os-short os))
+      (is (not= os (into (sorted-set) shorter)))
+      (is (not= os (set shorter)))
+      (is (not= os (into (avl/sorted-set) shorter))))))
+
+(deftest large-map-equality-cases
+  (let [n         10000
+        kvs       (mapv (fn [k] [k (str k)]) (shuffle (range n)))
+        kvs-diff  (assoc kvs (dec n) [(dec n) ::different])
+        kvs-short (subvec kvs 0 (dec n))
+        om        (oc/ordered-map kvs)
+        om-same   (oc/ordered-map (reverse kvs))
+        om-diff   (oc/ordered-map kvs-diff)
+        om-short  (oc/ordered-map kvs-short)
+        sm        (into (sorted-map) kvs)
+        hm        (into {} kvs)
+        avl-map   (into (avl/sorted-map) kvs)]
+    (testing "equal maps across construction paths and compatible types"
+      (is (= om om-same))
+      (is (= om sm))
+      (is (= om hm))
+      (is (= om avl-map))
+      (is (= (hash om) (hash om-same) (hash sm) (hash hm) (hash avl-map))))
+    (testing "same-size one-different map is not equal"
+      (is (not= om om-diff))
+      (is (not= om-diff om))
+      (is (not= om (into (sorted-map) kvs-diff)))
+      (is (not= om (into {} kvs-diff)))
+      (is (not= om (into (avl/sorted-map) kvs-diff))))
+    (testing "count-different map is not equal"
+      (is (not= om om-short))
+      (is (not= om-short om))
+      (is (not= om (into (sorted-map) kvs-short)))
+      (is (not= om (into {} kvs-short)))
+      (is (not= om (into (avl/sorted-map) kvs-short))))))

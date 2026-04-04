@@ -22,7 +22,8 @@
              :refer [bench format-ns format-result print-header print-row
                      has-flag? get-arg-value parse-sizes parse-standard-args
                      build-map-variants build-set-variants overlapping-set-variants
-                     split-workload fold-frequency-workload]]
+                     split-workload fold-frequency-workload
+                     set-comparison-workload]]
             [com.dean.ordered-collections.core :as core]
             [com.dean.ordered-collections.tree.node :as node]
             [com.dean.ordered-collections.tree.tree :as tree]
@@ -201,6 +202,26 @@
         [(bench 20 10 (reduce (fn [^long acc x] (+ acc (long x))) 0 ss))
          (bench 20 10 (reduce (fn [^long acc x] (+ acc (long x))) 0 as))
          (bench 20 10 (reduce (fn [^long acc x] (+ acc (long x))) 0 os))]))))
+
+(defn bench-set-comparison
+  "Benchmark set equality on same-content and near-miss workloads."
+  [sizes]
+  (doseq [[case-label workload-key title]
+          [["equal" :equal "SET EQUALITY: compare equal randomized sets"]
+           ["one-different" :different "SET EQUALITY: compare same-size sets differing in one element"]
+           ["size-different" :size-different "SET EQUALITY: compare sets differing in cardinality by one"]]]
+    (print-header title ["hash-set" "sorted-set" "data.avl" "ordered-set"])
+    (doseq [n sizes]
+      (let [{left :left right :right} (workload-key (set-comparison-workload n))
+            hs1 (:hash-set left), hs2 (:hash-set right)
+            ss1 (:sorted-set left), ss2 (:sorted-set right)
+            as1 (:data-avl left), as2 (:data-avl right)
+            os1 (:ordered-set left), os2 (:ordered-set right)]
+        (print-row n
+          [(bench 20 10 (= hs1 hs2))
+           (bench 20 10 (= ss1 ss2))
+           (bench 20 10 (= as1 as2))
+           (bench 20 10 (= os1 os2))])))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Ranked Access Benchmarks (data.avl specialty)
@@ -463,7 +484,8 @@
   (bench-set-incremental-insert sizes)
   (bench-set-incremental-delete sizes)
   (bench-set-lookup sizes)
-  (bench-set-iteration sizes))
+  (bench-set-iteration sizes)
+  (bench-set-comparison sizes))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Set Operations Benchmarks (union, intersection, difference)
