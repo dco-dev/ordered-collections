@@ -213,30 +213,11 @@
 ;; EnumFrames. Each frame saves (node, right-subtree, next-frame):
 ;;
 ;;     node-enumerator(4)
-;;         │
-;;         ▼
-;;     ┌─────────────────────────────────────────────────────────┐
-;;     │ EnumFrame                                               │
-;;     │   node: 1                                               │
-;;     │   subtree: nil  ─────────────────────────────────────┐  │
-;;     │   next: ───┐                                         │  │
-;;     └────────────│────────────────────────────────────────│──┘
-;;                  ▼                                         │
-;;     ┌─────────────────────────────────────────────────┐    │
-;;     │ EnumFrame                                       │    │
-;;     │   node: 2                                       │    │
-;;     │   subtree: ─────► subtree rooted at 3           │    │
-;;     │   next: ───┐                                    │    │
-;;     └────────────│────────────────────────────────────┘    │
-;;                  ▼                                         │
-;;     ┌─────────────────────────────────────────────────┐    │
-;;     │ EnumFrame                                       │    │
-;;     │   node: 4                                       │    │
-;;     │   subtree: ─────► subtree rooted at 6           │    │
-;;     │   next: nil                                     │    │
-;;     └─────────────────────────────────────────────────┘    │
-;;                                                            │
-;;     The leftmost node (1) is at the head ◄─────────────────┘
+;;
+;;     [1 | nil | next] -> [2 | subtree 3 | next] -> [4 | subtree 6 | nil]
+;;
+;; The head of the chain is the current element. Each frame is:
+;;   [node | saved-right-subtree | next-frame]
 ;;
 ;; TRAVERSAL:
 ;;
@@ -253,7 +234,10 @@
 ;;
 ;;      After visiting node 2:
 ;;        subtree=3, next=Frame(4,...)
-;;        → enumerates subtree 3, producing Frame(3, nil, Frame(4,...))
+;;        → enumerate the left spine of subtree 3 and link it to Frame(4,...)
+;;
+;;          before: [2 | subtree 3 | next -> [4 | subtree 6 | nil]]
+;;          after:  [3 | nil      | next -> [4 | subtree 6 | nil]]
 ;;
 ;; This produces the in-order sequence: 1, 2, 3, 4, 5, 6, 7
 ;;
@@ -430,12 +414,12 @@
   in `l` are less than `k`, all keys in `r` are greater than `k`, and that
   at most one single or double rotation is needed to restore balance.
 
-  The 5-arity form takes an explicit node constructor and is used in hot
-  internal paths to avoid dynamic-var indirection. The 4-arity form uses the
-  current `*t-join*` binding."
+  The 5-arity form takes an explicit node constructor as its final argument
+  and is used in hot internal paths to avoid dynamic-var indirection. The
+  4-arity form uses the current `*t-join*` binding."
   ([k v l r]
-   (node-stitch *t-join* k v l r))
-  ([create k v l r]
+   (node-stitch k v l r *t-join*))
+  ([k v l r create]
    (let [lw (node-weight l)
          rw (node-weight r)]
      (cond
@@ -477,11 +461,10 @@
                (create k v (leaf) (leaf))
                (kvlr [key val l r] n
                  (let [c (.compare cmp k key)]
-                   (if (zero? c)
-                     (create key v l r)
-                     (if (neg? c)
-                       (node-stitch create key val (add l) r)
-                       (node-stitch create key val l (add r))))))))]
+                   (cond
+                     (zero? c) (create key v l r)
+                     (neg? c)  (node-stitch key val (add l) r create)
+                     :else     (node-stitch key val l (add r) create))))))]
      (add n))))
 
 (defn node-add-if-absent
@@ -496,9 +479,9 @@
                    (cond
                      (zero? c) nil  ; key exists, signal failure
                      (neg? c)  (when-let [new-l (add l)]
-                                 (node-stitch create key val new-l r))
+                                 (node-stitch key val new-l r create))
                      :else     (when-let [new-r (add r)]
-                                 (node-stitch create key val l new-r)))))))]
+                                 (node-stitch key val l new-r create)))))))]
      (add n))))
 
 (defn node-concat3
@@ -515,11 +498,10 @@
                (create k v (leaf) (leaf))
                (kvlr [key val l r] n
                  (let [c (.compare cmp k key)]
-                   (if (zero? c)
-                     (create key v l r)
-                     (if (neg? c)
-                       (node-stitch create key val (add l) r)
-                       (node-stitch create key val l (add r))))))))
+                   (cond
+                     (zero? c) (create key v l r)
+                     (neg? c)  (node-stitch key val (add l) r create)
+                     :else     (node-stitch key val l (add r) create))))))
            (cat3 [k v l r]
              (cond
                (leaf? l) (add r)
@@ -528,11 +510,11 @@
                                rw (node-weight r)]
                            (cond
                              (< (* +delta+ lw) rw) (kvlr [k2 v2 l2 r2] r
-                                                     (node-stitch create k2 v2
-                                                       (cat3 k v l l2) r2))
+                                                     (node-stitch k2 v2
+                                                       (cat3 k v l l2) r2 create))
                              (< (* +delta+ rw) lw) (kvlr [k1 v1 l1 r1] l
-                                                     (node-stitch create k1 v1 l1
-                                                       (cat3 k v r1 r)))
+                                                     (node-stitch k1 v1 l1
+                                                       (cat3 k v r1 r) create))
                              true                  (create k v l r)))))]
      (cat3 k v l r))))
 
@@ -578,8 +560,8 @@
              (cond
                (leaf? n)      (throw (ex-info "remove-least: empty tree" {:node n}))
                (leaf? (-l n)) (-r n)
-               :else          (node-stitch create (-k n) (-v n)
-                                (rm-least (-l n)) (-r n))))]
+               :else          (node-stitch (-k n) (-v n)
+                                (rm-least (-l n)) (-r n) create)))]
      (rm-least n))))
 
 (defn node-remove-greatest
@@ -591,8 +573,8 @@
               (cond
                 (leaf? n)      (throw (ex-info "remove-greatest: empty tree" {:node n}))
                 (leaf? (-r n)) (-l n)
-                :else          (node-stitch create (-k n) (-v n) (-l n)
-                                 (rm-greatest (-r n)))))]
+                :else          (node-stitch (-k n) (-v n) (-l n)
+                                 (rm-greatest (-r n)) create)))]
       (rm-greatest n))))
 
 (defn node-concat2
@@ -608,35 +590,22 @@
      (leaf? l) r
      (leaf? r) l
      :else     (let [[k v] (node-least-kv r)]
-                 (node-stitch create k v l (node-remove-least r create))))))
+                 (node-stitch k v l (node-remove-least r create) create)))))
 
 (defn node-remove
   "remove the node whose key is equal to k, if present."
   ([n k]
    (node-remove n k order/*compare* *t-join*))
   ([n k ^Comparator cmp create]
-   (letfn [(concat2 [l r]
-             (cond
-               (leaf? l) r
-               (leaf? r) l
-               :else (let [[k v] (node-least-kv r)]
-                       (node-stitch create k v l (rm-least r)))))
-           (rm-least [n]
-             (cond
-               (leaf? n)      (throw (ex-info "rm-least: empty" {}))
-               (leaf? (-l n)) (-r n)
-               :else          (node-stitch create (-k n) (-v n)
-                                (rm-least (-l n)) (-r n))))
-           (rm [n]
+   (letfn [(rm [n]
              (if (leaf? n)
                (leaf)
                (kvlr [key val l r] n
                  (let [c (.compare cmp k key)]
-                   (if (zero? c)
-                     (concat2 l r)
-                     (if (neg? c)
-                       (node-stitch create key val (rm l) r)
-                       (node-stitch create key val l (rm r))))))))]
+                   (cond
+                     (zero? c) (node-concat2 l r create)
+                     (neg? c)  (node-stitch key val (rm l) r create)
+                     :else     (node-stitch key val l (rm r) create))))))]
      (rm n))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -667,7 +636,10 @@
 ;; This is ~30% faster than going through the Comparator interface.
 
 (defn node-contains-long?
-  "Primitive-specialized contains? for Long keys. Bypasses Comparator."
+  "Primitive-specialized membership check for Long keys.
+
+  Use this when the caller only needs a boolean presence test. It avoids both
+  Comparator dispatch and the broader node-returning contract of `node-find-long`."
   [n ^long k]
   (loop [n n]
     (if (leaf? n)
@@ -677,17 +649,26 @@
         (if (zero? c) true (recur (if (neg? c) (-l n) (-r n))))))))
 
 (defn node-find-long
-  "Primitive-specialized node-find for Long keys. Bypasses Comparator."
-  [n ^long k]
-  (loop [n n]
-    (if (leaf? n)
-      nil
-      (let [nk (long (-k n))
-            c (Long/compare k nk)]
-        (if (zero? c) n (recur (if (neg? c) (-l n) (-r n))))))))
+  "Primitive-specialized node lookup for Long keys.
+
+  Use this when the caller needs the matching node rather than just a boolean.
+  Kept separate from `node-contains-long?` so membership-only call sites can stay
+  on the minimal boolean path."
+  ([n ^long k]
+   (node-find-long n k nil))
+  ([n ^long k not-found]
+   (loop [n n]
+     (if (leaf? n)
+       not-found
+       (let [nk (long (-k n))
+             c (Long/compare k nk)]
+         (if (zero? c) n (recur (if (neg? c) (-l n) (-r n)))))))))
 
 (defn node-find-val-long
-  "Primitive-specialized node-find-val for Long keys. Bypasses Comparator."
+  "Primitive-specialized value lookup for Long keys.
+
+  Use this when the caller needs only the associated value (or `not-found`),
+  without materializing the broader node-returning path."
   [n ^long k not-found]
   (loop [n n]
     (if (leaf? n)
@@ -700,7 +681,11 @@
 ;; Uses String.compareTo directly, avoiding Comparator dispatch.
 
 (defn node-contains-string?
-  "String-specialized contains?. Uses String.compareTo directly."
+  "String-specialized membership check.
+
+  Use this when the caller only needs presence/absence. It uses
+  `String.compareTo` directly and avoids the broader node-returning contract of
+  `node-find-string`."
   [n ^String k]
   (loop [n n]
     (if (leaf? n)
@@ -709,16 +694,25 @@
         (if (zero? c) true (recur (if (neg? c) (-l n) (-r n))))))))
 
 (defn node-find-string
-  "String-specialized node-find. Uses String.compareTo directly."
-  [n ^String k]
-  (loop [n n]
-    (if (leaf? n)
-      nil
-      (let [c (.compareTo k ^String (-k n))]
-        (if (zero? c) n (recur (if (neg? c) (-l n) (-r n))))))))
+  "String-specialized node lookup.
+
+  Use this when the caller needs the matching node rather than just a boolean.
+  Kept separate from `node-contains-string?` so membership-only call sites can
+  stay on the minimal boolean path."
+  ([n ^String k]
+   (node-find-string n k nil))
+  ([n ^String k not-found]
+   (loop [n n]
+     (if (leaf? n)
+       not-found
+       (let [c (.compareTo k ^String (-k n))]
+         (if (zero? c) n (recur (if (neg? c) (-l n) (-r n)))))))))
 
 (defn node-find-val-string
-  "String-specialized node-find-val. Uses String.compareTo directly."
+  "String-specialized value lookup.
+
+  Use this when the caller needs only the associated value (or `not-found`),
+  without materializing the broader node-returning path."
   [n ^String k not-found]
   (loop [n n]
     (if (leaf? n)
@@ -728,34 +722,25 @@
 
 (defn node-find
   "find a node in n whose key = k.
-   Returns a node implementing INode, or nil if not found."
-  {:inline-arities #{3}
-   :inline (fn [n k cmp]
-             `(let [cmp# ~cmp]
-                (loop [n# ~n]
-                  (if (leaf? n#)
-                    nil
-                    (let [c# (.compare ^Comparator cmp# ~k (-k n#))]
-                      (if (zero? c#) n# (recur (if (neg? c#) (-l n#) (-r n#)))))))))}
+   Returns a node implementing INode, or `not-found` when absent.
+
+   Arity notes:
+   - `(node-find n k)` uses the current dynamic comparator
+   - `(node-find n k cmp)` uses an explicit comparator
+   - `(node-find n k not-found cmp)` uses both an explicit fallback and comparator"
   ([n k]
-   (node-find n k order/*compare*))
+   (node-find n k nil order/*compare*))
   ([n k ^Comparator cmp]
+   (node-find n k nil cmp))
+  ([n k not-found ^Comparator cmp]
    (loop [n n]
      (if (leaf? n)
-       nil
+       not-found
        (let [c (.compare cmp k (-k n))]
          (if (zero? c) n (recur (if (neg? c) (-l n) (-r n)))))))))
 
 (defn node-find-val
   "Find value for key k in tree. Returns the value or not-found."
-  {:inline-arities #{4}
-   :inline (fn [n k not-found cmp]
-             `(let [cmp# ~cmp]
-                (loop [n# ~n]
-                  (if (leaf? n#)
-                    ~not-found
-                    (let [c# (.compare ^Comparator cmp# ~k (-k n#))]
-                      (if (zero? c#) (-v n#) (recur (if (neg? c#) (-l n#) (-r n#)))))))))}
   ([n k not-found]
    (node-find-val n k not-found order/*compare*))
   ([n k not-found ^Comparator cmp]
@@ -767,14 +752,6 @@
 
 (defn node-contains?
   "Check if key k exists in tree."
-  {:inline-arities #{3}
-   :inline (fn [n k cmp]
-             `(let [cmp# ~cmp]
-                (loop [n# ~n]
-                  (if (leaf? n#)
-                    false
-                    (let [c# (.compare ^Comparator cmp# ~k (-k n#))]
-                      (if (zero? c#) true (recur (if (neg? c#) (-l n#) (-r n#)))))))))}
   ([n k]
    (node-contains? n k order/*compare*))
   ([n k ^Comparator cmp]
