@@ -114,21 +114,7 @@ roughly 4-24x wins.
 | Split | — | **3.1x / 3.6x / 3.7x** |
 | Fold | **3.7x / 7.3x / 9.7x** | 1.0x / **3.0x / 3.4x** |
 
-*[Criterium](https://github.com/hugoduncan/criterium) at all sizes.
-For the compact rows in "Other operations", values are shown in `N=10K / N=100K / N=500K` order.
-Set-equality figures come from the isolated simple benchmark on randomized integer sets.
-See [Benchmarks](doc/benchmarks.md) for full results.*
-
-### Beyond speed
-
-| | sorted-set | data.avl | ordered-set |
-|--|:---:|:---:|:---:|
-| Endpoint access | O(1) `first`, O(n) seq `last` | O(1) `first`, O(n) seq `last` | **O(1) `first`, O(log n) `.last`** |
-| `nth` / rank | — | O(log n) | O(log n) |
-| `nearest` / subrange | — | O(log n) | O(log n) |
-| `split` | — | O(log n) | O(log n) |
-| Parallel `r/fold` | Sequential | Sequential | **Parallel** |
-| Intervals / ranges / segments | — | — | **Built-in** |
+*Benchmarked on a 2023 MacBook Pro (M2). See [Benchmarks](doc/benchmarks.md) for full results.*
 
 ---
 
