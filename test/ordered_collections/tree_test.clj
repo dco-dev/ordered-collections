@@ -280,7 +280,7 @@
         (tree/node-run-kv! tree (fn [k v] (vswap! seen conj [k v])))
         (is (= (mapv (fn [k] [k k]) (range size)) @seen)))
       (dotimes [_ 1000]
-        (is (= sum (tree/node-chunked-fold (inc (rand-int size))
+        (is (= sum (tree/node-fold (inc (rand-int size))
                      tree + (fn ([acc x] (+ acc (node/-k x)))))))))))
 
 (deftest node-traversal-api-check

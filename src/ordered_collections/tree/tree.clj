@@ -988,6 +988,8 @@
 ;; All reducers support `reduced` short-circuiting. The unary reducers share
 ;; the seeded and explicit-init enumerator kernels below.
 
+(declare node-add node-nth node-split)
+
 (defmacro ^:private enum-reduce-init
   "Shared enumerator reduction kernel for explicit initial values."
   [enum next-fn acc-sym init-expr node-sym step-expr]
@@ -1089,6 +1091,42 @@
                         (reduce-node acc l))))))))]
     (let [result (reduce-node init root)]
       (if (reduced? result) @result result))))
+
+(defn node-chunks
+  "Partition tree `n` into roughly equal subtrees of about `chunk-size`
+  elements."
+  [^long chunk-size n]
+  (let [sz         (node-size n)
+        num-chunks (max 2 (quot sz chunk-size))]
+    (loop [i         1
+           remaining n
+           result    []]
+      (if (or (= i num-chunks) (leaf? remaining))
+        (conj result remaining)
+        (let [pos       (long (* sz (/ (double i) num-chunks)))
+              split-key (-k (node-nth n pos))
+              [lt present gt] (node-split remaining split-key)
+              gt (if present
+                   (node-add gt (first present) (second present))
+                   gt)]
+          (recur (inc i) gt (conj result lt)))))))
+
+(defn node-fold
+  "Parallel fold to support clojure.core.reducers/CollFold.
+
+   Splits the tree into chunks, then folds them in parallel via r/fold.
+   Splitting is done eagerly in the caller's thread (where dynamic bindings
+   are available); each chunk's sequential reduce uses node-reduce which
+   needs no bindings."
+  [^long chunk-size n combinef reducef]
+  {:pre [(pos? chunk-size)]}
+  (let [sz (node-size n)]
+    (if (<= sz chunk-size)
+      (node-reduce reducef (combinef) n)
+      (let [subtrees    (node-chunks chunk-size n)
+            rf (fn [_ ^long idx]
+                 (node-reduce reducef (combinef) (nth subtrees idx)))]
+        (r/fold 1 combinef rf (vec (range (count subtrees))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Tree Health
@@ -1784,7 +1822,7 @@
     (persistent! acc)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Fundamental Seq Operations
+;; Lazy Seq
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn- node-seq-fn [dir]
@@ -1809,13 +1847,13 @@
   ((node-seq-fn :>) (node-enumerator-reverse n)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Efficient Direct Seq Types
+;; Efficient Direct Seq
 ;;
 ;; The tree already supports ordinary lazy iteration via `node-seq`,
 ;; `node-seq-reverse`, `seq`, `rseq`, `subseq`, and friends. These direct seq
-;; types exist for the same reason as the enumerators: they preserve normal
-;; seq behavior while avoiding the extra allocation and wrapper overhead of
-;; generic `lazy-seq` and `map` composition in hot collection traversal paths.
+;; types preserve normal seq behavior while avoiding the extra allocation and
+;; wrapper overhead.
+;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn- seq-equiv
@@ -1830,121 +1868,75 @@
         (not (clojure.lang.Util/equiv (first s1) (first s2))) false
         :else (recur (next s1) (next s2))))))
 
-(deftype KeySeq [enum cnt _meta]
-  clojure.lang.ISeq
-  (first [_]
-    (-k (node-enum-first enum)))
-  (next [_]
-    (when-let [e (node-enum-rest enum)]
-      (KeySeq. e (when cnt (unchecked-dec-int cnt)) nil)))
-  (more [this]
-    (or (.next this) ()))
-  (cons [this o]
-    (clojure.lang.Cons. o this))
+(defmacro ^:private def-projected-seq-type [name next-fn project ctor]
+  (let [enum-sym 'enum
+        cnt-sym 'cnt
+        meta-sym '_meta
+        acc-sym 'acc
+        n-sym 'n
+        f-sym 'f
+        init-sym 'init
+        m-sym 'm]
+    `(deftype ~name [~enum-sym ~cnt-sym ~meta-sym]
+       clojure.lang.ISeq
+       (first [_]
+         (~project (node-enum-first ~enum-sym)))
+       (next [_]
+         (when-let [e# (~next-fn ~enum-sym)]
+           (~ctor e# (when ~cnt-sym (unchecked-dec-int ~cnt-sym)) nil)))
+       (more [this#]
+         (or (.next this#) ()))
+       (cons [this# o#]
+         (clojure.lang.Cons. o# this#))
 
-  clojure.lang.Seqable
-  (seq [this] this)
+       clojure.lang.Seqable
+       (seq [this#] this#)
 
-  clojure.lang.Sequential
+       clojure.lang.Sequential
 
-  java.lang.Iterable
-  (iterator [this]
-    (clojure.lang.SeqIterator. this))
+       java.lang.Iterable
+       (iterator [this#]
+         (clojure.lang.SeqIterator. this#))
 
-  clojure.lang.Counted
-  (count [_]
-    (if cnt cnt (enum-count enum node-enum-rest)))
+       clojure.lang.Counted
+       (count [_]
+         (if ~cnt-sym ~cnt-sym (enum-count ~enum-sym ~next-fn)))
 
-  clojure.lang.IReduceInit
-  (reduce [_ f init]
-    (enum-reduce-init enum node-enum-rest acc init n
-      (f acc (-k n))))
+       clojure.lang.IReduceInit
+       (reduce [_ ~f-sym ~init-sym]
+         (enum-reduce-init ~enum-sym ~next-fn ~acc-sym ~init-sym ~n-sym
+                           (~f-sym ~acc-sym (~project ~n-sym))))
 
-  clojure.lang.IReduce
-  (reduce [_ f]
-    (enum-reduce-first enum node-enum-rest acc n (-k n)
-      (f acc (-k n))
-      (f)))
+       clojure.lang.IReduce
+       (reduce [_ ~f-sym]
+         (enum-reduce-first ~enum-sym ~next-fn ~acc-sym ~n-sym (~project ~n-sym)
+                            (~f-sym ~acc-sym (~project ~n-sym))
+                            (~f-sym)))
 
-  clojure.lang.IHashEq
-  (hasheq [this]
-    (clojure.lang.Murmur3/hashOrdered this))
+       clojure.lang.IHashEq
+       (hasheq [this#]
+         (clojure.lang.Murmur3/hashOrdered this#))
 
-  clojure.lang.IPersistentCollection
-  (empty [_] ())
-  (equiv [this o]
-    (seq-equiv this o))
+       clojure.lang.IPersistentCollection
+       (empty [_] ())
+       (equiv [this# o#]
+         (seq-equiv this# o#))
 
-  java.lang.Object
-  (hashCode [this]
-    (clojure.lang.Util/hash this))
-  (equals [this o]
-    (clojure.lang.Util/equals this o))
+       java.lang.Object
+       (hashCode [this#]
+         (clojure.lang.Util/hash this#))
+       (equals [this# o#]
+         (clojure.lang.Util/equals this# o#))
 
-  clojure.lang.IMeta
-  (meta [_] _meta)
+       clojure.lang.IMeta
+       (meta [_] ~meta-sym)
 
-  clojure.lang.IObj
-  (withMeta [_ m]
-    (KeySeq. enum cnt m)))
+       clojure.lang.IObj
+       (withMeta [_ ~m-sym]
+         (~ctor ~enum-sym ~cnt-sym ~m-sym)))))
 
-(deftype EntrySeq [enum cnt _meta]
-  clojure.lang.ISeq
-  (first [_]
-    (-kv (node-enum-first enum)))
-  (next [_]
-    (when-let [e (node-enum-rest enum)]
-      (EntrySeq. e (when cnt (unchecked-dec-int cnt)) nil)))
-  (more [this]
-    (or (.next this) ()))
-  (cons [this o]
-    (clojure.lang.Cons. o this))
-
-  clojure.lang.Seqable
-  (seq [this] this)
-
-  clojure.lang.Sequential
-
-  java.lang.Iterable
-  (iterator [this]
-    (clojure.lang.SeqIterator. this))
-
-  clojure.lang.Counted
-  (count [_]
-    (if cnt cnt (enum-count enum node-enum-rest)))
-
-  clojure.lang.IReduceInit
-  (reduce [_ f init]
-    (enum-reduce-init enum node-enum-rest acc init n
-      (f acc (-kv n))))
-
-  clojure.lang.IReduce
-  (reduce [_ f]
-    (enum-reduce-first enum node-enum-rest acc n (-kv n)
-      (f acc (-kv n))
-      (f)))
-
-  clojure.lang.IHashEq
-  (hasheq [this]
-    (clojure.lang.Murmur3/hashOrdered this))
-
-  clojure.lang.IPersistentCollection
-  (empty [_] ())
-  (equiv [this o]
-    (seq-equiv this o))
-
-  java.lang.Object
-  (hashCode [this]
-    (clojure.lang.Util/hash this))
-  (equals [this o]
-    (clojure.lang.Util/equals this o))
-
-  clojure.lang.IMeta
-  (meta [_] _meta)
-
-  clojure.lang.IObj
-  (withMeta [_ m]
-    (EntrySeq. enum cnt m)))
+(def-projected-seq-type KeySeq   node-enum-rest -k KeySeq.)
+(def-projected-seq-type EntrySeq node-enum-rest -kv EntrySeq.)
 
 (defn node-key-seq
   "Return an efficient seq of keys from tree rooted at n."
@@ -1960,121 +1952,8 @@
    (when-let [e (node-enumerator n)]
      (EntrySeq. e cnt nil))))
 
-(deftype KeySeqReverse [enum cnt _meta]
-  clojure.lang.ISeq
-  (first [_]
-    (-k (node-enum-first enum)))
-  (next [_]
-    (when-let [e (node-enum-prior enum)]
-      (KeySeqReverse. e (when cnt (unchecked-dec-int cnt)) nil)))
-  (more [this]
-    (or (.next this) ()))
-  (cons [this o]
-    (clojure.lang.Cons. o this))
-
-  clojure.lang.Seqable
-  (seq [this] this)
-
-  clojure.lang.Sequential
-
-  java.lang.Iterable
-  (iterator [this]
-    (clojure.lang.SeqIterator. this))
-
-  clojure.lang.Counted
-  (count [_]
-    (if cnt cnt (enum-count enum node-enum-prior)))
-
-  clojure.lang.IReduceInit
-  (reduce [_ f init]
-    (enum-reduce-init enum node-enum-prior acc init n
-      (f acc (-k n))))
-
-  clojure.lang.IReduce
-  (reduce [_ f]
-    (enum-reduce-first enum node-enum-prior acc n (-k n)
-      (f acc (-k n))
-      (f)))
-
-  clojure.lang.IHashEq
-  (hasheq [this]
-    (clojure.lang.Murmur3/hashOrdered this))
-
-  clojure.lang.IPersistentCollection
-  (empty [_] ())
-  (equiv [this o]
-    (seq-equiv this o))
-
-  java.lang.Object
-  (hashCode [this]
-    (clojure.lang.Util/hash this))
-  (equals [this o]
-    (clojure.lang.Util/equals this o))
-
-  clojure.lang.IMeta
-  (meta [_] _meta)
-
-  clojure.lang.IObj
-  (withMeta [_ m]
-    (KeySeqReverse. enum cnt m)))
-
-(deftype EntrySeqReverse [enum cnt _meta]
-  clojure.lang.ISeq
-  (first [_]
-    (-kv (node-enum-first enum)))
-  (next [_]
-    (when-let [e (node-enum-prior enum)]
-      (EntrySeqReverse. e (when cnt (unchecked-dec-int cnt)) nil)))
-  (more [this]
-    (or (.next this) ()))
-  (cons [this o]
-    (clojure.lang.Cons. o this))
-
-  clojure.lang.Seqable
-  (seq [this] this)
-
-  clojure.lang.Sequential
-
-  java.lang.Iterable
-  (iterator [this]
-    (clojure.lang.SeqIterator. this))
-
-  clojure.lang.Counted
-  (count [_]
-    (if cnt cnt (enum-count enum node-enum-prior)))
-
-  clojure.lang.IReduceInit
-  (reduce [_ f init]
-    (enum-reduce-init enum node-enum-prior acc init n
-      (f acc (-kv n))))
-
-  clojure.lang.IReduce
-  (reduce [_ f]
-    (enum-reduce-first enum node-enum-prior acc n (-kv n)
-      (f acc (-kv n))
-      (f)))
-
-  clojure.lang.IHashEq
-  (hasheq [this]
-    (clojure.lang.Murmur3/hashOrdered this))
-
-  clojure.lang.IPersistentCollection
-  (empty [_] ())
-  (equiv [this o]
-    (seq-equiv this o))
-
-  java.lang.Object
-  (hashCode [this]
-    (clojure.lang.Util/hash this))
-  (equals [this o]
-    (clojure.lang.Util/equals this o))
-
-  clojure.lang.IMeta
-  (meta [_] _meta)
-
-  clojure.lang.IObj
-  (withMeta [_ m]
-    (EntrySeqReverse. enum cnt m)))
+(def-projected-seq-type KeySeqReverse node-enum-prior -k KeySeqReverse.)
+(def-projected-seq-type EntrySeqReverse node-enum-prior -kv EntrySeqReverse.)
 
 (defn node-key-seq-reverse
   "Return an efficient reverse seq of keys from tree rooted at n."
@@ -2101,38 +1980,3 @@
        (leaf? n)        nil
        (not (pos? cnt)) nil
        true (->> from (node-split-nth n) node-seq (take cnt))))))
-
-;; Each tree split costs O(log n), so too many chunks wastes time on
-;; splitting rather than folding.  This floor keeps split overhead
-;; negligible while still saturating typical core counts.
-(def ^:const ^long +min-fold-chunk-size+ 4096)
-
-(defn node-chunked-fold
-  "Parallel chunked fold to support clojure.core.reducers/CollFold.
-
-   Splits the tree into roughly equal subtrees using node-split, then
-   folds them in parallel via r/fold.  Splitting is done eagerly in the
-   caller's thread (where dynamic bindings are available); each chunk's
-   sequential reduce uses node-reduce which needs no bindings."
-  [^long chunk-size n combinef reducef]
-  {:pre [(pos? chunk-size)]}
-  (let [chunk-size (max chunk-size +min-fold-chunk-size+)
-        sz         (node-size n)]
-    (if (<= sz chunk-size)
-      (node-reduce reducef (combinef) n)
-      (let [num-chunks  (max 2 (quot sz chunk-size))
-            subtrees    (loop [i          1
-                               remaining  n
-                               result     (transient [])]
-                          (if (or (= i num-chunks) (leaf? remaining))
-                            (persistent! (conj! result remaining))
-                            (let [pos       (long (* sz (/ (double i) num-chunks)))
-                                  split-key (-k (node-nth n pos))
-                                  [lt present gt] (node-split remaining split-key)
-                                  gt (if present
-                                       (node-add gt (first present) (second present))
-                                       gt)]
-                              (recur (inc i) gt (conj! result lt)))))
-            rf (fn [_ ^long idx]
-                 (node-reduce reducef (combinef) (nth subtrees idx)))]
-        (r/fold 1 combinef rf (vec (range (count subtrees))))))))

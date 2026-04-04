@@ -119,8 +119,8 @@ current split/join implementation still wins decisively.
 Chunked parallel fold via `r/fold`. The tree is split into equal subtrees and folded in parallel. sorted-set and data.avl fall back to sequential reduce.
 
 Implementation note: `CollFold` is not just delegated blindly to `r/fold`.
-`node-chunked-fold` splits the tree eagerly in the caller thread, enforces a
-minimum chunk size of `4096`, and then folds chunk indices in parallel. That
+`node-fold` splits the tree eagerly in the caller thread and then folds chunk
+indices in parallel. That
 keeps split overhead under control and avoids depending on dynamic bindings
 inside worker tasks.
 

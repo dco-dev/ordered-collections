@@ -301,7 +301,7 @@ ordered-map merge more closely than a single universal threshold.
 
 **Set operations** (union, intersection, difference, merge-with): The tree's divide-and-conquer structure maps directly to fork-join. Split T₁ at T₂'s root, fork the left halves, compute the right halves inline, join results. Work O(m log(n/m + 1)), span O(log² n).
 
-**Parallel fold** (`node-chunked-fold`): Split the tree into roughly equal subtrees using `node-split` at evenly-spaced positions, then fold them in parallel via `r/fold`. Splitting is done eagerly in the caller's thread (where dynamic bindings are available); each chunk's sequential reduce uses `node-reduce` which needs no bindings. Work O(n), span O(n/p + k log n) where k is the number of chunks.
+**Parallel fold** (`node-fold`): Split the tree into roughly equal subtrees using `node-split` at evenly-spaced positions, then fold them in parallel via `r/fold`. Splitting is done eagerly in the caller's thread (where dynamic bindings are available); each chunk's sequential reduce uses `node-reduce` which needs no bindings. Work O(n), span O(n/p + k log n) where k is the number of chunks.
 
 ## Positional Access
 
@@ -352,7 +352,7 @@ Standard BST descent with candidate tracking. O(log n).
 
 ## Parallel Fold
 
-Collections implement `clojure.core.reducers/CollFold` via `node-chunked-fold`. The tree is split into roughly equal chunks using `node-split`; those chunks are then folded in parallel by `clojure.core.reducers/fold`.
+Collections implement `clojure.core.reducers/CollFold` via `node-fold`. The tree is split into roughly equal chunks using `node-split`; those chunks are then folded in parallel by `clojure.core.reducers/fold`.
 
 Minimum chunk size: **`+min-fold-chunk-size+` = 4,096**. User-supplied chunk sizes below that floor are rounded up to avoid excessive tree splitting overhead.
 

@@ -310,7 +310,7 @@
 
   clojure.core.reducers.CollFold
   (coll-fold [_ chunk-size combinef reducef]
-    (tree/node-chunked-fold chunk-size root combinef
+    (tree/node-fold chunk-size root combinef
       (fn [acc n]
         (let [[p _ v] (node/-k n)]
           (reducef acc [p v])))))

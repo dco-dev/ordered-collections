@@ -328,7 +328,7 @@
   clojure.core.reducers.CollFold
   (coll-fold [this n combinef reducef]
     (with-fuzzy-map this
-      (tree/node-chunked-fold n root combinef
+      (tree/node-fold n root combinef
         (fn [acc node] (reducef acc (node/-kv node))))))
 
   PRanked
