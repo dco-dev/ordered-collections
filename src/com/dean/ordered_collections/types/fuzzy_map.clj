@@ -115,7 +115,7 @@
 
   IBalancedCollection
   (getStitch [_]
-    tree/node-stitch-weight-balanced)
+    tree/node-stitch)
 
   clojure.lang.IMeta
   (meta [_]

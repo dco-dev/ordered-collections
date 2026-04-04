@@ -1,4 +1,5 @@
 (ns com.dean.ordered-collections.core
+  "Public API for ordered-collections."
   (:refer-clojure :exclude [split-at])
   (:require [clojure.core.reducers                            :as r]
             [com.dean.ordered-collections.types.interop]
