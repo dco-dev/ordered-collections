@@ -12,8 +12,8 @@
             [clojure.data.avl :as avl]
             [clojure.set :as cset]
             [clojure.string :as str]
-            [clojure.edn :as edn]
             [clojure.java.io :as io]
+            [clojure.java.shell :as sh]
             [clojure.pprint :as pp]
             [ordered-collections.bench-utils :as bu
              :refer [generate-pairs generate-elements generate-lookup-keys
@@ -23,7 +23,9 @@
                      parse-standard-args]]
             [ordered-collections.core :as core]
             [ordered-collections.tree.order :as order])
-  (:import [java.time Instant LocalDateTime]
+  (:import [java.lang.management ManagementFactory]
+           [java.net InetAddress]
+           [java.time Duration Instant LocalDateTime]
            [java.time.format DateTimeFormatter])
   (:gen-class))
 
@@ -43,18 +45,80 @@
 ;; Benchmark Execution
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defmacro bench-expr
-  "Run benchmark using Criterium quick-benchmark* and return results map."
-  [& body]
-  `(let [results# (crit/quick-benchmark* (fn [] ~@body) {})]
-     {:mean-ns     (long (* 1e9 (first (:mean results#))))
-      :variance-ns (long (* 1e9 (first (:variance results#))))
-      :lower-q-ns  (long (* 1e9 (first (:lower-q results#))))
-      :upper-q-ns  (long (* 1e9 (first (:upper-q results#))))
-      :samples     (:sample-count results#)
-      :outliers    (:outliers results#)}))
+(defn- nanos [seconds]
+  (long (* 1e9 (double seconds))))
+
+(defn- estimate-point [[point _]]
+  point)
+
+(defn- estimate-interval [[_ interval]]
+  (when interval
+    (mapv nanos interval)))
+
+(defn- estimate-nanos [estimate]
+  (when estimate
+    (nanos (estimate-point estimate))))
+
+(defn- estimate-stdev-nanos [estimate]
+  (when estimate
+    (nanos (Math/sqrt (double (estimate-point estimate))))))
+
+(defn- normalize-criterium-result [results]
+  {:mean-ns           (estimate-nanos (:mean results))
+   :mean-ci-ns        (estimate-interval (:mean results))
+   :sample-mean-ns    (estimate-nanos (:sample-mean results))
+   :sample-mean-ci-ns (estimate-interval (:sample-mean results))
+   :stdev-ns          (estimate-stdev-nanos (:variance results))
+   :sample-stdev-ns   (estimate-stdev-nanos (:sample-variance results))
+   :lower-q-ns        (estimate-nanos (:lower-q results))
+   :lower-q-ci-ns     (estimate-interval (:lower-q results))
+   :upper-q-ns        (estimate-nanos (:upper-q results))
+   :upper-q-ci-ns     (estimate-interval (:upper-q results))
+   :sample-count      (:sample-count results)
+   :execution-count   (:execution-count results)
+   :warmup-jit-period (:warmup-jit-period results)
+   :samples           (:sample-count results)
+   :outliers          (:outliers results)})
+
+(defn- bench-thunk
+  "Run benchmark thunk using Criterium quick-benchmark* and return normalized results."
+  [thunk]
+  (normalize-criterium-result (crit/quick-benchmark* thunk {})))
+
+(defn- progress! []
+  (print ".")
+  (flush))
+
+(defn- run-case [thunk]
+  (progress!)
+  (bench-thunk thunk))
+
+(defn- run-cases
+  "Run a map of benchmark label -> zero-arg thunk."
+  [cases]
+  (reduce-kv (fn [m k thunk]
+               (assoc m k (run-case thunk)))
+             {}
+             cases))
 
 (def format-time format-ns)
+
+(defn- run-benchmark!
+  [results n bench-key bench-fn]
+  (print (str "  " (name bench-key)))
+  (swap! results assoc-in [n bench-key] (bench-fn n))
+  (println))
+
+(defn- run-benchmarks-for-size!
+  [results n bench-specs]
+  (println)
+  (println (str "===== N = " n " ====="))
+  (doseq [spec bench-specs
+          :let [{:keys [key fn when]} (if (map? spec)
+                                        spec
+                                        {:key (first spec) :fn (second spec)})]
+          :when (if when (when n) true)]
+    (run-benchmark! results n key fn)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Individual Benchmarks
@@ -62,24 +126,20 @@
 
 (defn bench-map-construction [n]
   (let [pairs (generate-pairs n)]
-    {:sorted-map  (do (print ".") (flush) (bench-expr (into (sorted-map) pairs)))
-     :data-avl    (do (print ".") (flush) (bench-expr (into (avl/sorted-map) pairs)))
-     :ordered-map (do (print ".") (flush) (bench-expr (core/ordered-map pairs)))}))
+    (run-cases
+      {:sorted-map  #(into (sorted-map) pairs)
+       :data-avl    #(into (avl/sorted-map) pairs)
+       :ordered-map #(core/ordered-map pairs)})))
 
 (defn bench-map-insert [n]
   (let [ks (generate-elements n)]
-    {:sorted-map  (do (print ".") (flush)
-                      (bench-expr
-                        (loop [m (sorted-map), xs (seq ks)]
-                          (if xs (recur (assoc m (first xs) true) (next xs)) m))))
-     :data-avl    (do (print ".") (flush)
-                      (bench-expr
-                        (loop [m (avl/sorted-map), xs (seq ks)]
-                          (if xs (recur (assoc m (first xs) true) (next xs)) m))))
-     :ordered-map (do (print ".") (flush)
-                      (bench-expr
-                        (loop [m (core/ordered-map), xs (seq ks)]
-                          (if xs (recur (assoc m (first xs) true) (next xs)) m))))}))
+    (run-cases
+      {:sorted-map  #(loop [m (sorted-map), xs (seq ks)]
+                       (if xs (recur (assoc m (first xs) true) (next xs)) m))
+       :data-avl    #(loop [m (avl/sorted-map), xs (seq ks)]
+                       (if xs (recur (assoc m (first xs) true) (next xs)) m))
+       :ordered-map #(loop [m (core/ordered-map), xs (seq ks)]
+                       (if xs (recur (assoc m (first xs) true) (next xs)) m))})))
 
 (defn bench-map-delete [n]
   (let [pairs   (map #(vector % true) (range n))
@@ -87,56 +147,56 @@
         sm      (into (sorted-map) pairs)
         am      (into (avl/sorted-map) pairs)
         om      (core/ordered-map pairs)]
-    {:sorted-map  (do (print ".") (flush) (bench-expr (reduce (fn [m k] (dissoc m k)) sm to-del)))
-     :data-avl    (do (print ".") (flush) (bench-expr (reduce (fn [m k] (dissoc m k)) am to-del)))
-     :ordered-map (do (print ".") (flush) (bench-expr (reduce (fn [m k] (dissoc m k)) om to-del)))}))
+    (run-cases
+      {:sorted-map  #(reduce (fn [m k] (dissoc m k)) sm to-del)
+       :data-avl    #(reduce (fn [m k] (dissoc m k)) am to-del)
+       :ordered-map #(reduce (fn [m k] (dissoc m k)) om to-del)})))
 
 (defn bench-map-lookup [n & {:keys [num-lookups] :or {num-lookups 10000}}]
   (let [pairs (generate-pairs n)
         {:keys [sorted-map data-avl ordered-map]} (build-map-variants pairs)
         ^ints ks (generate-lookup-keys n num-lookups)]
-    {:sorted-map  (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (get sorted-map (aget ks i)))))
-     :data-avl    (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (get data-avl (aget ks i)))))
-     :ordered-map (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (ordered-map (aget ks i)))))}))
+    (run-cases
+      {:sorted-map  #(dotimes [i num-lookups] (get sorted-map (aget ks i)))
+       :data-avl    #(dotimes [i num-lookups] (get data-avl (aget ks i)))
+       :ordered-map #(dotimes [i num-lookups] (ordered-map (aget ks i)))})))
 
 (defn bench-map-iteration [n]
   (let [pairs (generate-pairs n)
         sm    (into (sorted-map) pairs)
         am    (into (avl/sorted-map) pairs)
         om    (core/ordered-map pairs)]
-    {:sorted-map  (do (print ".") (flush) (bench-expr (reduce (fn [^long acc [k _]] (+ acc (long k))) 0 sm)))
-     :data-avl    (do (print ".") (flush) (bench-expr (reduce (fn [^long acc [k _]] (+ acc (long k))) 0 am)))
-     :ordered-map (do (print ".") (flush) (bench-expr (reduce (fn [^long acc [k _]] (+ acc (long k))) 0 om)))}))
+    (run-cases
+      {:sorted-map  #(reduce (fn [^long acc [k _]] (+ acc (long k))) 0 sm)
+       :data-avl    #(reduce (fn [^long acc [k _]] (+ acc (long k))) 0 am)
+       :ordered-map #(reduce (fn [^long acc [k _]] (+ acc (long k))) 0 om)})))
 
 (defn bench-map-fold [n]
   (let [pairs (generate-pairs n)
         {:keys [sorted-map data-avl ordered-map]} (build-map-variants pairs)
         sum-keys (fn [^long acc entry] (+ acc (long (key entry))))]
-    {:sorted-map-reduce  (do (print ".") (flush) (bench-expr (reduce sum-keys 0 sorted-map)))
-     :data-avl-reduce    (do (print ".") (flush) (bench-expr (reduce sum-keys 0 data-avl)))
-     :ordered-map-reduce (do (print ".") (flush) (bench-expr (reduce sum-keys 0 ordered-map)))
-     :ordered-map-fold   (do (print ".") (flush) (bench-expr (r/fold + sum-keys ordered-map)))}))
+    (run-cases
+      {:sorted-map-reduce  #(reduce sum-keys 0 sorted-map)
+       :data-avl-reduce    #(reduce sum-keys 0 data-avl)
+       :ordered-map-reduce #(reduce sum-keys 0 ordered-map)
+       :ordered-map-fold   #(r/fold + sum-keys ordered-map)})))
 
 (defn bench-set-construction [n]
   (let [elems (generate-elements n)]
-    {:sorted-set  (do (print ".") (flush) (bench-expr (into (sorted-set) elems)))
-     :data-avl    (do (print ".") (flush) (bench-expr (into (avl/sorted-set) elems)))
-     :ordered-set (do (print ".") (flush) (bench-expr (core/ordered-set elems)))}))
+    (run-cases
+      {:sorted-set  #(into (sorted-set) elems)
+       :data-avl    #(into (avl/sorted-set) elems)
+       :ordered-set #(core/ordered-set elems)})))
 
 (defn bench-set-insert [n]
   (let [elems (generate-elements n)]
-    {:sorted-set  (do (print ".") (flush)
-                      (bench-expr
-                        (loop [s (sorted-set), xs (seq elems)]
-                          (if xs (recur (conj s (first xs)) (next xs)) s))))
-     :data-avl    (do (print ".") (flush)
-                      (bench-expr
-                        (loop [s (avl/sorted-set), xs (seq elems)]
-                          (if xs (recur (conj s (first xs)) (next xs)) s))))
-     :ordered-set (do (print ".") (flush)
-                      (bench-expr
-                        (loop [s (core/ordered-set), xs (seq elems)]
-                          (if xs (recur (conj s (first xs)) (next xs)) s))))}))
+    (run-cases
+      {:sorted-set  #(loop [s (sorted-set), xs (seq elems)]
+                       (if xs (recur (conj s (first xs)) (next xs)) s))
+       :data-avl    #(loop [s (avl/sorted-set), xs (seq elems)]
+                       (if xs (recur (conj s (first xs)) (next xs)) s))
+       :ordered-set #(loop [s (core/ordered-set), xs (seq elems)]
+                       (if xs (recur (conj s (first xs)) (next xs)) s))})))
 
 (defn bench-set-delete [n]
   (let [elems  (range n)
@@ -144,26 +204,29 @@
         ss     (into (sorted-set) elems)
         as     (into (avl/sorted-set) elems)
         os     (core/ordered-set elems)]
-    {:sorted-set  (do (print ".") (flush) (bench-expr (reduce (fn [s x] (disj s x)) ss to-del)))
-     :data-avl    (do (print ".") (flush) (bench-expr (reduce (fn [s x] (disj s x)) as to-del)))
-     :ordered-set (do (print ".") (flush) (bench-expr (reduce (fn [s x] (disj s x)) os to-del)))}))
+    (run-cases
+      {:sorted-set  #(reduce (fn [s x] (disj s x)) ss to-del)
+       :data-avl    #(reduce (fn [s x] (disj s x)) as to-del)
+       :ordered-set #(reduce (fn [s x] (disj s x)) os to-del)})))
 
 (defn bench-set-lookup [n & {:keys [num-lookups] :or {num-lookups 10000}}]
   (let [elems (generate-elements n)
         {:keys [sorted-set data-avl ordered-set]} (build-set-variants elems)
         ^ints ks (generate-lookup-keys n num-lookups)]
-    {:sorted-set  (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (contains? sorted-set (aget ks i)))))
-     :data-avl    (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (contains? data-avl (aget ks i)))))
-     :ordered-set (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (contains? ordered-set (aget ks i)))))}))
+    (run-cases
+      {:sorted-set  #(dotimes [i num-lookups] (contains? sorted-set (aget ks i)))
+       :data-avl    #(dotimes [i num-lookups] (contains? data-avl (aget ks i)))
+       :ordered-set #(dotimes [i num-lookups] (contains? ordered-set (aget ks i)))})))
 
 (defn bench-set-iteration [n]
   (let [elems (generate-elements n)
         ss    (into (sorted-set) elems)
         as    (into (avl/sorted-set) elems)
         os    (core/ordered-set elems)]
-    {:sorted-set  (do (print ".") (flush) (bench-expr (reduce (fn [^long acc x] (+ acc (long x))) 0 ss)))
-     :data-avl    (do (print ".") (flush) (bench-expr (reduce (fn [^long acc x] (+ acc (long x))) 0 as)))
-     :ordered-set (do (print ".") (flush) (bench-expr (reduce (fn [^long acc x] (+ acc (long x))) 0 os)))}))
+    (run-cases
+      {:sorted-set  #(reduce (fn [^long acc x] (+ acc (long x))) 0 ss)
+       :data-avl    #(reduce (fn [^long acc x] (+ acc (long x))) 0 as)
+       :ordered-set #(reduce (fn [^long acc x] (+ acc (long x))) 0 os)})))
 
 (defn bench-set-equality [n]
   (let [{equal :equal
@@ -178,37 +241,41 @@
                       as1 (:data-avl left), as2 (:data-avl right)
                       os1 (:ordered-set left), os2 (:ordered-set right)]]
             [case-key
-             {:hash-set    (do (print ".") (flush) (bench-expr (= hs1 hs2)))
-              :sorted-set  (do (print ".") (flush) (bench-expr (= (:sorted-set left) (:sorted-set right))))
-              :data-avl    (do (print ".") (flush) (bench-expr (= as1 as2)))
-              :ordered-set (do (print ".") (flush) (bench-expr (= os1 os2)))}]))))
+             (run-cases
+               {:hash-set    #(= hs1 hs2)
+                :sorted-set  #(= (:sorted-set left) (:sorted-set right))
+                :data-avl    #(= as1 as2)
+                :ordered-set #(= os1 os2)})]))))
 
 (defn bench-set-fold [n]
   (let [elems (generate-elements n)
         {:keys [sorted-set data-avl ordered-set]} (build-set-variants elems)
         sum-elems (fn [^long acc x] (+ acc (long x)))]
-    {:sorted-set-fold  (do (print ".") (flush) (bench-expr (r/fold + sum-elems sorted-set)))
-     :data-avl-fold    (do (print ".") (flush) (bench-expr (r/fold + sum-elems data-avl)))
-     :ordered-set-fold (do (print ".") (flush) (bench-expr (r/fold + sum-elems ordered-set)))}))
+    (run-cases
+      {:sorted-set-fold  #(r/fold + sum-elems sorted-set)
+       :data-avl-fold    #(r/fold + sum-elems data-avl)
+       :ordered-set-fold #(r/fold + sum-elems ordered-set)})))
 
 (defn bench-set-fold-freq [n]
   (let [elems (generate-elements n)
         {:keys [sets combinef reducef]} (fold-frequency-workload elems)
         {:keys [sorted-set data-avl ordered-set]} sets]
-    {:sorted-set-fold-freq  (do (print ".") (flush) (bench-expr (r/fold combinef reducef sorted-set)))
-     :data-avl-fold-freq    (do (print ".") (flush) (bench-expr (r/fold combinef reducef data-avl)))
-     :ordered-set-fold-freq (do (print ".") (flush) (bench-expr (r/fold combinef reducef ordered-set)))}))
+    (run-cases
+      {:sorted-set-fold-freq  #(r/fold combinef reducef sorted-set)
+       :data-avl-fold-freq    #(r/fold combinef reducef data-avl)
+       :ordered-set-fold-freq #(r/fold combinef reducef ordered-set)})))
 
 (defn bench-set-reduce-vs-fold-freq [n]
   (let [elems (generate-elements n)
         {:keys [sets combinef reducef]} (fold-frequency-workload elems)
         {:keys [sorted-set data-avl ordered-set]} sets]
-    {:sorted-set-reduce-freq  (do (print ".") (flush) (bench-expr (reduce reducef {} sorted-set)))
-     :sorted-set-fold-freq    (do (print ".") (flush) (bench-expr (r/fold combinef reducef sorted-set)))
-     :data-avl-reduce-freq    (do (print ".") (flush) (bench-expr (reduce reducef {} data-avl)))
-     :data-avl-fold-freq      (do (print ".") (flush) (bench-expr (r/fold combinef reducef data-avl)))
-     :ordered-set-reduce-freq (do (print ".") (flush) (bench-expr (reduce reducef {} ordered-set)))
-     :ordered-set-fold-freq   (do (print ".") (flush) (bench-expr (r/fold combinef reducef ordered-set)))}))
+    (run-cases
+      {:sorted-set-reduce-freq  #(reduce reducef {} sorted-set)
+       :sorted-set-fold-freq    #(r/fold combinef reducef sorted-set)
+       :data-avl-reduce-freq    #(reduce reducef {} data-avl)
+       :data-avl-fold-freq      #(r/fold combinef reducef data-avl)
+       :ordered-set-reduce-freq #(reduce reducef {} ordered-set)
+       :ordered-set-fold-freq   #(r/fold combinef reducef ordered-set)})))
 
 (defn bench-set-union [n]
   (let [{left :left right :right} (overlapping-set-variants n)
@@ -216,10 +283,11 @@
         ss1 (:sorted-set left), ss2 (:sorted-set right)
         as1 (:data-avl left), as2 (:data-avl right)
         os1 (:ordered-set left), os2 (:ordered-set right)]
-    {:clojure-set (do (print ".") (flush) (bench-expr (cset/union hs1 hs2)))
-     :sorted-set  (do (print ".") (flush) (bench-expr (cset/union ss1 ss2)))
-     :data-avl    (do (print ".") (flush) (bench-expr (cset/union as1 as2)))
-     :ordered-set (do (print ".") (flush) (bench-expr (core/union os1 os2)))}))
+    (run-cases
+      {:clojure-set #(cset/union hs1 hs2)
+       :sorted-set  #(cset/union ss1 ss2)
+       :data-avl    #(cset/union as1 as2)
+       :ordered-set #(core/union os1 os2)})))
 
 (defn bench-set-intersection [n]
   (let [{left :left right :right} (overlapping-set-variants n)
@@ -227,10 +295,11 @@
         ss1 (:sorted-set left), ss2 (:sorted-set right)
         as1 (:data-avl left), as2 (:data-avl right)
         os1 (:ordered-set left), os2 (:ordered-set right)]
-    {:clojure-set (do (print ".") (flush) (bench-expr (cset/intersection hs1 hs2)))
-     :sorted-set  (do (print ".") (flush) (bench-expr (cset/intersection ss1 ss2)))
-     :data-avl    (do (print ".") (flush) (bench-expr (cset/intersection as1 as2)))
-     :ordered-set (do (print ".") (flush) (bench-expr (core/intersection os1 os2)))}))
+    (run-cases
+      {:clojure-set #(cset/intersection hs1 hs2)
+       :sorted-set  #(cset/intersection ss1 ss2)
+       :data-avl    #(cset/intersection as1 as2)
+       :ordered-set #(core/intersection os1 os2)})))
 
 (defn bench-set-difference [n]
   (let [{left :left right :right} (overlapping-set-variants n)
@@ -238,48 +307,49 @@
         ss1 (:sorted-set left), ss2 (:sorted-set right)
         as1 (:data-avl left), as2 (:data-avl right)
         os1 (:ordered-set left), os2 (:ordered-set right)]
-    {:clojure-set (do (print ".") (flush) (bench-expr (cset/difference hs1 hs2)))
-     :sorted-set  (do (print ".") (flush) (bench-expr (cset/difference ss1 ss2)))
-     :data-avl    (do (print ".") (flush) (bench-expr (cset/difference as1 as2)))
-     :ordered-set (do (print ".") (flush) (bench-expr (core/difference os1 os2)))}))
+    (run-cases
+      {:clojure-set #(cset/difference hs1 hs2)
+       :sorted-set  #(cset/difference ss1 ss2)
+       :data-avl    #(cset/difference as1 as2)
+       :ordered-set #(core/difference os1 os2)})))
 
 (defn bench-first-last [n & {:keys [num-ops] :or {num-ops 1000}}]
   (let [elems (range n)
         ss    (into (sorted-set) elems)
         as    (into (avl/sorted-set) elems)
         os    (core/ordered-set elems)]
-    {:sorted-set-first  (do (print ".") (flush) (bench-expr (dotimes [_ num-ops] (first ss))))
-     :sorted-set-last   (do (print ".") (flush) (bench-expr (dotimes [_ num-ops] (last ss))))
-     :data-avl-first    (do (print ".") (flush) (bench-expr (dotimes [_ num-ops] (first as))))
-     :data-avl-last     (do (print ".") (flush) (bench-expr (dotimes [_ num-ops] (last as))))
-     :ordered-set-first (do (print ".") (flush) (bench-expr (dotimes [_ num-ops] (.first ^java.util.SortedSet os))))
-     :ordered-set-last  (do (print ".") (flush) (bench-expr (dotimes [_ num-ops] (.last ^java.util.SortedSet os))))}))
+    (run-cases
+      {:sorted-set-first  #(dotimes [_ num-ops] (first ss))
+       :sorted-set-last   #(dotimes [_ num-ops] (last ss))
+       :data-avl-first    #(dotimes [_ num-ops] (first as))
+       :data-avl-last     #(dotimes [_ num-ops] (last as))
+       :ordered-set-first #(dotimes [_ num-ops] (.first ^java.util.SortedSet os))
+       :ordered-set-last  #(dotimes [_ num-ops] (.last ^java.util.SortedSet os))})))
 
 (defn bench-rank-access [n & {:keys [num-lookups] :or {num-lookups 10000}}]
   (let [elems (generate-elements n)
         as    (into (avl/sorted-set) elems)
         os    (core/ordered-set elems)
         ^ints idxs (generate-lookup-keys n num-lookups)]
-    {:data-avl    (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (nth as (aget idxs i)))))
-     :ordered-set (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (nth os (aget idxs i)))))}))
+    (run-cases
+      {:data-avl    #(dotimes [i num-lookups] (nth as (aget idxs i)))
+       :ordered-set #(dotimes [i num-lookups] (nth os (aget idxs i)))})))
 
 (defn bench-rank-lookup [n & {:keys [num-lookups] :or {num-lookups 10000}}]
   (let [elems (generate-elements n)
         as    (into (avl/sorted-set) elems)
         os    (core/ordered-set elems)
         ^ints ks (generate-lookup-keys n num-lookups)]
-    {:data-avl    (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (avl/rank-of as (aget ks i)))))
-     :ordered-set (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (core/rank os (aget ks i)))))}))
+    (run-cases
+      {:data-avl    #(dotimes [i num-lookups] (avl/rank-of as (aget ks i)))
+       :ordered-set #(dotimes [i num-lookups] (core/rank os (aget ks i)))})))
 
 (defn bench-split [n & {:keys [num-ops] :or {num-ops 100}}]
   (let [{:keys [data-avl ordered-set keys]} (split-workload n num-ops)
         ^ints ks keys]
-    {:data-avl    (do (print ".") (flush)
-                      (bench-expr (dotimes [i num-ops] (avl/split-key (aget ks i) data-avl))))
-     :ordered-set (do (print ".") (flush)
-                      (bench-expr
-                        (dotimes [i num-ops]
-                          (core/split-key (aget ks i) ordered-set))))}))
+    (run-cases
+      {:data-avl    #(dotimes [i num-ops] (avl/split-key (aget ks i) data-avl))
+       :ordered-set #(dotimes [i num-ops] (core/split-key (aget ks i) ordered-set))})))
 
 (def ^:private string-cmp
   (order/compare-by #(neg? (compare (str %1) (str %2)))))
@@ -288,9 +358,10 @@
   (let [ks    (generate-string-keys n)
         pairs (mapv (fn [k] [k k]) ks)
         cmp   #(compare (str %1) (str %2))]
-    {:sorted-map-by (do (print ".") (flush) (bench-expr (into (sorted-map-by cmp) pairs)))
-     :data-avl      (do (print ".") (flush) (bench-expr (into (avl/sorted-map-by cmp) pairs)))
-     :ordered-map   (do (print ".") (flush) (bench-expr (core/ordered-map-with string-cmp pairs)))}))
+    (run-cases
+      {:sorted-map-by #(into (sorted-map-by cmp) pairs)
+       :data-avl      #(into (avl/sorted-map-by cmp) pairs)
+       :ordered-map   #(core/ordered-map-with string-cmp pairs)})))
 
 (defn bench-string-lookup [n & {:keys [num-lookups] :or {num-lookups 10000}}]
   (let [ks    (generate-string-keys n)
@@ -298,9 +369,10 @@
         cmp   #(compare (str %1) (str %2))
         {:keys [sorted-map-by data-avl ordered-map]} (build-string-map-variants pairs cmp string-cmp)
         ^objects look (object-array (repeatedly num-lookups #(nth ks (rand-int n))))]
-    {:sorted-map-by (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (get sorted-map-by (aget look i)))))
-     :data-avl      (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (get data-avl (aget look i)))))
-     :ordered-map   (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (ordered-map (aget look i)))))}))
+    (run-cases
+      {:sorted-map-by #(dotimes [i num-lookups] (get sorted-map-by (aget look i)))
+       :data-avl      #(dotimes [i num-lookups] (get data-avl (aget look i)))
+       :ordered-map   #(dotimes [i num-lookups] (ordered-map (aget look i)))})))
 
 (defn bench-string-iteration [n]
   (let [ks    (generate-string-keys n)
@@ -309,18 +381,21 @@
         sm    (into (sorted-map-by cmp) pairs)
         am    (into (avl/sorted-map-by cmp) pairs)
         om    (core/ordered-map-with string-cmp pairs)]
-    {:sorted-map-by (do (print ".") (flush) (bench-expr (reduce (fn [^long acc [k _]] (+ acc (long (hash k)))) 0 sm)))
-     :data-avl      (do (print ".") (flush) (bench-expr (reduce (fn [^long acc [k _]] (+ acc (long (hash k)))) 0 am)))
-     :ordered-map   (do (print ".") (flush) (bench-expr (reduce (fn [^long acc [k _]] (+ acc (long (hash k)))) 0 om)))}))
+    (run-cases
+      {:sorted-map-by #(reduce (fn [^long acc [k _]] (+ acc (long (hash k)))) 0 sm)
+       :data-avl      #(reduce (fn [^long acc [k _]] (+ acc (long (hash k)))) 0 am)
+       :ordered-map   #(reduce (fn [^long acc [k _]] (+ acc (long (hash k)))) 0 om)})))
 
 (defn bench-interval-construction [n]
   (let [intervals (mapv (fn [i] [(* i 2) (inc (* i 2))]) (shuffle (range n)))]
-    {:interval-set (do (print ".") (flush) (bench-expr (core/interval-set intervals)))}))
+    (run-cases
+      {:interval-set #(core/interval-set intervals)})))
 
 (defn bench-interval-map-construction [n]
   (let [intervals (mapv (fn [i] [[(* i 2) (inc (* i 2))] (str "val-" i)])
                         (shuffle (range n)))]
-    {:interval-map (do (print ".") (flush) (bench-expr (core/interval-map (into {} intervals))))}))
+    (run-cases
+      {:interval-map #(core/interval-map (into {} intervals))})))
 
 (defn bench-interval-lookup [n & {:keys [num-lookups] :or {num-lookups 10000}}]
   (let [intervals (mapv (fn [i] [[(* i 2) (inc (* i 2))] (str "val-" i)])
@@ -328,51 +403,83 @@
         im        (core/interval-map (into {} intervals))
         max-point (* 2 n)
         ^ints points (int-array (repeatedly num-lookups #(rand-int max-point)))]
-    {:interval-map (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (im (aget points i)))))}))
+    (run-cases
+      {:interval-map #(dotimes [i num-lookups] (im (aget points i)))})))
 
 (defn bench-interval-fold [n]
   (let [intervals (mapv (fn [i] [(* i 2) (inc (* i 2))]) (range n))
         is        (core/interval-set intervals)
         sum-intervals (fn [^long acc interval] (+ acc (long (first interval))))]
-    {:interval-set-reduce (do (print ".") (flush) (bench-expr (reduce sum-intervals 0 is)))
-     :interval-set-fold   (do (print ".") (flush) (bench-expr (r/fold + sum-intervals is)))}))
+    (run-cases
+      {:interval-set-reduce #(reduce sum-intervals 0 is)
+       :interval-set-fold   #(r/fold + sum-intervals is)})))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Suite Runners
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def ^:private wins-benchmark-specs
+  [[:set-construction bench-set-construction]
+   [:map-construction bench-map-construction]
+   [:set-fold bench-set-fold]
+   [:set-fold-freq bench-set-fold-freq]
+   [:set-reduce-vs-fold-freq bench-set-reduce-vs-fold-freq]
+   [:map-fold bench-map-fold]
+   [:set-union bench-set-union]
+   [:set-intersection bench-set-intersection]
+   [:set-difference bench-set-difference]
+   [:split bench-split]
+   {:key :first-last :fn bench-first-last :when #(<= % 100000)}
+   [:rank-access bench-rank-access]])
+
+(def ^:private readme-benchmark-specs
+  [[:set-construction bench-set-construction]
+   [:set-lookup bench-set-lookup]
+   [:set-union bench-set-union]
+   [:set-intersection bench-set-intersection]
+   [:set-difference bench-set-difference]
+   [:set-fold bench-set-fold]
+   [:set-fold-freq bench-set-fold-freq]
+   [:set-reduce-vs-fold-freq bench-set-reduce-vs-fold-freq]
+   [:split bench-split]])
+
+(def ^:private all-benchmark-specs
+  [[:map-construction bench-map-construction]
+   [:map-insert bench-map-insert]
+   [:map-delete bench-map-delete]
+   [:map-lookup bench-map-lookup]
+   [:map-iteration bench-map-iteration]
+   [:map-fold bench-map-fold]
+   [:set-construction bench-set-construction]
+   [:set-insert bench-set-insert]
+   [:set-delete bench-set-delete]
+   [:set-lookup bench-set-lookup]
+   [:set-iteration bench-set-iteration]
+   [:set-equality bench-set-equality]
+   [:set-fold bench-set-fold]
+   [:set-fold-freq bench-set-fold-freq]
+   [:set-reduce-vs-fold-freq bench-set-reduce-vs-fold-freq]
+   [:set-union bench-set-union]
+   [:set-intersection bench-set-intersection]
+   [:set-difference bench-set-difference]
+   [:rank-access bench-rank-access]
+   [:rank-lookup bench-rank-lookup]
+   [:split bench-split]
+   {:key :first-last :fn bench-first-last :when #(<= % 100000)}
+   [:string-construction bench-string-construction]
+   [:string-lookup bench-string-lookup]
+   [:string-iteration bench-string-iteration]
+   [:interval-construction bench-interval-construction]
+   [:interval-map-construction bench-interval-map-construction]
+   [:interval-lookup bench-interval-lookup]
+   [:interval-fold bench-interval-fold]])
 
 (defn run-wins-benchmarks
   "Run benchmarks focused on where ordered-collections wins."
   [sizes]
   (let [results (atom {})]
     (doseq [n sizes]
-      (println)
-      (println (str "===== N = " n " ====="))
-
-      ;; Construction (we win via parallel fold)
-      (print "  set-construction") (swap! results assoc-in [n :set-construction] (bench-set-construction n)) (println)
-      (print "  map-construction") (swap! results assoc-in [n :map-construction] (bench-map-construction n)) (println)
-
-      ;; Parallel fold (we win - true parallelism)
-      (print "  set-fold") (swap! results assoc-in [n :set-fold] (bench-set-fold n)) (println)
-      (print "  set-fold-freq") (swap! results assoc-in [n :set-fold-freq] (bench-set-fold-freq n)) (println)
-      (print "  set-reduce-vs-fold-freq") (swap! results assoc-in [n :set-reduce-vs-fold-freq] (bench-set-reduce-vs-fold-freq n)) (println)
-      (print "  map-fold") (swap! results assoc-in [n :map-fold] (bench-map-fold n)) (println)
-
-      ;; Set operations (we win 5-10x)
-      (print "  set-union") (swap! results assoc-in [n :set-union] (bench-set-union n)) (println)
-      (print "  set-intersection") (swap! results assoc-in [n :set-intersection] (bench-set-intersection n)) (println)
-      (print "  set-difference") (swap! results assoc-in [n :set-difference] (bench-set-difference n)) (println)
-
-      ;; Split (we win 3x)
-      (print "  split") (swap! results assoc-in [n :split] (bench-split n)) (println)
-
-      ;; First/last (we win ~100,000x for last) - skip for very large N
-      (when (<= n 100000)
-        (print "  first-last") (swap! results assoc-in [n :first-last] (bench-first-last n)) (println))
-
-      ;; Rank access (we match data.avl)
-      (print "  rank-access") (swap! results assoc-in [n :rank-access] (bench-rank-access n)) (println))
+      (run-benchmarks-for-size! results n wins-benchmark-specs))
 
     @results))
 
@@ -381,17 +488,7 @@
   [sizes]
   (let [results (atom {})]
     (doseq [n sizes]
-      (println)
-      (println (str "===== N = " n " ====="))
-      (print "  set-construction") (swap! results assoc-in [n :set-construction] (bench-set-construction n)) (println)
-      (print "  set-lookup") (swap! results assoc-in [n :set-lookup] (bench-set-lookup n)) (println)
-      (print "  set-union") (swap! results assoc-in [n :set-union] (bench-set-union n)) (println)
-      (print "  set-intersection") (swap! results assoc-in [n :set-intersection] (bench-set-intersection n)) (println)
-      (print "  set-difference") (swap! results assoc-in [n :set-difference] (bench-set-difference n)) (println)
-      (print "  set-fold") (swap! results assoc-in [n :set-fold] (bench-set-fold n)) (println)
-      (print "  set-fold-freq") (swap! results assoc-in [n :set-fold-freq] (bench-set-fold-freq n)) (println)
-      (print "  set-reduce-vs-fold-freq") (swap! results assoc-in [n :set-reduce-vs-fold-freq] (bench-set-reduce-vs-fold-freq n)) (println)
-      (print "  split") (swap! results assoc-in [n :split] (bench-split n)) (println))
+      (run-benchmarks-for-size! results n readme-benchmark-specs))
     @results))
 
 (defn run-all-benchmarks
@@ -399,67 +496,85 @@
   [sizes]
   (let [results (atom {})]
     (doseq [n sizes]
-      (println)
-      (println (str "===== N = " n " ====="))
-
-      (print "  map-construction") (swap! results assoc-in [n :map-construction] (bench-map-construction n)) (println)
-      (print "  map-insert") (swap! results assoc-in [n :map-insert] (bench-map-insert n)) (println)
-      (print "  map-delete") (swap! results assoc-in [n :map-delete] (bench-map-delete n)) (println)
-      (print "  map-lookup") (swap! results assoc-in [n :map-lookup] (bench-map-lookup n)) (println)
-      (print "  map-iteration") (swap! results assoc-in [n :map-iteration] (bench-map-iteration n)) (println)
-      (print "  map-fold") (swap! results assoc-in [n :map-fold] (bench-map-fold n)) (println)
-
-      (print "  set-construction") (swap! results assoc-in [n :set-construction] (bench-set-construction n)) (println)
-      (print "  set-insert") (swap! results assoc-in [n :set-insert] (bench-set-insert n)) (println)
-      (print "  set-delete") (swap! results assoc-in [n :set-delete] (bench-set-delete n)) (println)
-      (print "  set-lookup") (swap! results assoc-in [n :set-lookup] (bench-set-lookup n)) (println)
-      (print "  set-iteration") (swap! results assoc-in [n :set-iteration] (bench-set-iteration n)) (println)
-      (print "  set-equality") (swap! results assoc-in [n :set-equality] (bench-set-equality n)) (println)
-      (print "  set-fold") (swap! results assoc-in [n :set-fold] (bench-set-fold n)) (println)
-      (print "  set-fold-freq") (swap! results assoc-in [n :set-fold-freq] (bench-set-fold-freq n)) (println)
-      (print "  set-reduce-vs-fold-freq") (swap! results assoc-in [n :set-reduce-vs-fold-freq] (bench-set-reduce-vs-fold-freq n)) (println)
-
-      (print "  set-union") (swap! results assoc-in [n :set-union] (bench-set-union n)) (println)
-      (print "  set-intersection") (swap! results assoc-in [n :set-intersection] (bench-set-intersection n)) (println)
-      (print "  set-difference") (swap! results assoc-in [n :set-difference] (bench-set-difference n)) (println)
-
-      (print "  rank-access") (swap! results assoc-in [n :rank-access] (bench-rank-access n)) (println)
-      (print "  rank-lookup") (swap! results assoc-in [n :rank-lookup] (bench-rank-lookup n)) (println)
-      (print "  split") (swap! results assoc-in [n :split] (bench-split n)) (println)
-
-      ;; Skip first/last for large N (sorted-set last is O(n) and takes forever)
-      (when (<= n 100000)
-        (print "  first-last") (swap! results assoc-in [n :first-last] (bench-first-last n)) (println))
-
-      (print "  string-construction") (swap! results assoc-in [n :string-construction] (bench-string-construction n)) (println)
-      (print "  string-lookup") (swap! results assoc-in [n :string-lookup] (bench-string-lookup n)) (println)
-      (print "  string-iteration") (swap! results assoc-in [n :string-iteration] (bench-string-iteration n)) (println)
-
-      (print "  interval-construction") (swap! results assoc-in [n :interval-construction] (bench-interval-construction n)) (println)
-      (print "  interval-map-construction") (swap! results assoc-in [n :interval-map-construction] (bench-interval-map-construction n)) (println)
-      (print "  interval-lookup") (swap! results assoc-in [n :interval-lookup] (bench-interval-lookup n)) (println)
-      (print "  interval-fold") (swap! results assoc-in [n :interval-fold] (bench-interval-fold n)) (println))
+      (run-benchmarks-for-size! results n all-benchmark-specs))
 
     @results))
 
-(defn system-info []
-  {:java-version  (System/getProperty "java.version")
-   :java-vm       (System/getProperty "java.vm.name")
-   :os-name       (System/getProperty "os.name")
-   :os-version    (System/getProperty "os.version")
-   :os-arch       (System/getProperty "os.arch")
-   :clojure       (clojure-version)
-   :processors    (.availableProcessors (Runtime/getRuntime))
-   :max-memory-mb (quot (.maxMemory (Runtime/getRuntime)) (* 1024 1024))})
+(defn- safe-command-output [& args]
+  (try
+    (let [{:keys [exit out]} (apply sh/sh args)]
+      (when (zero? exit)
+        (str/trim out)))
+    (catch Throwable _
+      nil)))
 
-(defn write-results [results output-file opts]
-  (let [full-results {:timestamp   (str (Instant/now))
-                      :system      (system-info)
-                      :mode        (if (:quick opts) :quick :full)
-                      :sizes       (:sizes opts)
-                      :benchmarks  results}]
+(defn- git-info []
+  {:git-rev       (safe-command-output "git" "rev-parse" "HEAD")
+   :git-branch    (safe-command-output "git" "rev-parse" "--abbrev-ref" "HEAD")
+   :git-dirty?    (boolean (seq (safe-command-output "git" "status" "--porcelain")))
+   :git-describe  (safe-command-output "git" "describe" "--always" "--dirty" "--tags")})
+
+(defn- project-version []
+  (when-let [[_ version] (re-find #"defproject\s+[^\s]+\s+\"([^\"]+)\"" (slurp "project.clj"))]
+    version))
+
+(defn- lein-version []
+  (safe-command-output "lein" "version"))
+
+(defn- runtime-info []
+  (let [rt          (Runtime/getRuntime)
+        rt-mx       (ManagementFactory/getRuntimeMXBean)
+        mem-mx      (ManagementFactory/getMemoryMXBean)
+        heap-usage  (.getHeapMemoryUsage mem-mx)
+        non-heap    (.getNonHeapMemoryUsage mem-mx)]
+    {:clojure               (clojure-version)
+     :project-version       (project-version)
+     :lein-version          (lein-version)
+     :hostname              (try (.getHostName (InetAddress/getLocalHost))
+                                 (catch Throwable _ nil))
+     :user-timezone         (.getID (java.util.TimeZone/getDefault))
+     :java-version          (System/getProperty "java.version")
+     :java-vendor           (System/getProperty "java.vendor")
+     :java-vm               (System/getProperty "java.vm.name")
+     :java-vm-vendor        (System/getProperty "java.vm.vendor")
+     :os-name               (System/getProperty "os.name")
+     :os-version            (System/getProperty "os.version")
+     :os-arch               (System/getProperty "os.arch")
+     :processors            (.availableProcessors rt)
+     :max-memory-mb         (quot (.maxMemory rt) (* 1024 1024))
+     :total-memory-mb       (quot (.totalMemory rt) (* 1024 1024))
+     :free-memory-mb        (quot (.freeMemory rt) (* 1024 1024))
+     :heap-init-mb          (quot (.getInit heap-usage) (* 1024 1024))
+     :heap-used-mb          (quot (.getUsed heap-usage) (* 1024 1024))
+     :heap-committed-mb     (quot (.getCommitted heap-usage) (* 1024 1024))
+     :heap-max-mb           (quot (.getMax heap-usage) (* 1024 1024))
+     :non-heap-used-mb      (quot (.getUsed non-heap) (* 1024 1024))
+     :jvm-input-args        (vec (.getInputArguments rt-mx))
+     :start-time-ms         (.getStartTime rt-mx)
+     :uptime-ms             (.getUptime rt-mx)}))
+
+(defn system-info []
+  (merge (runtime-info) (git-info)))
+
+(defn write-results [results output-file opts started-at]
+  (let [finished-at   (Instant/now)
+        full-results  {:artifact-version 3
+                       :timestamp        (str finished-at)
+                       :started-at       (str started-at)
+                       :duration-ms      (.toMillis (Duration/between started-at finished-at))
+                       :cwd              (.getAbsolutePath (io/file "."))
+                       :system           (system-info)
+                       :mode             (cond
+                                           (:readme opts) :readme
+                                           (:quick opts)  :quick
+                                           :else          :full)
+                       :opts             (dissoc opts :args)
+                       :argv             (:args opts)
+                       :sizes            (:sizes opts)
+                       :benchmarks       results}]
     (io/make-parents output-file)
-    (spit output-file (with-out-str (pp/pprint full-results)))
+    (spit output-file (with-out-str (binding [pp/*print-right-margin* 120]
+                                      (pp/pprint full-results))))
     (println)
     (println (str "Results written to: " output-file))))
 
@@ -491,7 +606,8 @@
 
 (defn parse-args [args]
   (let [base (parse-standard-args args sizes-default sizes-default sizes-full)]
-    (assoc base :readme (bu/has-flag? args "--readme"))))
+    (assoc base :readme (bu/has-flag? args "--readme")
+                :args   (vec args))))
 
 (defn print-usage []
   (println "Usage: lein bench [options]")
@@ -511,7 +627,8 @@
       (print-usage)
       (let [output-dir "bench-results"
             output-file (str output-dir "/" (timestamp) ".edn")
-            runner (if (:readme opts) run-readme-benchmarks run-all-benchmarks)]
+            runner (if (:readme opts) run-readme-benchmarks run-all-benchmarks)
+            started-at (Instant/now)]
         (println)
         (println "========================================================================")
         (println "  Ordered Collections Benchmark Suite")
@@ -529,7 +646,7 @@
 
         (let [results (runner (:sizes opts))]
           (print-summary results)
-          (write-results results output-file opts))
+          (write-results results output-file opts started-at))
 
         (println)
         (println "Benchmark suite complete.")))
