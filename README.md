@@ -24,6 +24,7 @@ foundation for splitting, joining, and parallel operations.
 
 - [Zorp's Sneaker Emporium](doc/zorp-example.md) — Narrative guide with extended examples
 - [Cookbook](doc/cookbook.md) — Practical patterns: leaderboards, time-series, scheduling, queues, multisets, and more
+- [Collections API](doc/collections-api.md) — Collection-by-collection constructor and operation reference
 - [Benchmarks](doc/benchmarks.md) — Detailed performance measurements
 - [Competitive Analysis](doc/competitive-analysis.md) — Comparison with other libraries
 - [vs clojure.data.avl](doc/vs-clojure-data-avl.md) — For data.avl users considering a switch
@@ -191,6 +192,7 @@ The fundamental collection types currently implemented are:
 ## Capabilities
 
 Operations that `sorted-set` and `sorted-map` don't provide — at any collection size.
+For the full collection-by-collection surface area, see [Collections API](doc/collections-api.md).
 
 ### Positional Access & Rank
 
