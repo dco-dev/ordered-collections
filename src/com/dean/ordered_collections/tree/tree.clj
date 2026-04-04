@@ -1,10 +1,10 @@
 (ns com.dean.ordered-collections.tree.tree
-  (:require [clojure.core.reducers       :as r]
-            [com.dean.ordered-collections.parallel :as parallel]
+  (:require [clojure.core.reducers                      :as r]
+            [com.dean.ordered-collections.parallel      :as parallel]
             [com.dean.ordered-collections.tree.interval :as interval]
-            [com.dean.ordered-collections.tree.order    :as order]
             [com.dean.ordered-collections.tree.node     :as node
-             :refer [leaf? leaf -k -v -l -r -x -z -kv]])
+             :refer [leaf? leaf -k -v -l -r -x -z -kv]]
+            [com.dean.ordered-collections.tree.order    :as order])
   (:import  [clojure.lang ASeq MapEntry RT ISeq Seqable Sequential IPersistentCollection]
             [java.util Comparator]))
 
@@ -49,7 +49,8 @@
 ;; --  MIT Scheme weight balanced tree as reimplemented by Yoichi Hirai
 ;;     and Kazuhiko Yamamoto using the revised non-variant algorithm recommended
 ;;     integer balance parameters from (Hirai/Yamomoto 2011).
-;;     <https://www.cambridge.org/core/journals/journal-of-functional-programming/article/balancing-weightbalanced-trees/7281C4DE7E56B74F2D13F06E31DCBC5B>
+;;     <https://www.cambridge.org/core/journals/journal-of-functional-programming/article/
+;;     balancing-weightbalanced-trees/7281C4DE7E56B74F2D13F06E31DCBC5B>
 ;;
 ;; --  Wikipedia
 ;;     'Interval Tree'
@@ -71,10 +72,6 @@
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; TODO: additional operations
-;;
-;; - node-traverse (maybe?)
-;; - reducer
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Weight Balancing Constants
@@ -421,62 +418,48 @@
          bk# (-k b#) bv# (-v b#) y1# (-l b#) y2# (-r b#)]
      (~create bk# bv# (~create ak# av# x# y1#) (~create ~ck ~cv y2# ~z))))
 
-
-(defn- stitch-wb
-  "Weight-balanced stitch: join left and right subtrees at root k/v, performing
-  a single or double rotation to restore balance if needed. Assumes all keys in
-  l < k < all keys in r, and imbalance is at most one rotation away from balanced.
-
-  Balance criteria (Hirai-Yamamoto):
-    - Rotate left  when: weight(r) > δ × weight(l)
-    - Rotate right when: weight(l) > δ × weight(r)
-    - Single vs double determined by γ threshold on inner subtree weights."
-  [create k v l r]
-  (let [lw (node-weight l)
-        rw (node-weight r)]
-    (cond
-      ;; Right-heavy: rotate left
-      (> rw (* +delta+ lw))
-      (let [rl  (-l r)
-            rlw (node-weight rl)
-            rrw (node-weight (-r r))]
-        (if (< rlw (* +gamma+ rrw))
-          (rotate-single-left create k v l r)
-          (rotate-double-left create k v l r)))
-
-      ;; Left-heavy: rotate right
-      (> lw (* +delta+ rw))
-      (let [lr  (-r l)
-            llw (node-weight (-l l))
-            lrw (node-weight lr)]
-        (if (< lrw (* +gamma+ llw))
-          (rotate-single-right create k v l r)
-          (rotate-double-right create k v l r)))
-
-      ;; Balanced
-      :else
-      (create k v l r))))
-
-(defn node-stitch-weight-balanced
-  "Weight-Balancing Algorithm:
-
-  Join left and right subtrees at root k/v, performing a single or
-  double rotation to balance the resulting tree, if needed.  Assumes
-  all keys in l < k < all keys in r, and the relative weight balance
-  of the left and right subtrees is such that no more than one
-  single/double rotation will result in each subtree being less than
-  +delta+ times the weight of the other."
-  [k v l r]
-  (stitch-wb *t-join* k v l r))
-
-(def ^:dynamic *n-join* node-stitch-weight-balanced)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Stitch - the fundamental balancing constructor
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn node-stitch
-  "The `stitch` operation is the sole balancing constructor and
-  interface to the specific balancing rotation algorithm of the tree.
-  Sometimes referred to as `n-join` operation"
-  [k v l r]
-  (*n-join* k v l r))
+  "Join left and right subtrees at root k/v, performing a single or double
+  rotation to restore weight balance if needed.
+
+  This is the tree's fundamental balancing constructor. It assumes all keys
+  in `l` are less than `k`, all keys in `r` are greater than `k`, and that
+  at most one single or double rotation is needed to restore balance.
+
+  The 5-arity form takes an explicit node constructor and is used in hot
+  internal paths to avoid dynamic-var indirection. The 4-arity form uses the
+  current `*t-join*` binding."
+  ([k v l r]
+   (node-stitch *t-join* k v l r))
+  ([create k v l r]
+   (let [lw (node-weight l)
+         rw (node-weight r)]
+     (cond
+       ;; Right-heavy: rotate left
+       (> rw (* +delta+ lw))
+       (let [rl  (-l r)
+             rlw (node-weight rl)
+             rrw (node-weight (-r r))]
+         (if (< rlw (* +gamma+ rrw))
+           (rotate-single-left create k v l r)
+           (rotate-double-left create k v l r)))
+
+       ;; Left-heavy: rotate right
+       (> lw (* +delta+ rw))
+       (let [lr  (-r l)
+             llw (node-weight (-l l))
+             lrw (node-weight lr)]
+         (if (< lrw (* +gamma+ llw))
+           (rotate-single-right create k v l r)
+           (rotate-double-right create k v l r)))
+
+       ;; Balanced
+       :else
+       (create k v l r)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Fundamental Tree Operations
@@ -497,8 +480,8 @@
                    (if (zero? c)
                      (create key v l r)
                      (if (neg? c)
-                       (stitch-wb create key val (add l) r)
-                       (stitch-wb create key val l (add r))))))))]
+                       (node-stitch create key val (add l) r)
+                       (node-stitch create key val l (add r))))))))]
      (add n))))
 
 (defn node-add-if-absent
@@ -513,38 +496,10 @@
                    (cond
                      (zero? c) nil  ; key exists, signal failure
                      (neg? c)  (when-let [new-l (add l)]
-                                 (stitch-wb create key val new-l r))
+                                 (node-stitch create key val new-l r))
                      :else     (when-let [new-r (add r)]
-                                 (stitch-wb create key val l new-r)))))))]
+                                 (node-stitch create key val l new-r)))))))]
      (add n))))
-
-(defn- node-concat3*
-  [k v l r ^Comparator cmp create]
-  (letfn [(add [n]
-            (if (leaf? n)
-              (create k v (leaf) (leaf))
-              (kvlr [key val l r] n
-                (let [c (.compare cmp k key)]
-                  (if (zero? c)
-                    (create key v l r)
-                    (if (neg? c)
-                      (stitch-wb create key val (add l) r)
-                      (stitch-wb create key val l (add r))))))))
-          (cat3 [k v l r]
-            (cond
-              (leaf? l) (add r)
-              (leaf? r) (add l)
-              true      (let [lw (node-weight l)
-                              rw (node-weight r)]
-                          (cond
-                            (< (* +delta+ lw) rw) (kvlr [k2 v2 l2 r2] r
-                                                    (stitch-wb create k2 v2
-                                                      (cat3 k v l l2) r2))
-                            (< (* +delta+ rw) lw) (kvlr [k1 v1 l1 r1] l
-                                                    (stitch-wb create k1 v1 l1
-                                                      (cat3 k v r1 r)))
-                            true                  (create k v l r)))))]
-    (cat3 k v l r)))
 
 (defn node-concat3
   "Join two trees, the left rooted at l, and the right at r,
@@ -552,8 +507,34 @@
   trees and subtrees. Assumes all keys in l are smaller than all keys in
   r, and the relative balance of l and r is such that no more than one
   rotation operation will be required to balance the resulting tree."
-  [k v l r]
-  (node-concat3* k v l r order/*compare* *t-join*))
+  ([k v l r]
+   (node-concat3 k v l r order/*compare* *t-join*))
+  ([k v l r ^Comparator cmp create]
+   (letfn [(add [n]
+             (if (leaf? n)
+               (create k v (leaf) (leaf))
+               (kvlr [key val l r] n
+                 (let [c (.compare cmp k key)]
+                   (if (zero? c)
+                     (create key v l r)
+                     (if (neg? c)
+                       (node-stitch create key val (add l) r)
+                       (node-stitch create key val l (add r))))))))
+           (cat3 [k v l r]
+             (cond
+               (leaf? l) (add r)
+               (leaf? r) (add l)
+               true      (let [lw (node-weight l)
+                               rw (node-weight r)]
+                           (cond
+                             (< (* +delta+ lw) rw) (kvlr [k2 v2 l2 r2] r
+                                                     (node-stitch create k2 v2
+                                                       (cat3 k v l l2) r2))
+                             (< (* +delta+ rw) lw) (kvlr [k1 v1 l1 r1] l
+                                                     (node-stitch create k1 v1 l1
+                                                       (cat3 k v r1 r)))
+                             true                  (create k v l r)))))]
+     (cat3 k v l r))))
 
 (defn node-least-kv
   "Return [k v] for the minimum key of the tree rooted at n."
@@ -587,21 +568,19 @@
     (leaf? (-r n)) n
     :else          (recur (-r n))))
 
-(defn- node-remove-least*
-  [n create]
-  (letfn [(rm-least [n]
-            (cond
-              (leaf? n)      (throw (ex-info "remove-least: empty tree" {:node n}))
-              (leaf? (-l n)) (-r n)
-              :else          (stitch-wb create (-k n) (-v n)
-                               (rm-least (-l n)) (-r n))))]
-    (rm-least n)))
-
 (defn node-remove-least
   "Return a tree the same as the one rooted at n, with the node
   containing the minimum key removed. See node-least."
-  [n]
-  (node-remove-least* n *t-join*))
+  ([n]
+   (node-remove-least n *t-join*))
+  ([n create]
+   (letfn [(rm-least [n]
+             (cond
+               (leaf? n)      (throw (ex-info "remove-least: empty tree" {:node n}))
+               (leaf? (-l n)) (-r n)
+               :else          (node-stitch create (-k n) (-v n)
+                                (rm-least (-l n)) (-r n))))]
+     (rm-least n))))
 
 (defn node-remove-greatest
   "Return a tree the same as the one rooted at n, with the node
@@ -612,17 +591,9 @@
               (cond
                 (leaf? n)      (throw (ex-info "remove-greatest: empty tree" {:node n}))
                 (leaf? (-r n)) (-l n)
-                :else          (stitch-wb create (-k n) (-v n) (-l n)
+                :else          (node-stitch create (-k n) (-v n) (-l n)
                                  (rm-greatest (-r n)))))]
       (rm-greatest n))))
-
-(defn- node-concat2*
-  [l r create]
-  (cond
-    (leaf? l) r
-    (leaf? r) l
-    :else     (let [[k v] (node-least-kv r)]
-                (stitch-wb create k v l (node-remove-least* r create)))))
 
 (defn node-concat2
   "Join two trees, the left rooted at l, and the right at r,
@@ -630,8 +601,14 @@
   needed. Assumes all keys in l are smaller than all keys in r, and
   the relative balance of l and r is such that no more than one rotation
   operation will be required to balance the resulting tree."
-  [l r]
-  (node-concat2* l r *t-join*))
+  ([l r]
+   (node-concat2 l r *t-join*))
+  ([l r create]
+   (cond
+     (leaf? l) r
+     (leaf? r) l
+     :else     (let [[k v] (node-least-kv r)]
+                 (node-stitch create k v l (node-remove-least r create))))))
 
 (defn node-remove
   "remove the node whose key is equal to k, if present."
@@ -643,12 +620,12 @@
                (leaf? l) r
                (leaf? r) l
                :else (let [[k v] (node-least-kv r)]
-                       (stitch-wb create k v l (rm-least r)))))
+                       (node-stitch create k v l (rm-least r)))))
            (rm-least [n]
              (cond
                (leaf? n)      (throw (ex-info "rm-least: empty" {}))
                (leaf? (-l n)) (-r n)
-               :else          (stitch-wb create (-k n) (-v n)
+               :else          (node-stitch create (-k n) (-v n)
                                 (rm-least (-l n)) (-r n))))
            (rm [n]
              (if (leaf? n)
@@ -658,8 +635,8 @@
                    (if (zero? c)
                      (concat2 l r)
                      (if (neg? c)
-                       (stitch-wb create key val (rm l) r)
-                       (stitch-wb create key val l (rm r))))))))]
+                       (node-stitch create key val (rm l) r)
+                       (node-stitch create key val l (rm r))))))))]
      (rm n))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1242,9 +1219,9 @@
                   (cond
                     (zero? c) [l (list k v) r]
                     (neg? c)  (let [[ll pres rl] (split l)]
-                                [ll pres (node-concat3* ak v rl r cmp create)])
+                                [ll pres (node-concat3 ak v rl r cmp create)])
                     :else     (let [[lr pres rr] (split r)]
-                                [(node-concat3* ak v l lr cmp create) pres rr]))))))]
+                                [(node-concat3 ak v l lr cmp create) pres rr]))))))]
     (split n)))
 
 (defn node-split
@@ -1391,7 +1368,7 @@
     (leaf? n2) n1
     :else      (kvlr [ak av l r] n2
                  (let [[l1 _ r1] (node-split* n1 ak cmp create)]
-                   (node-concat3* ak av
+                   (node-concat3 ak av
                                   (node-set-union* l1 l cmp create)
                                   (node-set-union* r1 r cmp create)
                                   cmp create)))))
@@ -1404,11 +1381,11 @@
     :else      (kvlr [ak av l r] n2
                  (let [[l1 x r1] (node-split* n1 ak cmp create)]
                    (if x
-                     (node-concat3* ak av
+                     (node-concat3 ak av
                                     (node-set-intersection* l1 l cmp create)
                                     (node-set-intersection* r1 r cmp create)
                                     cmp create)
-                     (node-concat2* (node-set-intersection* l1 l cmp create)
+                     (node-concat2 (node-set-intersection* l1 l cmp create)
                                     (node-set-intersection* r1 r cmp create)
                                     create))))))
 
@@ -1419,7 +1396,7 @@
     (leaf? n2) n1
     :else      (kvlr [ak _ l r] n2
                  (let [[l1 _ r1] (node-split* n1 ak cmp create)]
-                   (node-concat2* (node-set-difference* l1 l cmp create)
+                   (node-concat2 (node-set-difference* l1 l cmp create)
                                   (node-set-difference* r1 r cmp create)
                                   create)))))
 
@@ -1433,7 +1410,7 @@
                        val       (if x
                                    (merge-fn ak av (second x))
                                    av)]
-                   (node-concat3* ak val
+                   (node-concat3 ak val
                                   (node-map-merge* l1 l merge-fn cmp create)
                                   (node-map-merge* r1 r merge-fn cmp create)
                                   cmp create)))))
@@ -1577,7 +1554,7 @@
               right-total (+ (node-size r1) (node-size r))
               spawn-side (parallel-spawn-side left-total right-total)]
           (if-not (parallel-recursive? total recursive-threshold)
-            (node-concat3* ak av
+            (node-concat3 ak av
                            (node-set-union* l1 l cmp create)
                            (node-set-union* r1 r cmp create)
                            cmp create)
@@ -1585,14 +1562,14 @@
               :left
               (parallel/fork-join [left-result (node-set-union-parallel* l1 l cmp create recursive-threshold)
                                    right-result (node-set-union-parallel* r1 r cmp create recursive-threshold)]
-                (node-concat3* ak av left-result right-result cmp create))
+                (node-concat3 ak av left-result right-result cmp create))
 
               :right
               (parallel/fork-join [right-result (node-set-union-parallel* r1 r cmp create recursive-threshold)
                                    left-result (node-set-union-parallel* l1 l cmp create recursive-threshold)]
-                (node-concat3* ak av left-result right-result cmp create))
+                (node-concat3 ak av left-result right-result cmp create))
 
-              (node-concat3* ak av
+              (node-concat3 ak av
                              (node-set-union-parallel* l1 l cmp create recursive-threshold)
                              (node-set-union-parallel* r1 r cmp create recursive-threshold)
                              cmp create))))))))
@@ -1611,11 +1588,11 @@
               spawn-side (parallel-spawn-side left-total right-total)]
           (if-not (parallel-recursive? total recursive-threshold)
             (if x
-              (node-concat3* ak av
+              (node-concat3 ak av
                              (node-set-intersection* l1 l cmp create)
                              (node-set-intersection* r1 r cmp create)
                              cmp create)
-              (node-concat2* (node-set-intersection* l1 l cmp create)
+              (node-concat2 (node-set-intersection* l1 l cmp create)
                              (node-set-intersection* r1 r cmp create)
                              create))
             (case spawn-side
@@ -1623,21 +1600,21 @@
               (parallel/fork-join [left-result (node-set-intersection-parallel* l1 l cmp create recursive-threshold)
                                    right-result (node-set-intersection-parallel* r1 r cmp create recursive-threshold)]
                 (if x
-                  (node-concat3* ak av left-result right-result cmp create)
-                  (node-concat2* left-result right-result create)))
+                  (node-concat3 ak av left-result right-result cmp create)
+                  (node-concat2 left-result right-result create)))
 
               :right
               (parallel/fork-join [right-result (node-set-intersection-parallel* r1 r cmp create recursive-threshold)
                                    left-result (node-set-intersection-parallel* l1 l cmp create recursive-threshold)]
                 (if x
-                  (node-concat3* ak av left-result right-result cmp create)
-                  (node-concat2* left-result right-result create)))
+                  (node-concat3 ak av left-result right-result cmp create)
+                  (node-concat2 left-result right-result create)))
 
               (let [left-result (node-set-intersection-parallel* l1 l cmp create recursive-threshold)
                     right-result (node-set-intersection-parallel* r1 r cmp create recursive-threshold)]
                 (if x
-                  (node-concat3* ak av left-result right-result cmp create)
-                  (node-concat2* left-result right-result create))))))))))
+                  (node-concat3 ak av left-result right-result cmp create)
+                  (node-concat2 left-result right-result create))))))))))
 
 (defn- node-set-difference-parallel*
   [n1 n2 ^Comparator cmp create recursive-threshold]
@@ -1652,21 +1629,21 @@
               right-total (+ (node-size r1) (node-size r))
               spawn-side (parallel-spawn-side left-total right-total)]
           (if-not (parallel-recursive? total recursive-threshold)
-            (node-concat2* (node-set-difference* l1 l cmp create)
+            (node-concat2 (node-set-difference* l1 l cmp create)
                            (node-set-difference* r1 r cmp create)
                            create)
             (case spawn-side
               :left
               (parallel/fork-join [left-result (node-set-difference-parallel* l1 l cmp create recursive-threshold)
                                    right-result (node-set-difference-parallel* r1 r cmp create recursive-threshold)]
-                (node-concat2* left-result right-result create))
+                (node-concat2 left-result right-result create))
 
               :right
               (parallel/fork-join [right-result (node-set-difference-parallel* r1 r cmp create recursive-threshold)
                                    left-result (node-set-difference-parallel* l1 l cmp create recursive-threshold)]
-                (node-concat2* left-result right-result create))
+                (node-concat2 left-result right-result create))
 
-              (node-concat2* (node-set-difference-parallel* l1 l cmp create recursive-threshold)
+              (node-concat2 (node-set-difference-parallel* l1 l cmp create recursive-threshold)
                              (node-set-difference-parallel* r1 r cmp create recursive-threshold)
                              create))))))))
 
@@ -1684,7 +1661,7 @@
               right-total (+ (node-size r1) (node-size r))
               spawn-side (parallel-spawn-side left-total right-total)]
           (if-not (parallel-recursive? total recursive-threshold)
-            (node-concat3* ak val
+            (node-concat3 ak val
                            (node-map-merge* l1 l merge-fn cmp create)
                            (node-map-merge* r1 r merge-fn cmp create)
                            cmp create)
@@ -1692,14 +1669,14 @@
               :left
               (parallel/fork-join [left-result (node-map-merge-parallel* l1 l merge-fn cmp create recursive-threshold)
                                    right-result (node-map-merge-parallel* r1 r merge-fn cmp create recursive-threshold)]
-                (node-concat3* ak val left-result right-result cmp create))
+                (node-concat3 ak val left-result right-result cmp create))
 
               :right
               (parallel/fork-join [right-result (node-map-merge-parallel* r1 r merge-fn cmp create recursive-threshold)
                                    left-result (node-map-merge-parallel* l1 l merge-fn cmp create recursive-threshold)]
-                (node-concat3* ak val left-result right-result cmp create))
+                (node-concat3 ak val left-result right-result cmp create))
 
-              (node-concat3* ak val
+              (node-concat3 ak val
                              (node-map-merge-parallel* l1 l merge-fn cmp create recursive-threshold)
                              (node-map-merge-parallel* r1 r merge-fn cmp create recursive-threshold)
                              cmp create))))))))
