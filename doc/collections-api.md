@@ -8,10 +8,10 @@ Use it to answer three questions quickly:
 - Which standard Clojure operations work as expected on it?
 
 All library-specific constructors and extension functions are in
-`com.dean.ordered-collections.core`.
+`ordered-collections.core`.
 
 ```clojure
-(require '[com.dean.ordered-collections.core :as oc])
+(require '[ordered-collections.core :as oc])
 ```
 
 Standard Clojure operations such as `assoc`, `get`, `contains?`, `seq`,

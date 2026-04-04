@@ -37,7 +37,7 @@
    :jvm-opts ["-Djdk.attach.allowAttachSelf"
               "-XX:+EnableDynamicAgentLoading"
               "-Xmx8g"]
-   :main-opts ["-m" "com.dean.ordered-collections.bench-runner"]}
+   :main-opts ["-m" "ordered-collections.bench-runner"]}
 
   :bench-simple
   {:extra-paths ["test"]
@@ -47,17 +47,17 @@
    :jvm-opts ["-Djdk.attach.allowAttachSelf"
               "-XX:+EnableDynamicAgentLoading"
               "-Xmx8g"]
-   :main-opts ["-m" "com.dean.ordered-collections.simple-bench"]}
+   :main-opts ["-m" "ordered-collections.simple-bench"]}
 
   :bench-range-map
   {:extra-paths ["test"]
    :extra-deps {com.google.guava/guava {:mvn/version "33.0.0-jre"}}
    :jvm-opts ["-Xmx8g"]
-   :main-opts ["-m" "com.dean.ordered-collections.range-map-bench"]}
+   :main-opts ["-m" "ordered-collections.range-map-bench"]}
 
   :bench-parallel
   {:extra-paths ["test"]
    :extra-deps {org.clojure/data.avl   {:mvn/version "0.2.0"}
                 criterium/criterium    {:mvn/version "0.4.6"}}
    :jvm-opts ["-Xmx8g"]
-   :main-opts ["-m" "com.dean.ordered-collections.parallel-threshold-bench"]}}}
+   :main-opts ["-m" "ordered-collections.parallel-threshold-bench"]}}}

@@ -5,7 +5,7 @@ Practical examples showing where ordered-collections shines.
 ## Setup
 
 ```clojure
-(require '[com.dean.ordered-collections.core :as oc])
+(require '[ordered-collections.core :as oc])
 (require '[clojure.core.reducers :as r])
 ```
 

@@ -56,6 +56,7 @@ See [benchmarks](doc/benchmarks.md) for current numbers and analysis.
 ### Build
 
 - Added `deps.edn` with aliases: `:dev`, `:test`, `:bench`, `:bench-simple`, `:bench-range-map`, `:bench-parallel`
+- Namespace root is now `ordered-collections.*` / `ordered_collections.*` rather than `com.dean.ordered-collections.*`, and the source/test tree now lives under `src/ordered_collections` and `test/ordered_collections`
 
 ### Bug Fixes
 
@@ -75,6 +76,7 @@ See [benchmarks](doc/benchmarks.md) for current numbers and analysis.
 
 - **Removed** `mutable-ordered-set`, `mutable-ordered-map`, `mutable-interval-set`, `mutable-interval-map`
 - **Removed** `transient`/`persistent!` support (path-copying made it a no-op)
+- Public namespace root and Maven/Lein artifact coordinate are now `ordered-collections`
 
 ---
 

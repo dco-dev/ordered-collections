@@ -1,4 +1,4 @@
-(defproject com.dean/ordered-collections "0.2.0-SNAPSHOT"
+(defproject ordered-collections "0.2.0-SNAPSHOT"
   :description "Persistent Weight-Balanced Sorted Collections for Clojure"
   :author       "Dan Lentz"
   :url "http://github.com/dco-dev/ordered-collections"
@@ -25,11 +25,11 @@
   :codox    {:output-path  "doc/api"
              :src-dir-uri "https://github.com/dco-dev/ordered-collections/blob/master/"
              :src-linenum-anchor-prefix "L"
-             :project {:name "com.dean/ordered-collections"}}
+             :project {:name "ordered-collections"}}
 
   :global-vars {*warn-on-reflection* true}
 
-  :aliases {"bench"           ["run" "-m" "com.dean.ordered-collections.bench-runner"]
-             "bench-simple"    ["run" "-m" "com.dean.ordered-collections.simple-bench"]
-             "bench-range-map" ["run" "-m" "com.dean.ordered-collections.range-map-bench"]
-             "bench-parallel"  ["run" "-m" "com.dean.ordered-collections.parallel-threshold-bench"]})
+  :aliases {"bench"           ["run" "-m" "ordered-collections.bench-runner"]
+             "bench-simple"    ["run" "-m" "ordered-collections.simple-bench"]
+             "bench-range-map" ["run" "-m" "ordered-collections.range-map-bench"]
+             "bench-parallel"  ["run" "-m" "ordered-collections.parallel-threshold-bench"]})

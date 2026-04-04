@@ -107,7 +107,7 @@ The door blasts open. Big Toe Tony—47 feet, diamond tier, CUST-0007—strides 
 The problem: each of Tony's 47 feet has a slightly different size. Zorp needs to find the best available size for each foot.
 
 ```clojure
-(require '[com.dean.ordered-collections.core :as oc])
+(require '[ordered-collections.core :as oc])
 
 ;; Available sizes in stock (half-sizes from 6 to 15)
 (def available-sizes

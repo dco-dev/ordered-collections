@@ -20,7 +20,7 @@ The core operations are the same, with one syntax difference: ordered-collection
 (nth s 2)                           ;=> 3
 
 ;; ordered-collections
-(require '[com.dean.ordered-collections.core :as oc])
+(require '[ordered-collections.core :as oc])
 (def s (oc/ordered-set [1 2 3 4 5 6 7 8 9]))
 
 (oc/nearest s :>= 4)               ;=> 4       ← keyword

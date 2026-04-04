@@ -1,4 +1,4 @@
-# com.dean/ordered-collections
+# ordered-collections
 
 **Fast collections that do more than sort.**
 
@@ -18,7 +18,7 @@ All built from a modular, extensible, weight-balanced tree platform with shared
 foundation for splitting, joining, and parallel operations.
 
 ![tests](https://github.com/dco-dev/ordered-collections/actions/workflows/clojure.yml/badge.svg)
-[![Clojars Project](https://img.shields.io/clojars/v/com.dean/ordered-collections.svg)](https://clojars.org/com.dean/ordered-collections)
+[![Clojars Project](https://img.shields.io/clojars/v/ordered-collections.svg)](https://clojars.org/ordered-collections)
 
 ### Documentation
 
@@ -42,7 +42,7 @@ hood — and in the new things you can do.
 
 ```clojure
 
-(require '[com.dean.ordered-collections.core :as oc])
+(require '[ordered-collections.core :as oc])
 
 ;; Sets
 
