@@ -920,133 +920,144 @@
   ((node-find-interval-fn i nil) n))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Iteration and Accumulation
+;; Iteration - `node-run!` et al. for eager side-effecting walks
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; MAYBE: replace/refactor as `node-traverse`
-;;       options: forward/reverse, in-order/post-order/pre-order
-
-(defn node-iter
-  "For the side-effect, apply f to each node of the tree rooted at n."
+(defn node-run!
+  "Eagerly apply f to each node of the tree rooted at n, from least to greatest."
   [n f]
   (when-not (leaf? n)
     (lr [l r] n
-      (node-iter l f)
+      (node-run! l f)
       (f n)
-      (node-iter r f))))
+      (node-run! r f))))
 
-(defn node-iter-kv
-  "For the side-effect, apply f to (k, v) for each element in tree rooted at n."
+(defn node-run-kv!
+  "Eagerly apply f to each key/value pair in the tree rooted at n, from least to greatest."
   [n f]
   (when-not (leaf? n)
     (lr [l r] n
-      (node-iter-kv l f)
+      (node-run-kv! l f)
       (f (-k n) (-v n))
-      (node-iter-kv r f))))
+      (node-run-kv! r f))))
 
-(defn node-iter-reverse
-  "For the side-effect, apply f to each node of the tree rooted at n in reverse."
+(defn node-run-reverse!
+  "Eagerly apply f to each node of the tree rooted at n, from greatest to least."
   [n f]
   (when-not (leaf? n)
     (lr [l r] n
-      (node-iter-reverse r f)
+      (node-run-reverse! r f)
       (f n)
-      (node-iter-reverse l f))))
+      (node-run-reverse! l f))))
 
-(defn node-iter-kv-reverse
-  "For the side-effect, apply f to (k, v) for each element in tree in reverse order."
+(defn node-run-kv-reverse!
+  "Eagerly apply f to each key/value pair in the tree rooted at n, from greatest to least."
   [n f]
   (when-not (leaf? n)
     (lr [l r] n
-      (node-iter-kv-reverse r f)
+      (node-run-kv-reverse! r f)
       (f (-k n) (-v n))
-      (node-iter-kv-reverse l f))))
+      (node-run-kv-reverse! l f))))
 
-(defn- node-fold-fn [enum-fn next-fn]
-  (fn [f base n]
-    (loop [e (enum-fn n) acc base]
-      (if (nil? e)
-        acc
-        (let [res (f acc (node-enum-first e))]
-          (if (reduced? res) @res
-              (recur (next-fn e) res)))))))
+(defmacro ^:private enum-count
+  [enum next-fn]
+  `(loop [e# ~enum n# 0]
+     (if e#
+       (recur (~next-fn e#) (unchecked-inc-int n#))
+       n#)))
 
-(def ^:private fold-left-fn  (node-fold-fn node-enumerator node-enum-rest))
-(def ^:private fold-right-fn (node-fold-fn node-enumerator-reverse node-enum-prior))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Reduction
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; Reduction is layered on top of enumerators.
+;;
+;; There are two distinct reduction shapes:
+;;
+;; 1. Unary reduction over a projected node value
+;;    `(f acc x)`
+;;    Used for:
+;;      - nodes
+;;      - keys
+;;      - entries
+;;    These share one implementation strategy:
+;;      - direction is chosen by the enumerator step (`node-enum-rest` or
+;;        `node-enum-prior`)
+;;      - projection is chosen by a small function (`identity`, `-k`,
+;;        `node-entry`)
+;;
+;; 2. Key/value reduction
+;;    `(f acc k v)`
+;;    This stays separate because it has no natural seeded 2-arity form, and
+;;    forcing it through the unary projection layer would add avoidable packing.
+;;
+;; All reducers support `reduced` short-circuiting. The unary reducers share
+;; the seeded and explicit-init enumerator kernels below.
 
-(defn node-fold-left
-  "Fold-left (reduce) the collection from least to greatest."
-  ([f n]      (node-fold-left f nil n))
-  ([f base n] (fold-left-fn f base n)))
+(defmacro ^:private enum-reduce-init
+  "Shared enumerator reduction kernel for explicit initial values."
+  [enum next-fn acc-sym init-expr node-sym step-expr]
+  `(loop [e# ~enum ~acc-sym ~init-expr]
+     (if (nil? e#)
+       ~acc-sym
+       (let [~node-sym (node-enum-first e#)
+             ret# ~step-expr]
+         (if (reduced? ret#)
+           @ret#
+           (recur (~next-fn e#) ret#))))))
 
-(defn node-fold-right
-  "Fold-right (reduce) the collection from greatest to least."
-  ([f n] (node-fold-right f nil n))
-  ([f base n] (fold-right-fn f base n)))
+(defmacro ^:private enum-reduce-first
+  "Shared enumerator reduction kernel for the 1-arity IReduce case, where the
+   first element seeds the accumulator and empty enumerations call (f)."
+  [enum-expr next-fn acc-sym node-sym seed-expr step-expr empty-expr]
+  `(if-let [e0# ~enum-expr]
+     (let [~node-sym (node-enum-first e0#)]
+       (loop [e# (~next-fn e0#) ~acc-sym ~seed-expr]
+         (if (nil? e#)
+           ~acc-sym
+           (let [~node-sym (node-enum-first e#)
+             ret# ~step-expr]
+             (if (reduced? ret#)
+               @ret#
+               (recur (~next-fn e#) ret#))))))
+     ~empty-expr))
 
-(defn node-reduce
-  "Reduction over nodes. Delegates to node-fold-left.
-   Supports early termination via clojure.core/reduced."
-  ([f init root]
-   (node-fold-left f init root))
-  ([f root]
-   (if (leaf? root)
-     (f)
-     (let [e (node-enumerator root)]
-       (if (nil? e)
-         (f)
-         (loop [e (node-enum-rest e)
-                acc (node-enum-first (node-enumerator root))]
-           (if (nil? e)
-             acc
-             (let [res (f acc (node-enum-first e))]
-               (if (reduced? res)
-                 @res
-                 (recur (node-enum-rest e) res))))))))))
+(defn- make-unary-reducer
+  "Build a reducer over nodes traversed by `enum-fn` / `next-fn`, projecting
+   each visited node through `project` before calling `f`."
+  [enum-fn next-fn project]
+  (fn
+    ([f init root]
+     (enum-reduce-init (enum-fn root) next-fn acc init n
+       (f acc (project n))))
+    ([f root]
+     (enum-reduce-first (enum-fn root) next-fn acc n (project n)
+       (f acc (project n))
+       (f)))))
+
+(defn- node-entry [n]
+  (clojure.lang.MapEntry. (-k n) (-v n)))
+
+(def node-reduce
+  (make-unary-reducer node-enumerator node-enum-rest identity))
+
+(def node-reduce-right
+  (make-unary-reducer node-enumerator-reverse node-enum-prior identity))
+
+(def node-reduce-keys
+  (make-unary-reducer node-enumerator node-enum-rest -k))
+
+(def node-reduce-keys-right
+  (make-unary-reducer node-enumerator-reverse node-enum-prior -k))
+
+(def node-reduce-entries
+  (make-unary-reducer node-enumerator node-enum-rest node-entry))
+
+(def node-reduce-entries-right
+  (make-unary-reducer node-enumerator-reverse node-enum-prior node-entry))
 
 (defn node-reduce-kv
-  "Optimized reduction that calls (f acc k v) directly without wrapping in nodes.
-   Does not support reduced."
-  [f init root]
-  (let [acc (volatile! init)]
-    (node-iter-kv root (fn [k v] (vswap! acc f k v)))
-    @acc))
-
-(defn node-reduce-keys
-  "Optimized reduction over keys only (for sets). Calls (f acc k) directly.
-   Supports early termination via clojure.core/reduced."
-  ([f init root]
-   (letfn [(reduce-node [acc n]
-             (cond
-               (leaf? n) acc
-               (reduced? acc) acc
-               :else
-               (lr [l r] n
-                 (let [acc (reduce-node acc l)]
-                   (if (reduced? acc)
-                     acc
-                     (let [acc (f acc (-k n))]
-                       (if (reduced? acc)
-                         acc
-                         (reduce-node acc r))))))))]
-     (let [result (reduce-node init root)]
-       (if (reduced? result) @result result))))
-  ([f root]
-   (if (leaf? root)
-     (f)
-     (let [e   (node-enumerator root nil)
-           acc (-k (node-enum-first e))
-           e   (node-enum-rest e)]
-       (loop [e e, acc acc]
-         (if (nil? e)
-           acc
-           (let [res (f acc (-k (node-enum-first e)))]
-             (if (reduced? res)
-               @res
-               (recur (node-enum-rest e) res)))))))))
-
-(defn node-reduce-kvs
-  "Optimized reduction over key-value pairs. Calls (f acc k v) directly.
+  "Reduce tree key/value pairs from least to greatest via (f acc k v).
    Supports early termination via clojure.core/reduced."
   [f init root]
   (letfn [(reduce-node [acc n]
@@ -1065,62 +1076,29 @@
     (let [result (reduce-node init root)]
       (if (reduced? result) @result result))))
 
-(defn node-reduce-entries
-  "Optimized reduction over MapEntry pairs (for maps). Calls (f acc entry).
+(defn node-reduce-kv-right
+  "Reduce tree key/value pairs from greatest to least via (f acc k v).
    Supports early termination via clojure.core/reduced."
-  ([f init root]
-   (letfn [(reduce-node [acc n]
-             (cond
-               (leaf? n) acc
-               (reduced? acc) acc
-               :else
-               (lr [l r] n
-                 (let [acc (reduce-node acc l)]
-                   (if (reduced? acc)
-                     acc
-                     (let [acc (f acc (clojure.lang.MapEntry. (-k n) (-v n)))]
-                       (if (reduced? acc)
-                         acc
-                         (reduce-node acc r))))))))]
-     (let [result (reduce-node init root)]
-       (if (reduced? result) @result result))))
-  ([f root]
-   (if (leaf? root)
-     (f)
-     (let [e   (node-enumerator root nil)
-           n   (node-enum-first e)
-           acc (clojure.lang.MapEntry. (-k n) (-v n))
-           e   (node-enum-rest e)]
-       (loop [e e, acc acc]
-         (if (nil? e)
-           acc
-           (let [n   (node-enum-first e)
-                 res (f acc (clojure.lang.MapEntry. (-k n) (-v n)))]
-             (if (reduced? res)
-               @res
-               (recur (node-enum-rest e) res)))))))))
+  [f init root]
+  (letfn [(reduce-node [acc n]
+            (cond
+              (leaf? n) acc
+              (reduced? acc) acc
+              :else
+              (lr [l r] n
+                (let [acc (reduce-node acc r)]
+                  (if (reduced? acc)
+                    acc
+                    (let [acc (f acc (-k n) (-v n))]
+                      (if (reduced? acc)
+                        acc
+                        (reduce-node acc l))))))))]
+    (let [result (reduce-node init root)]
+      (if (reduced? result) @result result))))
 
-;; MAYBE: i'm not convinced these are necessary
-
-(defn- node-fold*-fn [dir]
-  (let [iter-fn (case dir
-                  :< node-iter
-                  :> node-iter-reverse)]
-    (fn [f base n]
-      (let [acc (volatile! base)
-            fun #(vswap! acc f %)]
-     (iter-fn n fun)
-     @acc))))
-
-(defn- node-fold-left*
-  "eager left reduction of the tree rooted at n. does not support clojure.core/reduced."
-  ([f n] (node-fold-left* f nil n))
-  ([f base n] ((node-fold*-fn :<) f base n)))
-
-(defn- node-fold-right*
-  "eager right reduction of the tree rooted at n. does not support clojure.core/reduced."
-  ([f n] (node-fold-right* f nil n))
-  ([f base n] ((node-fold*-fn :>) f base n)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Tree Health
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn node-healthy?
   "verify node `n` and all descendants satisfy the node-invariants
@@ -1809,7 +1787,7 @@
   entire node structure."
   [n & {:keys [accessor reverse?]}]
   (let [acc   (transient [])
-        fold  (if reverse? node-fold-right* node-fold-left*)
+        fold  (if reverse? node-reduce-right node-reduce)
         nval  (cond-> accessor
                 (not (fn? accessor)) node-accessor)]
     (fold #(conj! %1 (nval %2)) acc n)
@@ -1885,29 +1863,17 @@
 
   clojure.lang.Counted
   (count [_]
-    (if cnt cnt (loop [e enum n 0]
-                  (if e (recur (node-enum-rest e) (unchecked-inc-int n)) n))))
+    (if cnt cnt (enum-count enum node-enum-rest)))
 
   clojure.lang.IReduceInit
   (reduce [_ f init]
-    (loop [e enum acc init]
-      (if e
-        (let [ret (f acc (-k (node-enum-first e)))]
-          (if (reduced? ret)
-            @ret
-            (recur (node-enum-rest e) ret)))
-        acc)))
+    (enum-reduce-init enum node-enum-rest acc init n
+      (f acc (-k n))))
 
   clojure.lang.IReduce
   (reduce [_ f]
-    (if enum
-      (loop [e (node-enum-rest enum) acc (-k (node-enum-first enum))]
-        (if e
-          (let [ret (f acc (-k (node-enum-first e)))]
-            (if (reduced? ret)
-              @ret
-              (recur (node-enum-rest e) ret)))
-          acc))
+    (enum-reduce-first enum node-enum-rest acc n (-k n)
+      (f acc (-k n))
       (f)))
 
   clojure.lang.IHashEq
@@ -1955,29 +1921,17 @@
 
   clojure.lang.Counted
   (count [_]
-    (if cnt cnt (loop [e enum n 0]
-                  (if e (recur (node-enum-rest e) (unchecked-inc-int n)) n))))
+    (if cnt cnt (enum-count enum node-enum-rest)))
 
   clojure.lang.IReduceInit
   (reduce [_ f init]
-    (loop [e enum acc init]
-      (if e
-        (let [ret (f acc (-kv (node-enum-first e)))]
-          (if (reduced? ret)
-            @ret
-            (recur (node-enum-rest e) ret)))
-        acc)))
+    (enum-reduce-init enum node-enum-rest acc init n
+      (f acc (-kv n))))
 
   clojure.lang.IReduce
   (reduce [_ f]
-    (if enum
-      (loop [e (node-enum-rest enum) acc (-kv (node-enum-first enum))]
-        (if e
-          (let [ret (f acc (-kv (node-enum-first e)))]
-            (if (reduced? ret)
-              @ret
-              (recur (node-enum-rest e) ret)))
-          acc))
+    (enum-reduce-first enum node-enum-rest acc n (-kv n)
+      (f acc (-kv n))
       (f)))
 
   clojure.lang.IHashEq
@@ -2039,29 +1993,17 @@
 
   clojure.lang.Counted
   (count [_]
-    (if cnt cnt (loop [e enum n 0]
-                  (if e (recur (node-enum-prior e) (unchecked-inc-int n)) n))))
+    (if cnt cnt (enum-count enum node-enum-prior)))
 
   clojure.lang.IReduceInit
   (reduce [_ f init]
-    (loop [e enum acc init]
-      (if e
-        (let [ret (f acc (-k (node-enum-first e)))]
-          (if (reduced? ret)
-            @ret
-            (recur (node-enum-prior e) ret)))
-        acc)))
+    (enum-reduce-init enum node-enum-prior acc init n
+      (f acc (-k n))))
 
   clojure.lang.IReduce
   (reduce [_ f]
-    (if enum
-      (loop [e (node-enum-prior enum) acc (-k (node-enum-first enum))]
-        (if e
-          (let [ret (f acc (-k (node-enum-first e)))]
-            (if (reduced? ret)
-              @ret
-              (recur (node-enum-prior e) ret)))
-          acc))
+    (enum-reduce-first enum node-enum-prior acc n (-k n)
+      (f acc (-k n))
       (f)))
 
   clojure.lang.IHashEq
@@ -2109,29 +2051,17 @@
 
   clojure.lang.Counted
   (count [_]
-    (if cnt cnt (loop [e enum n 0]
-                  (if e (recur (node-enum-prior e) (unchecked-inc-int n)) n))))
+    (if cnt cnt (enum-count enum node-enum-prior)))
 
   clojure.lang.IReduceInit
   (reduce [_ f init]
-    (loop [e enum acc init]
-      (if e
-        (let [ret (f acc (-kv (node-enum-first e)))]
-          (if (reduced? ret)
-            @ret
-            (recur (node-enum-prior e) ret)))
-        acc)))
+    (enum-reduce-init enum node-enum-prior acc init n
+      (f acc (-kv n))))
 
   clojure.lang.IReduce
   (reduce [_ f]
-    (if enum
-      (loop [e (node-enum-prior enum) acc (-kv (node-enum-first enum))]
-        (if e
-          (let [ret (f acc (-kv (node-enum-first e)))]
-            (if (reduced? ret)
-              @ret
-              (recur (node-enum-prior e) ret)))
-          acc))
+    (enum-reduce-first enum node-enum-prior acc n (-kv n)
+      (f acc (-kv n))
       (f)))
 
   clojure.lang.IHashEq

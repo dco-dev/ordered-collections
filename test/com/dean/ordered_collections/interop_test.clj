@@ -181,7 +181,7 @@
           sorted-vec (vec ts)
           x (rand-nth sorted-vec)
           proto-rank (proto/rank-of ts x)
-          expected-rank (.indexOf ^java.util.List sorted-vec x)]
+          expected-rank (first (keep-indexed (fn [i y] (when (= x y) i)) sorted-vec))]
       (= proto-rank expected-rank))))
 
 (defspec prop-tree-set-rank-of-absent 100

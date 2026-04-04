@@ -174,6 +174,12 @@
                 @res
                 (recur (tree/node-enum-rest e) res))))))))
 
+  clojure.core.protocols/CollReduce
+  (coll-reduce [this f]
+    (.reduce ^clojure.lang.IReduce this f))
+  (coll-reduce [this f init]
+    (.reduce ^clojure.lang.IReduceInit this f init))
+
   clojure.core.reducers.CollFold
   (coll-fold [_ chunk-size combinef reducef]
     (tree/node-chunked-fold chunk-size root combinef

@@ -217,9 +217,15 @@
   (reduce [this f]
     (tree/node-reduce-entries f root))
 
+  clojure.core.protocols/CollReduce
+  (coll-reduce [this f]
+    (.reduce ^clojure.lang.IReduce this f))
+  (coll-reduce [this f init]
+    (.reduce ^clojure.lang.IReduceInit this f init))
+
   clojure.lang.IKVReduce
   (kvreduce [this f init]
-    (tree/node-reduce-kvs f init root))
+    (tree/node-reduce-kv f init root))
 
   ILookup
   (valAt [this x] (.valAt this x nil))

@@ -291,6 +291,12 @@
   (reduce [this f]
     (tree/node-reduce-keys f root))
 
+  clojure.core.protocols/CollReduce
+  (coll-reduce [this f]
+    (.reduce ^clojure.lang.IReduce this f))
+  (coll-reduce [this f init]
+    (.reduce ^clojure.lang.IReduceInit this f init))
+
   clojure.core.reducers.CollFold
   (coll-fold [this n combinef reducef]
     (with-fuzzy-set this

@@ -251,7 +251,7 @@
         os    (core/ordered-set elems)
         ^ints ks (generate-lookup-keys n num-lookups)]
     {:data-avl    (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (avl/rank-of as (aget ks i)))))
-     :ordered-set (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (.indexOf ^java.util.List os (aget ks i)))))}))
+     :ordered-set (do (print ".") (flush) (bench-expr (dotimes [i num-lookups] (core/rank os (aget ks i)))))}))
 
 (defn bench-split [n & {:keys [num-ops] :or {num-ops 100}}]
   (let [{:keys [data-avl ordered-set keys]} (split-workload n num-ops)
@@ -261,10 +261,7 @@
      :ordered-set (do (print ".") (flush)
                       (bench-expr
                         (dotimes [i num-ops]
-                          (let [k (aget ks i)]
-                            [(.headSet ^java.util.SortedSet ordered-set k)
-                             (contains? ordered-set k)
-                             (.tailSet ^java.util.SortedSet ordered-set k)]))))}))
+                          (core/split-key (aget ks i) ordered-set))))}))
 
 (def ^:private string-cmp
   (order/compare-by #(neg? (compare (str %1) (str %2)))))

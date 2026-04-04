@@ -128,7 +128,7 @@ outward through saved continuations.
 
 Why this matters:
 - it gives in-order traversal without recursion or lazy-seq allocation in the hot path
-- it is the common substrate for `node-reduce`, `node-fold-left`, `node-fold-right`, sequence construction, and tree-to-tree linear merges
+- it is the common substrate for `node-reduce`, `node-reduce-right`, sequence construction, and tree-to-tree linear merges
 - it keeps traversal mechanics separate from collection presentation (`seq`, `rseq`, key seqs, entry seqs)
 
 This is close in spirit to Oleg Kiselyov's "Towards the best collection API:

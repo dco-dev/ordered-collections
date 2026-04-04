@@ -268,6 +268,12 @@
   (reduce [this f]
     (tree/node-reduce-keys f root))
 
+  clojure.core.protocols/CollReduce
+  (coll-reduce [this f]
+    (.reduce ^clojure.lang.IReduce this f))
+  (coll-reduce [this f init]
+    (.reduce ^clojure.lang.IReduceInit this f init))
+
   Object
   (toString [this]
     (pr-str this))

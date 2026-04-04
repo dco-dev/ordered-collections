@@ -274,9 +274,111 @@
     (let [tree (make-integer-tree size)
           sum  (reduce + (range size))]
       (is (= sum (reduce + (map node/-k (tree/node-seq tree)))))
+      (is (= (reverse (range size))
+             (tree/node-reduce-right (fn [acc n] (conj acc (node/-k n))) [] tree)))
+      (let [seen (volatile! [])]
+        (tree/node-run-kv! tree (fn [k v] (vswap! seen conj [k v])))
+        (is (= (mapv (fn [k] [k k]) (range size)) @seen)))
       (dotimes [_ 1000]
         (is (= sum (tree/node-chunked-fold (inc (rand-int size))
                      tree + (fn ([acc x] (+ acc (node/-k x)))))))))))
+
+(deftest node-traversal-api-check
+  (let [tree     (make-tree0 10)
+        forward  (mapv identity (range 10))
+        reverse  (vec (reverse forward))
+        forward-kv (mapv vector forward (map str forward))
+        reverse-kv (mapv vector reverse (map str reverse))
+        grow-seeded (fn [acc x]
+                      (conj (if (vector? acc) acc [acc]) x))
+        grow-seeded-entry (fn [acc e]
+                            (conj (if (instance? clojure.lang.IMapEntry acc)
+                                    [[(key acc) (val acc)]]
+                                    acc)
+                                  [(key e) (val e)]))
+        node-ks  (fn [n] (node/-k n))]
+    (let [seen (volatile! [])]
+      (tree/node-run! tree #(vswap! seen conj (node-ks %)))
+      (is (= forward @seen)))
+    (let [seen (volatile! [])]
+      (tree/node-run-reverse! tree #(vswap! seen conj (node-ks %)))
+      (is (= reverse @seen)))
+    (let [seen (volatile! [])]
+      (tree/node-run-kv! tree (fn [k v] (vswap! seen conj [k v])))
+      (is (= forward-kv @seen)))
+    (let [seen (volatile! [])]
+      (tree/node-run-kv-reverse! tree (fn [k v] (vswap! seen conj [k v])))
+      (is (= reverse-kv @seen)))
+    (is (= forward
+           (tree/node-reduce (fn [acc n] (conj acc (node-ks n))) [] tree)))
+    (is (= reverse
+           (tree/node-reduce-right (fn [acc n] (conj acc (node-ks n))) [] tree)))
+    (is (= forward
+           (tree/node-reduce-keys conj [] tree)))
+    (is (= reverse
+           (tree/node-reduce-keys-right conj [] tree)))
+    (is (= (mapv vector forward (map str forward))
+           (tree/node-reduce-kv (fn [acc k v] (conj acc [k v])) [] tree)))
+    (is (= (mapv vector reverse (map str reverse))
+           (tree/node-reduce-kv-right (fn [acc k v] (conj acc [k v])) [] tree)))
+    (is (= forward-kv
+           (tree/node-reduce-entries (fn [acc e] (conj acc [(key e) (val e)])) [] tree)))
+    (is (= reverse-kv
+           (tree/node-reduce-entries-right (fn [acc e] (conj acc [(key e) (val e)])) [] tree)))
+    (is (= 3
+           (tree/node-reduce (fn [acc n]
+                               (let [k (node-ks n)]
+                                 (if (= k 3) (reduced k) k)))
+                             nil tree)))
+    (is (= 3
+           (tree/node-reduce-right (fn [_ n]
+                                     (let [k (node-ks n)]
+                                       (if (= k 3) (reduced k) nil)))
+                                   nil tree)))
+    (is (= 3
+           (tree/node-reduce-keys (fn [_ k] (if (= k 3) (reduced k) nil))
+                                  nil tree)))
+    (is (= 3
+           (tree/node-reduce-keys-right (fn [_ k] (if (= k 3) (reduced k) nil))
+                                        nil tree)))
+    (is (= [3 "3"]
+           (tree/node-reduce-kv (fn [_ k v]
+                                  (if (= k 3) (reduced [k v]) nil))
+                                nil tree)))
+    (is (= [3 "3"]
+           (tree/node-reduce-kv-right (fn [_ k v]
+                                        (if (= k 3) (reduced [k v]) nil))
+                                      nil tree)))
+    (is (= [3 "3"]
+           (tree/node-reduce-entries (fn [_ e]
+                                       (if (= (key e) 3)
+                                         (reduced [(key e) (val e)])
+                                         nil))
+                                     nil tree)))
+    (is (= [3 "3"]
+           (tree/node-reduce-entries-right (fn [_ e]
+                                             (if (= (key e) 3)
+                                               (reduced [(key e) (val e)])
+                                               nil))
+                                           nil tree)))
+    (is (= [] (tree/node-reduce conj [] (node/leaf))))
+    (is (= [] (tree/node-reduce-right conj [] (node/leaf))))
+    (is (= [] (tree/node-reduce-keys conj [] (node/leaf))))
+    (is (= [] (tree/node-reduce-keys-right conj [] (node/leaf))))
+    (is (= [] (tree/node-reduce-kv (fn [acc k v] (conj acc [k v])) [] (node/leaf))))
+    (is (= [] (tree/node-reduce-kv-right (fn [acc k v] (conj acc [k v])) [] (node/leaf))))
+    (is (= [] (tree/node-reduce-entries (fn [acc e] (conj acc e)) [] (node/leaf))))
+    (is (= [] (tree/node-reduce-entries-right (fn [acc e] (conj acc e)) [] (node/leaf))))
+    (is (= forward
+           (tree/node-reduce-keys grow-seeded tree)))
+    (is (= reverse
+           (tree/node-reduce-keys-right grow-seeded tree)))
+    (is (= forward-kv
+           (tree/node-reduce-entries grow-seeded-entry tree)))
+    (is (= reverse-kv
+           (tree/node-reduce-entries-right grow-seeded-entry tree)))
+    (is (= nil (tree/node-run! (node/leaf) (constantly :impossible))))
+    (is (= nil (tree/node-run-kv! (node/leaf) (fn [_ _] :impossible))))))
 
 (deftest node-comparison-check
   (let [nums #(-> % (repeatedly (partial rand-int 1000000000)))
