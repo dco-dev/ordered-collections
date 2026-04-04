@@ -1,5 +1,5 @@
 (defproject ordered-collections "0.2.0-SNAPSHOT"
-  :description "Persistent Weight-Balanced Sorted Collections for Clojure"
+  :description "Fast collections that do more than sort."
   :author       "Dan Lentz"
   :url "http://github.com/dco-dev/ordered-collections"
   :license {:name "Eclipse Public License"
@@ -27,7 +27,7 @@
              :src-linenum-anchor-prefix "L"
              :project {:name "ordered-collections"}}
 
-  :global-vars {*warn-on-reflection* true}
+  :global-vars {*warn-on-reflection* true} ; during tests clj-memory-meter will complain
 
   :aliases {"bench"           ["run" "-m" "ordered-collections.bench-runner"]
              "bench-simple"    ["run" "-m" "ordered-collections.simple-bench"]
