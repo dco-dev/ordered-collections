@@ -1477,6 +1477,7 @@
 ;; comparator cost and result reconstruction differ enough between union,
 ;; intersection, difference, and merge that a single conservative threshold
 ;; would leave many practical wins on the table.
+
 (def ^:const ^long +parallel-union-root-threshold+ 131072)
 (def ^:const ^long +parallel-intersection-root-threshold+ 65536)
 (def ^:const ^long +parallel-difference-root-threshold+ 131072)
@@ -1486,6 +1487,7 @@
 ;; paid the top-level entry cost and the spawn guard has filtered out lopsided
 ;; subproblems, the benchmark evidence supports lower cutoffs than a single
 ;; conservative recursive threshold.
+
 (def ^:const ^long +parallel-union-recursive-threshold+ 65536)
 (def ^:const ^long +parallel-intersection-recursive-threshold+ 65536)
 (def ^:const ^long +parallel-difference-recursive-threshold+ 65536)
@@ -1496,10 +1498,12 @@
 ;; recursive kernels from spawning on highly lopsided splits, where a single
 ;; large branch can still recurse and find better-shaped parallel work deeper
 ;; in the tree.
+
 (def ^:const ^long +parallel-min-branch+ 65536)
 
 ;; Secondary threshold for very small subtrees where even sequential
 ;; divide-and-conquer has overhead. Use direct linear merge instead.
+
 (def ^:const ^long +sequential-cutoff+ 64)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
