@@ -31,12 +31,9 @@
 ;; via enumerator and the value vector via an index.
 
 (defn- seq-equiv
+  "Element-wise sequential equivalence (non-recursive through equiv)."
   [s1 o]
-  (if-not (or (instance? clojure.lang.Sequential o)
-              (instance? java.util.List o)
-              (and (instance? clojure.lang.Seqable o)
-                   (not (map? o))
-                   (not (set? o))))
+  (if-not (or (instance? clojure.lang.Sequential o) (instance? java.util.List o))
     false
     (loop [s1 (seq s1) s2 (seq o)]
       (cond
@@ -44,6 +41,7 @@
         (nil? s2) false
         (not (clojure.lang.Util/equiv (first s1) (first s2))) false
         :else (recur (next s1) (next s2))))))
+
 
 (deftype PriorityQueueSeq [enum ^long vi cnt _meta]
   clojure.lang.ISeq
@@ -324,7 +322,11 @@
   (empty [_]
     (PriorityQueue. (node/leaf) cmp 0 _meta))
   (equiv [this o]
-    (seq-equiv this o))
+    (cond
+      (identical? this o) true
+      (not (instance? clojure.lang.Counted o)) false
+      (not= cnt (.count ^clojure.lang.Counted o)) false
+      :else (= (seq this) (seq o))))
 
   clojure.lang.Indexed
   (nth [this i]
