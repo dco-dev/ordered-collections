@@ -151,7 +151,7 @@
   (testing "metadata round-trips through with-meta and empty"
     (let [pq (with-meta (oc/priority-queue [[1 :a] [2 :b]]) {:tag :pq})]
       (is (= {:tag :pq} (meta pq)))
-      (is (= {} (meta (empty pq)))))))
+      (is (= {:tag :pq} (meta (empty pq)))))))
 
 (defspec prop-priority-queue-pop-order 100
   (prop/for-all [pairs tu/gen-priority-pairs]

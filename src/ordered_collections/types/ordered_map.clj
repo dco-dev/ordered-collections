@@ -1,5 +1,6 @@
 (ns ordered-collections.types.ordered-map
   (:require [clojure.core.reducers       :as r :refer [coll-fold]]
+            [ordered-collections.types.shared :refer [with-compare]]
             [ordered-collections.tree.node     :as node]
             [ordered-collections.tree.order    :as order]
             [ordered-collections.protocol      :as proto]
@@ -11,14 +12,6 @@
                                          IBalancedCollection
                                          IOrderedCollection]))
 
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Dynamic Environment
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defmacro with-ordered-map [x & body]
-  `(binding [order/*compare* (.getCmp ~(with-meta x {:tag 'ordered_collections.tree.root.IOrderedCollection}))]
-     ~@body))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Ordered Map
@@ -100,7 +93,7 @@
 
   java.lang.Comparable
   (compareTo [this o]
-    (with-ordered-map this
+    (with-compare this
       (cond
         (identical? this o) 0
         (.isCompatible this o) (tree/node-map-compare root (.getRoot ^INodeCollection o))
@@ -128,7 +121,7 @@
   (assoc [this k v]
     (OrderedMap. (tree/node-add root k v cmp tree/node-create-weight-balanced) cmp alloc stitch _meta))
   (empty [this]
-    (OrderedMap. (node/leaf) cmp alloc stitch {}))
+    (OrderedMap. (node/leaf) cmp alloc stitch _meta))
 
   java.util.Map
   (get [this k]
@@ -138,7 +131,7 @@
   (size [_]
     (tree/node-size root))
   (keySet [this]
-    (with-ordered-map this
+    (with-compare this
       (set (tree/node-vec root :accessor :k))))
   (put [_ _ _]
     (throw (UnsupportedOperationException.)))
@@ -147,17 +140,17 @@
   (clear [_]
     (throw (UnsupportedOperationException.)))
   (values [this]
-    (with-ordered-map this
+    (with-compare this
       (tree/node-vec root :accessor :v)))
   (entrySet [this]
-    (with-ordered-map this
+    (with-compare this
       (set (tree/node-vec root :accessor :kv))))
   (iterator [this]
     (clojure.lang.SeqIterator. (seq this)))
 
   clojure.lang.IPersistentCollection
   (equiv [this o]
-    (with-ordered-map this
+    (with-compare this
       (cond
         (identical? this o) true
         (.isCompatible this o) (and (= (.count this) (.count ^clojure.lang.Counted o))
@@ -188,7 +181,7 @@
 
   clojure.core.reducers.CollFold
   (coll-fold [this n combinef reducef]
-    (with-ordered-map this
+    (with-compare this
       (tree/node-fold n root combinef
         (fn [acc node] (reducef acc (node/-kv node))))))
 
@@ -204,29 +197,29 @@
   (comparator [_]
     cmp)
   (firstKey [this]
-    (with-ordered-map this
+    (with-compare this
       (first (tree/node-least-kv root))))
   (lastKey [this]
-    (with-ordered-map this
+    (with-compare this
       (first (tree/node-greatest-kv root))))
   (headMap [this k]
-    (with-ordered-map this
-      (OrderedMap. (tree/node-split-lesser root k) cmp alloc stitch {})))
+    (with-compare this
+      (OrderedMap. (tree/node-split-lesser root k) cmp alloc stitch _meta)))
   (tailMap [this k]
-    (with-ordered-map this
+    (with-compare this
       (let [[_ present gt] (tree/node-split root k)]
         (if present
-          (OrderedMap. (tree/node-add gt (first present) (second present)) cmp alloc stitch {})
-          (OrderedMap. gt cmp alloc stitch {})))))
+          (OrderedMap. (tree/node-add gt (first present) (second present)) cmp alloc stitch _meta)
+          (OrderedMap. gt cmp alloc stitch _meta)))))
   (subMap [this from to]
-    (with-ordered-map this
+    (with-compare this
       (let [[_ from-present from-gt] (tree/node-split root from)
             from-tree (if from-present
                         (tree/node-add from-gt (first from-present) (second from-present))
                         from-gt)
             to-tree (tree/node-split-lesser root to)
             result (tree/node-set-intersection from-tree to-tree)]
-        (OrderedMap. result cmp alloc stitch {}))))
+        (OrderedMap. result cmp alloc stitch _meta))))
 
   clojure.lang.Sorted
   (entryKey [_ entry]
@@ -236,7 +229,7 @@
       (tree/node-entry-seq root)
       (tree/node-entry-seq-reverse root)))
   (seqFrom [this k ascending]
-    (with-ordered-map this
+    (with-compare this
       (let [[lt present gt] (tree/node-split root k)]
         (if ascending
           (if present
@@ -267,7 +260,7 @@
 
   PNearest
   (nearest [this test k]
-    (with-ordered-map this
+    (with-compare this
       (case test
         :< (when-let [n (tree/node-predecessor root k)]
              [(node/-k n) (node/-v n)])
@@ -279,7 +272,7 @@
               [(node/-k n) (node/-v n)])
         (throw (ex-info "nearest test must be :<, :<=, :>, or :>=" {:test test})))))
   (subrange [this test k]
-    (with-ordered-map this
+    (with-compare this
       (let [result-root (case test
                           (:< :<=) (tree/node-split-lesser root k)
                           (:> :>=) (tree/node-split-greater root k)
@@ -290,7 +283,7 @@
                                       (tree/node-add result-root (node/-k n) (node/-v n))
                                       result-root)
                           result-root)]
-        (OrderedMap. result-root cmp alloc stitch {}))))
+        (OrderedMap. result-root cmp alloc stitch _meta))))
 
   PRanked
   (rank-of [_ k]
@@ -319,14 +312,14 @@
 
   PSplittable
   (split-key [this k]
-    (with-ordered-map this
+    (with-compare this
       (let [[l present r] (tree/node-split root k)
             entry (when present [(first present) (second present)])]
-        [(OrderedMap. l cmp alloc stitch {})
+        [(OrderedMap. l cmp alloc stitch _meta)
          entry
-         (OrderedMap. r cmp alloc stitch {})])))
+         (OrderedMap. r cmp alloc stitch _meta)])))
   (split-at [this i]
-    (with-ordered-map this
+    (with-compare this
       (let [n (tree/node-size root)]
         (cond
           (<= i 0) [(.empty this) this]
@@ -334,8 +327,8 @@
           :else
           (let [left-root  (tree/node-split-lesser root (node/-k (tree/node-nth root i)))
                 right-root (tree/node-split-nth root i)]
-            [(OrderedMap. left-root cmp alloc stitch {})
-             (OrderedMap. right-root cmp alloc stitch {})])))))
+            [(OrderedMap. left-root cmp alloc stitch _meta)
+             (OrderedMap. right-root cmp alloc stitch _meta)])))))
 
   proto/PExclusiveAssoc
   (assoc-new [this k v]

@@ -273,7 +273,7 @@
 
   clojure.lang.IPersistentCollection
   (empty [_]
-    (PriorityQueue. (node/leaf) cmp 0 {}))
+    (PriorityQueue. (node/leaf) cmp 0 _meta))
   (equiv [this o]
     (seq-equiv this o))
 

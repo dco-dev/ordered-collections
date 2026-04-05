@@ -141,7 +141,7 @@
           new-root (tree/node-add root entry entry cmp tree/node-create-weight-balanced)]
       (OrderedMultiset. new-root cmp base-cmp (unchecked-inc seqnum) _meta)))
   (empty [_]
-    (OrderedMultiset. (node/leaf) cmp base-cmp 0 {}))
+    (OrderedMultiset. (node/leaf) cmp base-cmp 0 _meta))
   (equiv [this o]
     (cond
       (identical? this o) true

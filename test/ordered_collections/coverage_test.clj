@@ -86,6 +86,19 @@
     (is (= os1 os2))
     (is (= os1 #{1 2 3}))))
 
+(deftest ordered-set-metadata-propagation
+  (let [os (with-meta (ordered-set [1 2 3 4]) {:tag :ordered-set})]
+    (is (= {:tag :ordered-set} (meta (empty os))))
+    (is (= {:tag :ordered-set} (meta (.headSet ^SortedSet os 3))))
+    (is (= {:tag :ordered-set} (meta (.tailSet ^SortedSet os 3))))
+    (is (= {:tag :ordered-set} (meta (.subSet ^SortedSet os 2 4))))
+    (is (= {:tag :ordered-set} (meta (subrange os :>= 2))))
+    (is (= {:tag :ordered-set} (meta (first (split-at 2 os)))))
+    (is (= {:tag :ordered-set} (meta (last (split-at 2 os)))))
+    (is (= {:tag :ordered-set} (meta (first (split-key 2 os)))))
+    (is (= {:tag :ordered-set} (meta (last (split-key 2 os)))))
+    (is (= {:tag :ordered-set} (meta (union os (ordered-set [5])))))))
+
 (deftest ordered-set-reduce
   (let [os (ordered-set [1 2 3 4 5])]
     ;; IReduce
@@ -143,6 +156,18 @@
     (is (= om1 om2))
     (is (= om1 {1 :a 2 :b}))))
 
+(deftest ordered-map-metadata-propagation
+  (let [om (with-meta (ordered-map [[1 :a] [2 :b] [3 :c] [4 :d]]) {:tag :ordered-map})]
+    (is (= {:tag :ordered-map} (meta (empty om))))
+    (is (= {:tag :ordered-map} (meta (.headMap ^java.util.SortedMap om 3))))
+    (is (= {:tag :ordered-map} (meta (.tailMap ^java.util.SortedMap om 3))))
+    (is (= {:tag :ordered-map} (meta (.subMap ^java.util.SortedMap om 2 4))))
+    (is (= {:tag :ordered-map} (meta (subrange om :>= 2))))
+    (is (= {:tag :ordered-map} (meta (first (split-at 2 om)))))
+    (is (= {:tag :ordered-map} (meta (last (split-at 2 om)))))
+    (is (= {:tag :ordered-map} (meta (first (split-key 2 om)))))
+    (is (= {:tag :ordered-map} (meta (last (split-key 2 om)))))))
+
 (deftest ordered-map-reduce
   (let [om (ordered-map [[1 :a] [2 :b] [3 :c]])]
     ;; IReduceInit
@@ -171,6 +196,13 @@
     (is (= [[10 15]] (iset 12)))
     (is (nil? (iset 7)))))
 
+(deftest interval-set-metadata-propagation
+  (let [iset (with-meta (interval-set [[1 5] [10 15] [20 25]]) {:tag :interval-set})]
+    (is (= {:tag :interval-set} (meta (empty iset))))
+    (is (= {:tag :interval-set} (meta (.headSet ^SortedSet iset [20 25]))))
+    (is (= {:tag :interval-set} (meta (.tailSet ^SortedSet iset [10 15]))))
+    (is (= {:tag :interval-set} (meta (.subSet ^SortedSet iset [10 15] [20 25]))))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; IntervalMap Coverage Tests
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -185,6 +217,10 @@
     (is (= [:b] (im 12)))
     ;; No matching interval returns empty vec or nil depending on implementation
     (is (or (= [] (im 7)) (nil? (im 7))))))
+
+(deftest interval-map-metadata-propagation
+  (let [im (with-meta (interval-map {[1 5] :a [10 15] :b}) {:tag :interval-map})]
+    (is (= {:tag :interval-map} (meta (empty im))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; FuzzySet Coverage Tests
@@ -210,6 +246,13 @@
 (deftest fuzzy-set-empty
   (let [fs (fuzzy-set [])]
     (is (nil? (fs 5)))))
+
+(deftest fuzzy-set-metadata-propagation
+  (let [fs (with-meta (fuzzy-set [1 5 10 20]) {:tag :fuzzy-set})]
+    (is (= {:tag :fuzzy-set} (meta (empty fs))))
+    (is (= {:tag :fuzzy-set} (meta (.headSet ^SortedSet fs 10))))
+    (is (= {:tag :fuzzy-set} (meta (.tailSet ^SortedSet fs 10))))
+    (is (= {:tag :fuzzy-set} (meta (.subSet ^SortedSet fs 5 20))))))
 
 (deftest fuzzy-set-reduce
   (let [fs (fuzzy-set [1 2 3 4 5])]
@@ -240,6 +283,42 @@
 (deftest fuzzy-map-empty
   (let [fm (fuzzy-map {})]
     (is (nil? (fm 5)))))
+
+(deftest fuzzy-map-metadata-propagation
+  (let [fm (with-meta (fuzzy-map {0 :zero 10 :ten 20 :twenty}) {:tag :fuzzy-map})]
+    (is (= {:tag :fuzzy-map} (meta (empty fm))))
+    (is (= {:tag :fuzzy-map} (meta (.headMap ^java.util.SortedMap fm 20))))
+    (is (= {:tag :fuzzy-map} (meta (.tailMap ^java.util.SortedMap fm 10))))
+    (is (= {:tag :fuzzy-map} (meta (.subMap ^java.util.SortedMap fm 10 20))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Additional Type Metadata Coverage
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest segment-tree-metadata-propagation
+  (let [st (with-meta (segment-tree + 0 {1 10 2 20 3 30 4 40}) {:tag :segment-tree})]
+    (is (= {:tag :segment-tree} (meta (empty st))))
+    (is (= {:tag :segment-tree} (meta (.headMap ^java.util.SortedMap st 3))))
+    (is (= {:tag :segment-tree} (meta (.tailMap ^java.util.SortedMap st 3))))
+    (is (= {:tag :segment-tree} (meta (.subMap ^java.util.SortedMap st 2 4))))
+    (is (= {:tag :segment-tree} (meta (subrange st :>= 2))))
+    (is (= {:tag :segment-tree} (meta (first (split-at 2 st)))))
+    (is (= {:tag :segment-tree} (meta (last (split-at 2 st)))))
+    (is (= {:tag :segment-tree} (meta (first (split-key 2 st)))))
+    (is (= {:tag :segment-tree} (meta (last (split-key 2 st)))))))
+
+(deftest range-map-metadata-propagation
+  (let [rm (with-meta (-> (range-map)
+                          (assoc [0 10] :a)
+                          (assoc [10 20] :b))
+             {:tag :range-map})]
+    (is (= {:tag :range-map} (meta (empty rm))))
+    (is (= {:tag :range-map} (meta (assoc-coalescing rm [20 30] :c))))
+    (is (= {:tag :range-map} (meta (range-remove rm [5 15]))))))
+
+(deftest ordered-multiset-metadata-propagation
+  (let [ms (with-meta (ordered-multiset [1 1 2 3]) {:tag :multiset})]
+    (is (= {:tag :multiset} (meta (empty ms))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; PriorityQueue Coverage Tests

@@ -41,6 +41,8 @@
             [ordered-collections.tree.root]
             [ordered-collections.tree.tree     :as tree]
             [ordered-collections.protocol      :as proto]
+            [ordered-collections.types.shared :refer [with-tree-env]
+             :rename {with-tree-env with-segment-tree}]
             [ordered-collections.util          :refer [defalias]])
   (:import  [clojure.lang ILookup Associative IPersistentCollection Seqable
              Counted IFn IMeta IObj MapEntry Murmur3]
@@ -116,11 +118,6 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (declare seg-assoc)
-
-(defmacro with-segment-tree [x & body]
-  `(binding [order/*compare* (.getCmp ~(with-meta x {:tag 'ordered_collections.tree.root.IOrderedCollection}))
-             tree/*t-join*   (.getAllocator ~(with-meta x {:tag 'ordered_collections.tree.root.INodeCollection}))]
-     ~@body))
 
 (deftype SegmentTree [root op identity creator cmp _meta]
 
@@ -207,7 +204,7 @@
 
   IPersistentCollection
   (empty [_]
-    (SegmentTree. (node/leaf) op identity creator cmp {}))
+    (SegmentTree. (node/leaf) op identity creator cmp _meta))
   (cons [this x]
     (if (instance? MapEntry x)
       (.assoc this (key x) (val x))
@@ -275,14 +272,14 @@
       (first (tree/node-greatest-kv root))))
   (headMap [this k]
     (with-segment-tree this
-      (SegmentTree. (tree/node-split-lesser root k) op identity creator cmp {})))
+      (SegmentTree. (tree/node-split-lesser root k) op identity creator cmp _meta)))
   (tailMap [this k]
     (with-segment-tree this
       (let [[_ present gt] (tree/node-split root k)]
         (if present
           (SegmentTree. (tree/node-add gt (first present) (second present))
-                        op identity creator cmp {})
-          (SegmentTree. gt op identity creator cmp {})))))
+                        op identity creator cmp _meta)
+          (SegmentTree. gt op identity creator cmp _meta)))))
   (subMap [this from to]
     (with-segment-tree this
       (let [[_ from-present from-gt] (tree/node-split root from)
@@ -291,7 +288,7 @@
                         from-gt)
             to-tree   (tree/node-split-lesser root to)
             result    (tree/node-set-intersection from-tree to-tree)]
-        (SegmentTree. result op identity creator cmp {}))))
+        (SegmentTree. result op identity creator cmp _meta))))
 
   clojure.lang.Sorted
   (entryKey [_ entry]
@@ -365,7 +362,7 @@
                                       (tree/node-add result-root (node/-k n) (node/-v n))
                                       result-root)
                           result-root)]
-        (SegmentTree. result-root (.-op this) (.-identity this) (.-creator this) (.-cmp this) {}))))
+        (SegmentTree. result-root (.-op this) (.-identity this) (.-creator this) (.-cmp this) (.-_meta this)))))
 
   proto/PRanked
   (rank-of [this k]
@@ -401,9 +398,9 @@
       (let [root         (.getRoot ^INodeCollection this)
             [l present r] (tree/node-split root k)
             entry         (when present [(first present) (second present)])]
-        [(SegmentTree. l (.-op this) (.-identity this) (.-creator this) (.-cmp this) {})
+        [(SegmentTree. l (.-op this) (.-identity this) (.-creator this) (.-cmp this) (.-_meta this))
          entry
-         (SegmentTree. r (.-op this) (.-identity this) (.-creator this) (.-cmp this) {})])))
+         (SegmentTree. r (.-op this) (.-identity this) (.-creator this) (.-cmp this) (.-_meta this))])))
   (split-at [this i]
     (with-segment-tree this
       (let [root (.getRoot ^INodeCollection this)
@@ -414,8 +411,8 @@
           :else
           (let [left-root  (tree/node-split-lesser root (node/-k (tree/node-nth root i)))
                 right-root (tree/node-split-nth root i)]
-            [(SegmentTree. left-root (.-op this) (.-identity this) (.-creator this) (.-cmp this) {})
-             (SegmentTree. right-root (.-op this) (.-identity this) (.-creator this) (.-cmp this) {})]))))))
+            [(SegmentTree. left-root (.-op this) (.-identity this) (.-creator this) (.-cmp this) (.-_meta this))
+             (SegmentTree. right-root (.-op this) (.-identity this) (.-creator this) (.-cmp this) (.-_meta this))]))))))
 
 (defn- seg-assoc [^SegmentTree st k v]
   (with-segment-tree st

@@ -7,6 +7,7 @@
    Tie-breaking: When two elements are equidistant, use :< to prefer the
    smaller element, or :> to prefer the larger element."
   (:require [clojure.core.reducers       :as r :refer [coll-fold]]
+            [ordered-collections.types.shared :refer [with-compare]]
             [ordered-collections.tree.node     :as node]
             [ordered-collections.tree.order    :as order]
             [ordered-collections.protocol      :as proto :refer [PRanked]]
@@ -84,14 +85,6 @@
 
           ;; Empty tree
           :else nil)))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Dynamic Environment
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defmacro with-fuzzy-set [x & body]
-  `(binding [order/*compare* (.getCmp ~(with-meta x {:tag 'ordered_collections.tree.root.IOrderedCollection}))]
-     ~@body))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; FuzzySet Type
@@ -172,7 +165,7 @@
 
   java.util.Collection
   (toArray [this]
-    (with-fuzzy-set this
+    (with-compare this
       (object-array (tree/node-vec root :accessor :k))))
   (isEmpty [_]
     (node/leaf? root))
@@ -197,36 +190,36 @@
   (iterator [this]
     (clojure.lang.SeqIterator. (seq this)))
   (containsAll [this s]
-    (with-fuzzy-set this
+    (with-compare this
       (every? #(.contains this %) s)))
 
   java.util.SortedSet
   (comparator [_]
     cmp)
   (first [this]
-    (with-fuzzy-set this
+    (with-compare this
       (first (tree/node-least-kv root))))
   (last [this]
-    (with-fuzzy-set this
+    (with-compare this
       (first (tree/node-greatest-kv root))))
   (headSet [this x]
-    (with-fuzzy-set this
-      (new FuzzySet (tree/node-split-lesser root x) cmp distance-fn tiebreak {})))
+    (with-compare this
+      (new FuzzySet (tree/node-split-lesser root x) cmp distance-fn tiebreak _meta)))
   (tailSet [this x]
-    (with-fuzzy-set this
+    (with-compare this
       (let [[_ present gt] (tree/node-split root x)]
         (if present
-          (new FuzzySet (tree/node-add gt (first present) (first present)) cmp distance-fn tiebreak {})
-          (new FuzzySet gt cmp distance-fn tiebreak {})))))
+          (new FuzzySet (tree/node-add gt (first present) (first present)) cmp distance-fn tiebreak _meta)
+          (new FuzzySet gt cmp distance-fn tiebreak _meta)))))
   (subSet [this from to]
-    (with-fuzzy-set this
+    (with-compare this
       (let [[_ from-present from-gt] (tree/node-split root from)
             from-tree (if from-present
                         (tree/node-add from-gt (first from-present) (first from-present))
                         from-gt)
             to-tree (tree/node-split-lesser root to)
             result  (tree/node-set-intersection from-tree to-tree)]
-        (new FuzzySet result cmp distance-fn tiebreak {}))))
+        (new FuzzySet result cmp distance-fn tiebreak _meta))))
 
   clojure.lang.Sorted
   (entryKey [_ entry]
@@ -236,7 +229,7 @@
       (tree/node-key-seq root)
       (tree/node-key-seq-reverse root)))
   (seqFrom [this k ascending]
-    (with-fuzzy-set this
+    (with-compare this
       (let [[lt present gt] (tree/node-split root k)]
         (if ascending
           (if present
@@ -248,7 +241,7 @@
 
   clojure.lang.IPersistentSet
   (equiv [this o]
-    (with-fuzzy-set this
+    (with-compare this
       (cond
         (identical? this o) true
         (not (instance? clojure.lang.Counted o)) false
@@ -259,7 +252,7 @@
   (count [_]
     (tree/node-size root))
   (empty [_]
-    (new FuzzySet (node/leaf) cmp distance-fn tiebreak {}))
+    (new FuzzySet (node/leaf) cmp distance-fn tiebreak _meta))
   (contains [this k]
     (tree/node-contains? root k cmp))
   (disjoin [this k]
@@ -299,7 +292,7 @@
 
   clojure.core.reducers.CollFold
   (coll-fold [this n combinef reducef]
-    (with-fuzzy-set this
+    (with-compare this
       (tree/node-fold n root combinef
         (fn [acc node] (reducef acc (node/-k node))))))
 

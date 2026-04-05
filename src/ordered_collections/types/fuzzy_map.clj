@@ -8,6 +8,7 @@
    smaller key, or :> to prefer the larger key."
   (:require [clojure.core.reducers       :as r :refer [coll-fold]]
             [ordered-collections.types.fuzzy-set :as fuzzy]
+            [ordered-collections.types.shared :refer [with-compare]]
             [ordered-collections.tree.node     :as node]
             [ordered-collections.tree.order    :as order]
             [ordered-collections.protocol      :as proto :refer [PRanked]]
@@ -79,14 +80,6 @@
 
           ;; Empty tree
           :else nil)))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Dynamic Environment
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defmacro with-fuzzy-map [x & body]
-  `(binding [order/*compare* (.getCmp ~(with-meta x {:tag 'ordered_collections.tree.root.IOrderedCollection}))]
-     ~@body))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; FuzzyMap Type
@@ -169,7 +162,7 @@
 
   java.lang.Comparable
   (compareTo [this o]
-    (with-fuzzy-map this
+    (with-compare this
       (cond
         (identical? this o) 0
         (.isCompatible this o) (tree/node-map-compare root (.getRoot ^FuzzyMap o))
@@ -182,7 +175,7 @@
   (isEmpty [_]
     (node/leaf? root))
   (containsValue [this v]
-    (with-fuzzy-map this
+    (with-compare this
       (boolean
         (tree/node-reduce
           (fn [_ n] (when (= v (node/-v n)) (reduced true)))
@@ -198,42 +191,42 @@
   (clear [_]
     (throw (UnsupportedOperationException.)))
   (keySet [this]
-    (with-fuzzy-map this
+    (with-compare this
       (set (map node/-k (tree/node-seq root)))))
   (values [this]
-    (with-fuzzy-map this
+    (with-compare this
       (map node/-v (tree/node-seq root))))
   (entrySet [this]
-    (with-fuzzy-map this
+    (with-compare this
       (set (map node/-kv (tree/node-seq root)))))
 
   java.util.SortedMap
   (comparator [_]
     cmp)
   (firstKey [this]
-    (with-fuzzy-map this
+    (with-compare this
       (first (tree/node-least-kv root))))
   (lastKey [this]
-    (with-fuzzy-map this
+    (with-compare this
       (first (tree/node-greatest-kv root))))
   (headMap [this k]
-    (with-fuzzy-map this
-      (new FuzzyMap (tree/node-split-lesser root k) cmp distance-fn tiebreak {})))
+    (with-compare this
+      (new FuzzyMap (tree/node-split-lesser root k) cmp distance-fn tiebreak _meta)))
   (tailMap [this k]
-    (with-fuzzy-map this
+    (with-compare this
       (let [[_ present gt] (tree/node-split root k)]
         (if present
-          (new FuzzyMap (tree/node-add gt (first present) (second present)) cmp distance-fn tiebreak {})
-          (new FuzzyMap gt cmp distance-fn tiebreak {})))))
+          (new FuzzyMap (tree/node-add gt (first present) (second present)) cmp distance-fn tiebreak _meta)
+          (new FuzzyMap gt cmp distance-fn tiebreak _meta)))))
   (subMap [this from to]
-    (with-fuzzy-map this
+    (with-compare this
       (let [[_ from-present from-gt] (tree/node-split root from)
             from-tree (if from-present
                         (tree/node-add from-gt (first from-present) (second from-present))
                         from-gt)
             to-tree (tree/node-split-lesser root to)
             result (tree/node-set-intersection from-tree to-tree)]
-        (new FuzzyMap result cmp distance-fn tiebreak {}))))
+        (new FuzzyMap result cmp distance-fn tiebreak _meta))))
 
   clojure.lang.Sorted
   (entryKey [_ entry]
@@ -243,7 +236,7 @@
       (tree/node-entry-seq root)
       (tree/node-entry-seq-reverse root)))
   (seqFrom [this k ascending]
-    (with-fuzzy-map this
+    (with-compare this
       (let [[lt present gt] (tree/node-split root k)]
         (if ascending
           (if present
@@ -271,9 +264,9 @@
       (reduce (fn [m [k v]] (assoc m k v)) this (seq entry))
       (.assoc this (first entry) (second entry))))
   (empty [_]
-    (new FuzzyMap (node/leaf) cmp distance-fn tiebreak {}))
+    (new FuzzyMap (node/leaf) cmp distance-fn tiebreak _meta))
   (equiv [this o]
-    (with-fuzzy-map this
+    (with-compare this
       (cond
         (identical? this o) true
         (not (instance? clojure.lang.Counted o)) false
@@ -327,7 +320,7 @@
 
   clojure.core.reducers.CollFold
   (coll-fold [this n combinef reducef]
-    (with-fuzzy-map this
+    (with-compare this
       (tree/node-fold n root combinef
         (fn [acc node] (reducef acc (node/-kv node))))))
 

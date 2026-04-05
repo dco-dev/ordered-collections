@@ -1,6 +1,7 @@
 (ns ordered-collections.types.ordered-set
   (:require [clojure.core.reducers       :as r :refer [coll-fold]]
             [clojure.set]
+            [ordered-collections.types.shared :refer [with-compare]]
             [ordered-collections.tree.node     :as node]
             [ordered-collections.tree.order    :as order]
             [ordered-collections.protocol      :as proto]
@@ -15,14 +16,6 @@
 
 ;; - IMapIterable:  https://github.com/clojure/clojure/blob/master/src/jvm/clojure/lang/PersistentHashMap.java
 ;; - Collection Check: https://github.com/ztellman/collection-check/blob/master/src/collection_check/core.cljc
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Dynamic Environment
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defmacro with-ordered-set [x & body]
-  `(binding [order/*compare* (.getCmp ~(with-meta x {:tag 'ordered_collections.tree.root.IOrderedCollection}))]
-     ~@body))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Ordered Set
@@ -52,7 +45,7 @@
 
   PExtensibleSet
   (intersection [this that]
-    (with-ordered-set this
+    (with-compare this
       (cond
         (identical? this that)    this
         (.isCompatible this that)
@@ -63,11 +56,11 @@
                (if use-parallel?
                  (tree/node-set-intersection-parallel root that-root)
                  (tree/node-set-intersection root that-root))
-               cmp alloc stitch {}))
+               cmp alloc stitch _meta))
         (.isSimilar this that)    (clojure.set/intersection (into #{} this) that)
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
   (union [this that]
-    (with-ordered-set this
+    (with-compare this
       (cond
         (identical? this that)    this
         (.isCompatible this that)
@@ -78,11 +71,11 @@
                (if use-parallel?
                  (tree/node-set-union-parallel root that-root)
                  (tree/node-set-union root that-root))
-               cmp alloc stitch {}))
+               cmp alloc stitch _meta))
         (.isSimilar this that)    (clojure.set/union (into #{} this) that)
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
   (difference [this that]
-    (with-ordered-set this
+    (with-compare this
       (cond
         (identical? this that)    (.empty this)
         (.isCompatible this that)
@@ -93,25 +86,25 @@
                (if use-parallel?
                  (tree/node-set-difference-parallel root that-root)
                  (tree/node-set-difference root that-root))
-               cmp alloc stitch {}))
+               cmp alloc stitch _meta))
         (.isSimilar this that)    (clojure.set/difference (into #{} this) that)
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
   (subset? [this that]
-    (with-ordered-set this
+    (with-compare this
       (cond
         (identical? this that)    true
         (.isCompatible this that) (tree/node-subset? (.getRoot ^OrderedSet that) root) ;; Grr. reverse args of tree/subset
         (.isSimilar this that)    (clojure.set/subset? (into #{} this) that)
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
   (superset? [this that]
-    (with-ordered-set this
+    (with-compare this
       (cond
         (identical? this that)    true
         (.isCompatible this that) (tree/node-subset? root (.getRoot ^OrderedSet that))
         (.isSimilar this that)    (clojure.set/subset? that (into #{} this))
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
   (disjoint? [this that]
-    (with-ordered-set this
+    (with-compare this
       (cond
         (identical? this that)    (zero? (tree/node-size root))
         (.isCompatible this that) (tree/node-disjoint? root (.getRoot ^OrderedSet that))
@@ -169,7 +162,7 @@
 
   java.lang.Comparable
   (compareTo [this o]
-    (with-ordered-set this
+    (with-compare this
       (cond
         (identical? this o)   0
         (.isCompatible this o) (tree/node-set-compare root (.getRoot ^OrderedSet o))
@@ -178,7 +171,7 @@
 
   java.util.Collection
   (toArray [this]
-    (with-ordered-set this
+    (with-compare this
       (object-array (tree/node-vec root :accessor :k)))) ; better constructor not a priority
   (isEmpty [_]
     (node/leaf? root))
@@ -203,7 +196,7 @@
   (iterator [this]
     (clojure.lang.SeqIterator. (seq this)))
   (containsAll [this s]
-    (with-ordered-set this
+    (with-compare this
       (cond
         (identical? this s)    true
         (.isCompatible this s) (tree/node-subset? root (.getRoot ^OrderedSet s))
@@ -214,27 +207,27 @@
   (comparator [_]
     cmp)
   (first [this]
-    (with-ordered-set this
+    (with-compare this
       (first (tree/node-least-kv root))))
   (last [this]
-    (with-ordered-set this
+    (with-compare this
       (first (tree/node-greatest-kv root))))
   (headSet [this x]
     ;; elements < x (exclusive)
-    (with-ordered-set this
-      (new OrderedSet (tree/node-split-lesser root x) cmp alloc stitch {})))
+    (with-compare this
+      (new OrderedSet (tree/node-split-lesser root x) cmp alloc stitch _meta)))
   (tailSet [this x]
     ;; elements >= x (inclusive)
-    (with-ordered-set this
+    (with-compare this
       (let [[_ present gt] (tree/node-split root x)]
         (if present
           ;; x exists: add it to the greater-than tree
-          (new OrderedSet (tree/node-add gt (first present) (first present)) cmp alloc stitch {})
+          (new OrderedSet (tree/node-add gt (first present) (first present)) cmp alloc stitch _meta)
           ;; x doesn't exist: just return greater-than tree
-          (new OrderedSet gt cmp alloc stitch {})))))
+          (new OrderedSet gt cmp alloc stitch _meta)))))
   (subSet [this from to]
     ;; elements >= from and < to
-    (with-ordered-set this
+    (with-compare this
       (let [[_ from-present from-gt] (tree/node-split root from)
             ;; Start with elements > from
             from-tree (if from-present
@@ -243,18 +236,18 @@
             ;; Intersect with elements < to
             to-tree (tree/node-split-lesser root to)
             result  (tree/node-set-intersection from-tree to-tree)]
-        (new OrderedSet result cmp alloc stitch {}))))
+        (new OrderedSet result cmp alloc stitch _meta))))
 
   java.util.NavigableSet
   (ceiling [this x]
-    (with-ordered-set this
+    (with-compare this
       (let [[_ x' r] (tree/node-split root x)]
         (if (some? x')
           (first x')
           (when-not (node/leaf? r)
             (first (tree/node-least-kv r)))))))
   (floor [this x]
-    (with-ordered-set this
+    (with-compare this
       (let [[l x' _] (tree/node-split root x)]
         (if (some? x')
           (first x')
@@ -270,7 +263,7 @@
       (tree/node-key-seq root)
       (tree/node-key-seq-reverse root)))
   (seqFrom [this k ascending]
-    (with-ordered-set this
+    (with-compare this
       (let [[lt present gt] (tree/node-split root k)]
         (if ascending
           ;; ascending: elements >= k (present + gt)
@@ -284,7 +277,7 @@
 
   clojure.lang.IPersistentSet
   (equiv [this o]
-    (with-ordered-set this
+    (with-compare this
       (cond
         (identical? this o) true
         (not (instance? clojure.lang.Counted o)) false
@@ -295,7 +288,7 @@
   (count [_]
     (tree/node-size root))
   (empty [_]
-    (new OrderedSet (node/leaf) cmp alloc stitch {}))
+    (new OrderedSet (node/leaf) cmp alloc stitch _meta))
   (contains [this k]
     ;; Fast paths for specialized comparators
     (cond
@@ -339,13 +332,13 @@
 
   clojure.core.reducers.CollFold
   (coll-fold [this n combinef reducef]
-    (with-ordered-set this
+    (with-compare this
       (tree/node-fold n root combinef
         (fn [acc node] (reducef acc (node/-k node))))))
 
   PNearest
   (nearest [this test k]
-    (with-ordered-set this
+    (with-compare this
       (case test
         :< (when-let [n (tree/node-predecessor root k)]
              (node/-k n))
@@ -357,7 +350,7 @@
               (node/-k n))
         (throw (ex-info "nearest test must be :<, :<=, :>, or :>=" {:test test})))))
   (subrange [this test k]
-    (with-ordered-set this
+    (with-compare this
       (let [result-root (case test
                           (:< :<=) (tree/node-split-lesser root k)
                           (:> :>=) (tree/node-split-greater root k)
@@ -368,7 +361,7 @@
                                       (tree/node-add result-root (node/-k n) (node/-v n))
                                       result-root)
                           result-root)]
-        (new OrderedSet result-root cmp alloc stitch {}))))
+        (new OrderedSet result-root cmp alloc stitch _meta))))
 
   PRanked
   (rank-of [_ x]
@@ -394,14 +387,14 @@
 
   PSplittable
   (split-key [this k]
-    (with-ordered-set this
+    (with-compare this
       (let [[l present r] (tree/node-split root k)
             entry (when present (first present))]
-        [(new OrderedSet l cmp alloc stitch {})
+        [(new OrderedSet l cmp alloc stitch _meta)
          entry
-         (new OrderedSet r cmp alloc stitch {})])))
+         (new OrderedSet r cmp alloc stitch _meta)])))
   (split-at [this i]
-    (with-ordered-set this
+    (with-compare this
       (let [n (tree/node-size root)]
         (cond
           (<= i 0) [(.empty this) this]
@@ -409,8 +402,8 @@
           :else
           (let [left-root  (tree/node-split-lesser root (node/-k (tree/node-nth root i)))
                 right-root (tree/node-split-nth root i)]
-            [(new OrderedSet left-root cmp alloc stitch {})
-             (new OrderedSet right-root cmp alloc stitch {})]))))))
+            [(new OrderedSet left-root cmp alloc stitch _meta)
+             (new OrderedSet right-root cmp alloc stitch _meta)]))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Literal Representation

@@ -1,6 +1,8 @@
 (ns ordered-collections.types.interval-set
   (:require [clojure.core.reducers       :as r :refer [coll-fold]]
             [clojure.set]
+            [ordered-collections.types.shared :refer [with-tree-env]
+             :rename {with-tree-env with-interval-set}]
             [ordered-collections.tree.interval :as interval]
             [ordered-collections.tree.node     :as node]
             [ordered-collections.tree.order    :as order]
@@ -14,15 +16,6 @@
                                          IOrderedCollection
                                          IIntervalCollection]))
 
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Dynamic Environment
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defmacro with-interval-set [x & body]
-  `(binding [order/*compare* (.getCmp ~(with-meta x {:tag 'ordered_collections.tree.root.IOrderedCollection}))
-             tree/*t-join*   (.getAllocator ~(with-meta x {:tag 'ordered_collections.tree.root.INodeCollection}))]
-     ~@body))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interval Set
@@ -76,7 +69,7 @@
            (if use-parallel?
              (tree/node-set-intersection-parallel root that-root)
              (tree/node-set-intersection root that-root))
-           cmp alloc stitch {}))
+           cmp alloc stitch _meta))
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
   (union [this that]
     (with-interval-set this
@@ -90,7 +83,7 @@
            (if use-parallel?
              (tree/node-set-union-parallel root that-root)
              (tree/node-set-union root that-root))
-           cmp alloc stitch {}))
+           cmp alloc stitch _meta))
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
   (difference [this that]
     (with-interval-set this
@@ -104,7 +97,7 @@
            (if use-parallel?
              (tree/node-set-difference-parallel root that-root)
              (tree/node-set-difference root that-root))
-           cmp alloc stitch {}))
+           cmp alloc stitch _meta))
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
   (subset? [this that]
     (with-interval-set this
@@ -219,14 +212,14 @@
       (first (tree/node-greatest-kv root))))
   (headSet [this x]
     (with-interval-set this
-      (IntervalSet. (tree/node-split-lesser root (interval/ordered-pair x)) cmp alloc stitch {})))
+      (IntervalSet. (tree/node-split-lesser root (interval/ordered-pair x)) cmp alloc stitch _meta)))
   (tailSet [this x]
     (with-interval-set this
       (let [k (interval/ordered-pair x)
             [_ present gt] (tree/node-split root k)]
         (if present
-          (IntervalSet. (tree/node-add gt (first present) (first present) cmp alloc) cmp alloc stitch {})
-          (IntervalSet. gt cmp alloc stitch {})))))
+          (IntervalSet. (tree/node-add gt (first present) (first present) cmp alloc) cmp alloc stitch _meta)
+          (IntervalSet. gt cmp alloc stitch _meta)))))
   (subSet [this from to]
     (with-interval-set this
       (let [from-k (interval/ordered-pair from)
@@ -237,7 +230,7 @@
                         from-gt)
             to-tree (tree/node-split-lesser root to-k)
             result (tree/node-set-intersection from-tree to-tree)]
-        (IntervalSet. result cmp alloc stitch {}))))
+        (IntervalSet. result cmp alloc stitch _meta))))
 
   clojure.lang.IPersistentSet
   (equiv [this o]
@@ -251,7 +244,7 @@
   (count [_]
     (tree/node-size root))
   (empty [_]
-    (IntervalSet. (node/leaf) cmp alloc stitch {}))
+    (IntervalSet. (node/leaf) cmp alloc stitch _meta))
   (contains [this k]
     (with-interval-set this
       (some? (seq (tree/node-find-intervals root (interval/ordered-pair k))))))

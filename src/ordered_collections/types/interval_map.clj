@@ -1,5 +1,7 @@
 (ns ordered-collections.types.interval-map
   (:require [clojure.core.reducers       :as r :refer [coll-fold]]
+            [ordered-collections.types.shared :refer [with-tree-env]
+             :rename {with-tree-env with-interval-map}]
             [ordered-collections.tree.interval :as interval]
             [ordered-collections.tree.node     :as node]
             [ordered-collections.protocol      :as proto]
@@ -13,15 +15,6 @@
                                          IOrderedCollection
                                          IIntervalCollection]))
 
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Dynamic Environment
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defmacro with-interval-map [x & body]
-  `(binding [order/*compare* (.getCmp ~(with-meta x {:tag 'ordered_collections.tree.root.IOrderedCollection}))
-             tree/*t-join*   (.getAllocator ~(with-meta x {:tag 'ordered_collections.tree.root.INodeCollection}))]
-     ~@body))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Interval Map
@@ -133,7 +126,7 @@
   (assoc [this k v]
     (IntervalMap. (tree/node-add root (interval/ordered-pair k) v cmp alloc) cmp alloc stitch _meta))
   (empty [this]
-    (IntervalMap. (node/leaf) cmp alloc stitch {}))
+    (IntervalMap. (node/leaf) cmp alloc stitch _meta))
 
   java.util.Map
   (get [this k]

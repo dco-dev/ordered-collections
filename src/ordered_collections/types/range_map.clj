@@ -258,7 +258,7 @@
 
   IPersistentCollection
   (empty [_]
-    (RangeMap. (node/leaf) cmp {}))
+    (RangeMap. (node/leaf) cmp _meta))
   (cons [this x]
     (if (instance? MapEntry x)
       (.assoc this (key x) (val x))
