@@ -370,43 +370,6 @@
       not-found)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Additional Methods
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn nearest
-  "Find the entry with key nearest to query in the fuzzy map.
-   Returns [key value distance] or nil if empty."
-  [^FuzzyMap fm query]
-  (when-not (node/leaf? (.-root fm))
-    (when-let [[k v] (find-nearest-entry (.-root fm) query (.-cmp fm)
-                                          (.-distance-fn fm) (.-tiebreak fm))]
-      [k v ((.-distance-fn fm) query k)])))
-
-(defn nearest-key
-  "Find the key nearest to query in the fuzzy map.
-   Returns [key distance] or nil if empty."
-  [^FuzzyMap fm query]
-  (when-not (node/leaf? (.-root fm))
-    (when-let [[k _] (find-nearest-entry (.-root fm) query (.-cmp fm)
-                                          (.-distance-fn fm) (.-tiebreak fm))]
-      [k ((.-distance-fn fm) query k)])))
-
-(defn exact-get
-  "Get the value for exactly the given key (no fuzzy matching).
-   Returns value or not-found."
-  ([^FuzzyMap fm k]
-   (exact-get fm k nil))
-  ([^FuzzyMap fm k not-found]
-   (if-let [n (tree/node-find (.-root fm) k (.-cmp fm))]
-     (node/-v n)
-     not-found)))
-
-(defn exact-contains?
-  "Check if the fuzzy map contains exactly the given key."
-  [^FuzzyMap fm k]
-  (if (tree/node-find (.-root fm) k (.-cmp fm)) true false))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Literal Representation
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

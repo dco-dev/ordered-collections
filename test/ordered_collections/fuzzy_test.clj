@@ -231,6 +231,153 @@
       (is (= :b (fm 1.4)))
       (is (= :c (fm 1.6))))))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Fuzzy Set: Navigation, Split, Rank
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest fuzzy-set-nearest-protocol-test
+  (testing "PNearest on fuzzy-set (ordered-set style navigation)"
+    (let [fs (oc/fuzzy-set [1 3 5 7 9])]
+      (is (= 5 (oc/nearest fs :< 6)))
+      (is (= 3 (oc/nearest fs :< 5)))
+      (is (= 5 (oc/nearest fs :<= 5)))
+      (is (= 7 (oc/nearest fs :> 6)))
+      (is (= 7 (oc/nearest fs :> 5)))
+      (is (= 5 (oc/nearest fs :>= 5)))
+      (is (nil? (oc/nearest fs :< 1)))
+      (is (nil? (oc/nearest fs :> 9))))))
+
+(deftest fuzzy-set-subrange-test
+  (testing "subrange on fuzzy-set"
+    (let [fs (oc/fuzzy-set (range 10))]
+      (is (= #{3 4 5 6} (set (seq (oc/subrange fs :>= 3 :< 7)))))
+      (is (= #{0 1 2 3 4} (set (seq (oc/subrange fs :<= 4)))))
+      (is (= #{7 8 9} (set (seq (oc/subrange fs :> 6))))))))
+
+(deftest fuzzy-set-split-test
+  (testing "split-key on fuzzy-set"
+    (let [fs (oc/fuzzy-set [1 2 3 4 5])]
+      (let [[left entry right] (oc/split-key 3 fs)]
+        (is (= #{1 2} (set (seq left))))
+        (is (= 3 entry))
+        (is (= #{4 5} (set (seq right)))))
+      (let [[left entry right] (oc/split-key 2.5 fs)]
+        (is (= #{1 2} (set (seq left))))
+        (is (nil? entry))
+        (is (= #{3 4 5} (set (seq right)))))))
+  (testing "split-at on fuzzy-set"
+    (let [fs (oc/fuzzy-set [1 2 3 4 5])]
+      (let [[left right] (oc/split-at 2 fs)]
+        (is (= #{1 2} (set (seq left))))
+        (is (= #{3 4 5} (set (seq right))))))))
+
+(deftest fuzzy-set-navigable-test
+  (testing "ceiling and floor via NavigableSet"
+    (let [^java.util.NavigableSet fs (oc/fuzzy-set [1 3 5 7 9])]
+      (is (= 5 (.ceiling fs 5)))
+      (is (= 5 (.ceiling fs 4)))
+      (is (= 5 (.floor fs 5)))
+      (is (= 3 (.floor fs 4)))
+      (is (= 1 (.ceiling fs 0)))
+      (is (nil? (.floor fs 0))))))
+
+(deftest fuzzy-set-rank-test
+  (testing "rank/slice/median/percentile"
+    (let [fs (oc/fuzzy-set [10 20 30 40 50])]
+      (is (= 0 (oc/rank fs 10)))
+      (is (= 2 (oc/rank fs 30)))
+      (is (= 4 (oc/rank fs 50)))
+      (is (nil? (oc/rank fs 25)))
+      (is (= (list 20 30 40) (oc/slice fs 1 4)))
+      (is (= 30 (oc/median fs)))
+      (is (= 50 (oc/percentile fs 90))))))
+
+(deftest fuzzy-set-subseq-test
+  (testing "subseq/rsubseq via Sorted interface"
+    (let [fs (oc/fuzzy-set [1 3 5 7 9])]
+      (is (= [5 7 9] (subseq fs >= 5)))
+      (is (= [5 7 9] (subseq fs > 4)))
+      (is (= [1 3 5] (subseq fs <= 5)))
+      (is (= [5 3 1] (rsubseq fs <= 5))))))
+
+(deftest fuzzy-set-comparable-test
+  (testing "compareTo"
+    (let [fs1 (oc/fuzzy-set [1 2 3])
+          fs2 (oc/fuzzy-set [1 2 3])
+          fs3 (oc/fuzzy-set [1 2 4])]
+      (is (zero? (compare fs1 fs2)))
+      (is (neg? (compare fs1 fs3))))))
+
+(deftest fuzzy-set-larger-data-test
+  (testing "fuzzy set at 10K elements"
+    (let [elems (vec (shuffle (range 10000)))
+          fs    (oc/fuzzy-set elems)]
+      (is (= 10000 (count fs)))
+      (is (= 0 (first fs)))
+      (is (= 9999 (last fs)))
+      ;; fuzzy lookup snaps to nearest
+      (is (= 5000 (fs 5000)))
+      (is (= 5000 (fs 5000.3)))
+      ;; reduce
+      (is (= (reduce + (range 10000)) (reduce + fs)))
+      ;; fold
+      (is (= (reduce + (range 10000)) (r/fold + fs))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Fuzzy Map: Navigation, Rank, Larger Data
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest fuzzy-map-rank-test
+  (testing "rank/slice/median/percentile on fuzzy-map"
+    (let [fm (oc/fuzzy-map {10 :a 20 :b 30 :c 40 :d 50 :e})]
+      (is (= 0 (oc/rank fm 10)))
+      (is (= 2 (oc/rank fm 30)))
+      (is (nil? (oc/rank fm 25)))
+      (is (= [[20 :b] [30 :c] [40 :d]] (oc/slice fm 1 4)))
+      (is (= [30 :c] (oc/median fm))))))
+
+(deftest fuzzy-map-subseq-test
+  (testing "subseq/rsubseq via Sorted interface"
+    (let [fm (oc/fuzzy-map {1 :a 3 :b 5 :c 7 :d 9 :e})]
+      (is (= [[5 :c] [7 :d] [9 :e]] (subseq fm >= 5)))
+      (is (= [[5 :c] [3 :b] [1 :a]] (rsubseq fm <= 5))))))
+
+(deftest fuzzy-map-larger-data-test
+  (testing "fuzzy map at 10K entries"
+    (let [pairs (zipmap (range 10000) (range 10000))
+          fm    (oc/fuzzy-map pairs)]
+      (is (= 10000 (count fm)))
+      (is (= 0 (.firstKey ^java.util.SortedMap fm)))
+      (is (= 9999 (.lastKey ^java.util.SortedMap fm)))
+      ;; fuzzy lookup
+      (is (= 5000 (fm 5000)))
+      (is (= 5000 (fm 5000.3)))
+      ;; reduce-kv
+      (is (= (reduce + (range 10000))
+             (reduce-kv (fn [acc _ v] (+ acc v)) 0 fm))))))
+
+(deftest fuzzy-set-string-keys-test
+  (testing "fuzzy set with string elements"
+    (let [fs (oc/fuzzy-set ["apple" "banana" "cherry" "date" "elderberry"]
+               :distance (fn [a b] (Math/abs (- (count (str a)) (count (str b))))))]
+      (is (= 5 (count fs)))
+      (is (= "apple" (first fs)))
+      ;; exact membership
+      (is (oc/fuzzy-exact-contains? fs "cherry"))
+      (is (not (oc/fuzzy-exact-contains? fs "coconut"))))))
+
+(deftest fuzzy-map-string-keys-test
+  (testing "fuzzy map with string keys"
+    (let [fm (oc/fuzzy-map {"alpha" 1 "beta" 2 "gamma" 3 "delta" 4}
+               :distance (fn [a b] (Math/abs (- (count (str a)) (count (str b))))))]
+      (is (= 4 (count fm)))
+      (is (oc/fuzzy-exact-contains? fm "beta"))
+      (is (not (oc/fuzzy-exact-contains? fm "epsilon"))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Property Tests
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defspec prop-fuzzy-set-nearest-bruteforce 100
   (prop/for-all [xs tu/gen-non-empty-int-set
                  q  gen/small-integer

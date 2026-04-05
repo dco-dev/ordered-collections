@@ -10,7 +10,7 @@
             [ordered-collections.types.shared :refer [with-compare]]
             [ordered-collections.tree.node     :as node]
             [ordered-collections.tree.order    :as order]
-            [ordered-collections.protocol      :as proto :refer [PRanked]]
+            [ordered-collections.protocol      :as proto :refer [PRanked PNearest PSplittable]]
             [ordered-collections.tree.root]
             [ordered-collections.tree.tree     :as tree])
   (:import  [clojure.lang                RT Murmur3]
@@ -204,6 +204,14 @@
     (with-compare this
       (every? #(.contains this %) s)))
 
+  java.lang.Comparable
+  (compareTo [this o]
+    (with-compare this
+      (cond
+        (identical? this o) 0
+        (.isCompatible this o) (tree/node-set-compare root (.getRoot ^FuzzySet o))
+        true (throw (ex-info "unsupported comparison" {:this this :o o})))))
+
   java.util.SortedSet
   (comparator [_]
     cmp)
@@ -231,6 +239,22 @@
             to-tree (tree/node-split-lesser root to)
             result  (tree/node-set-intersection from-tree to-tree)]
         (new FuzzySet result cmp distance-fn tiebreak _meta))))
+
+  java.util.NavigableSet
+  (ceiling [this x]
+    (with-compare this
+      (let [[_ x' r] (tree/node-split root x)]
+        (if (some? x')
+          (first x')
+          (when-not (node/leaf? r)
+            (first (tree/node-least-kv r)))))))
+  (floor [this x]
+    (with-compare this
+      (let [[l x' _] (tree/node-split root x)]
+        (if (some? x')
+          (first x')
+          (when-not (node/leaf? l)
+            (first (tree/node-greatest-kv l)))))))
 
   clojure.lang.Sorted
   (entryKey [_ entry]
@@ -307,6 +331,32 @@
       (tree/node-fold n root combinef
         (fn [acc node] (reducef acc (node/-k node))))))
 
+  PNearest
+  (nearest [this test k]
+    (with-compare this
+      (case test
+        :< (when-let [n (tree/node-predecessor root k)]
+             (node/-k n))
+        :<= (when-let [n (tree/node-find-nearest root k :<)]
+              (node/-k n))
+        :> (when-let [n (tree/node-successor root k)]
+             (node/-k n))
+        :>= (when-let [n (tree/node-find-nearest root k :>)]
+              (node/-k n))
+        (throw (ex-info "nearest test must be :<, :<=, :>, or :>=" {:test test})))))
+  (subrange [this test k]
+    (with-compare this
+      (let [result-root (case test
+                          (:< :<=) (tree/node-split-lesser root k)
+                          (:> :>=) (tree/node-split-greater root k)
+                          (throw (ex-info "subrange test must be :<, :<=, :>, or :>=" {:test test})))
+            result-root (case test
+                          (:<= :>=) (if-let [n (tree/node-find root k)]
+                                      (tree/node-add result-root (node/-k n) (node/-v n))
+                                      result-root)
+                          result-root)]
+        (new FuzzySet result-root cmp distance-fn tiebreak _meta))))
+
   PRanked
   (rank-of [_ x]
     (or (tree/node-rank root x cmp) -1))
@@ -327,6 +377,26 @@
         (let [idx (min (dec n) (long (* (/ (double pct) 100.0) n)))]
           (node/-k (tree/node-nth root idx))))))
 
+  PSplittable
+  (split-key [this k]
+    (with-compare this
+      (let [[l present r] (tree/node-split root k)
+            entry (when present (first present))]
+        [(new FuzzySet l cmp distance-fn tiebreak _meta)
+         entry
+         (new FuzzySet r cmp distance-fn tiebreak _meta)])))
+  (split-at [this i]
+    (with-compare this
+      (let [n (tree/node-size root)]
+        (cond
+          (<= i 0) [(.empty this) this]
+          (>= i n) [this (.empty this)]
+          :else
+          (let [left-root  (tree/node-split-lesser root (node/-k (tree/node-nth root i)))
+                right-root (tree/node-split-nth root i)]
+            [(new FuzzySet left-root cmp distance-fn tiebreak _meta)
+             (new FuzzySet right-root cmp distance-fn tiebreak _meta)])))))
+
   PFuzzy
   (nearest-with-distance [this query]
     (when-not (node/leaf? root)
@@ -339,24 +409,6 @@
     (throw (UnsupportedOperationException. "exact-get not supported for FuzzySet")))
   (exact-get [_ k not-found]
     (throw (UnsupportedOperationException. "exact-get not supported for FuzzySet"))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Additional Methods
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn nearest
-  "Find the nearest element to query in the fuzzy set.
-   Returns [element distance] or nil if empty."
-  [^FuzzySet fs query]
-  (when-not (node/leaf? (.-root fs))
-    (let [nearest (.valAt fs query)]
-      (when nearest
-        [nearest ((.-distance-fn fs) query nearest)]))))
-
-(defn exact-contains?
-  "Check if the fuzzy set contains exactly the given element."
-  [^FuzzySet fs k]
-  (if (tree/node-find (.-root fs) k (.-cmp fs)) true false))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Literal Representation
