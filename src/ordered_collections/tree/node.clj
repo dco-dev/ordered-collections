@@ -69,6 +69,19 @@
   (r  [_] r)
   (kv [_] (MapEntry. k v)))
 
+(deftype AggregateNode [k v l r ^long x agg]
+  java.io.Serializable
+  IBalancedNode
+  (x  [_] x)
+  IAugmentedNode
+  (z  [_] agg)     ;; cached subtree aggregate: op(left.agg, val, right.agg)
+  INode
+  (k  [_] k)
+  (v  [_] v)
+  (l  [_] l)
+  (r  [_] r)
+  (kv [_] (MapEntry. k v)))
+
 ;; Primitive-specialized node types for better performance with numeric keys.
 ;; These avoid boxing overhead for Long/Double keys.
 ;;

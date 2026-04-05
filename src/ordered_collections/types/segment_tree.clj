@@ -42,8 +42,7 @@
             [ordered-collections.tree.tree     :as tree]
             [ordered-collections.protocol      :as proto]
             [ordered-collections.types.shared :refer [with-tree-env]
-             :rename {with-tree-env with-segment-tree}]
-            [ordered-collections.util          :refer [defalias]])
+             :rename {with-tree-env with-segment-tree}])
   (:import  [clojure.lang ILookup Associative IPersistentCollection Seqable
              Counted IFn IMeta IObj MapEntry Murmur3]
             [java.util Comparator]
@@ -54,35 +53,22 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Aggregate Node
-;;
-;; Extends SimpleNode with an aggregate field that stores op applied to the
-;; entire subtree: agg = op(left.agg, val, right.agg)
+;; Aggregate Helpers
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(deftype AggregateNode [k v l r ^long x agg]
-  ordered_collections.tree.node.IBalancedNode
-  (x [_] x)
-  ordered_collections.tree.node.INode
-  (k  [_] k)
-  (v  [_] v)
-  (l  [_] l)
-  (r  [_] r)
-  (kv [_] (MapEntry. k v)))
 
 (defn- node-agg
   "Return the cached aggregate for subtree n, or identity for an empty subtree."
   [n identity]
-  (if (node/leaf? n) identity (.-agg ^AggregateNode n)))
+  (if (node/leaf? n) identity (node/-z n)))
 
 (defn- make-agg-creator
   "Create a node constructor that computes aggregates using op and identity."
   [op identity]
   (fn [k v l r]
-    (let [l-agg (if (node/leaf? l) identity (.-agg ^AggregateNode l))
-          r-agg (if (node/leaf? r) identity (.-agg ^AggregateNode r))
+    (let [l-agg (if (node/leaf? l) identity (node/-z l))
+          r-agg (if (node/leaf? r) identity (node/-z r))
           agg   (op l-agg (op v r-agg))]
-      (AggregateNode. k v l r (+ 1 (tree/node-size l) (tree/node-size r)) agg))))
+      (node/->AggregateNode k v l r (+ 1 (tree/node-size l) (tree/node-size r)) agg))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Range Query Algorithm
@@ -118,7 +104,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Fields:
-;;   root     — tree of AggregateNode (extends SimpleNode with agg field)
+;;   root     — tree of AggregateNode (subtree aggregate cached in -z field)
 ;;   op       — associative binary operation (+, min, max, etc.)
 ;;   identity — identity element for op (0 for +, Long/MAX_VALUE for min)
 ;;   creator  — node constructor that recomputes agg = op(left.agg, val, right.agg)
@@ -340,7 +326,7 @@
   (aggregate [this]
     (if (node/leaf? root)
       identity
-      (.-agg ^AggregateNode root)))
+      (node/-z root)))
   (update-val [this k v]
     (seg-assoc this k v))
   (update-fn [this k f]
@@ -485,39 +471,6 @@
    (segment-tree op identity nil))
   ([op identity coll]
    (segment-tree-with order/normal-compare op identity coll)))
-
-(defalias query
-  "Query the aggregate over key range [lo, hi] inclusive.
-   O(log n) time.
-
-   Example:
-     (def st (segment-tree + 0 {0 10, 1 20, 2 30, 3 40}))
-     (query st 0 3)  ; => 100
-     (query st 1 2)  ; => 50"
-  proto/aggregate-range)
-
-(defalias update-val
-  "Update the value at index k. O(log n) time.
-
-   Example:
-     (def st (segment-tree + 0 {0 10, 1 20, 2 30}))
-     (def st' (update-val st 1 100))
-     (query st' 0 2)  ; => 140"
-  proto/update-val)
-
-(defalias update-fn
-  "Update the value at index k by applying f to the current value.
-   O(log n) time.
-
-   Example:
-     (def st (segment-tree + 0 {0 10, 1 20, 2 30}))
-     (def st' (update-fn st 1 #(* % 2)))  ; double index 1
-     (query st' 0 2)  ; => 80"
-  proto/update-fn)
-
-(defalias aggregate
-  "Return the aggregate over the entire tree. O(1) time."
-  proto/aggregate)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Literal Representation

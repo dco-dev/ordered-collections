@@ -862,20 +862,35 @@
   segtree/max-tree)
 
 (defalias query
-  "Query aggregate over key range [lo, hi] inclusive. O(log n)."
-  segtree/query)
+  "Query the aggregate over key range [lo, hi] inclusive. O(log n).
+
+   Example:
+     (def st (segment-tree + 0 {0 10, 1 20, 2 30, 3 40}))
+     (query st 0 3)  ; => 100
+     (query st 1 2)  ; => 50"
+  proto/aggregate-range)
 
 (defalias aggregate
-  "Return aggregate over entire segment tree. O(1)."
-  segtree/aggregate)
+  "Return the aggregate over the entire segment tree. O(1)."
+  proto/aggregate)
 
 (defalias update-val
-  "Update value at index k. O(log n)."
-  segtree/update-val)
+  "Update the value at index k. O(log n).
+
+   Example:
+     (def st (segment-tree + 0 {0 10, 1 20, 2 30}))
+     (def st' (update-val st 1 100))
+     (query st' 0 2)  ; => 140"
+  proto/update-val)
 
 (defalias update-fn
-  "Update value at index k by applying f. O(log n)."
-  segtree/update-fn)
+  "Update the value at index k by applying f to the current value. O(log n).
+
+   Example:
+     (def st (segment-tree + 0 {0 10, 1 20, 2 30}))
+     (def st' (update-fn st 1 #(* % 2)))
+     (query st' 0 2)  ; => 80"
+  proto/update-fn)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Split and Range Operations (data.avl compatible)
