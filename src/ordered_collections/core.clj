@@ -460,22 +460,35 @@
   "Create a persistent priority queue from [priority value] pairs.
 
   Supports O(log n) push/peek/pop operations, plus parallel fold.
-  Queue order is determined by the priority comparator; `peek` and
-  `peek-min` return the first element in that order.
-
-  Options:
-    :comparator - priority comparator (default: compare, natural ordering)
+  Priorities are ordered by clojure.core/compare (natural ordering).
+  For custom ordering, use priority-queue-by or priority-queue-with.
 
   Examples:
-    (priority-queue)                                  ; empty queue
+    (priority-queue)
     (priority-queue [[1 :urgent] [5 :low] [3 :medium]])
-    (priority-queue [[1 :a] [2 :b]] :comparator >) ; max-heap
-
-  Use (peek-min pq) for the first element in queue order, and
-  (pop-min pq) to remove it."
+    (priority-queue [[\"beta\" :b] [\"alpha\" :a]])"
   ([] (pq/priority-queue))
-  ([pairs & opts]
-   (apply pq/priority-queue pairs opts)))
+  ([pairs] (pq/priority-queue pairs)))
+
+(defn priority-queue-by
+  "Create a priority queue with custom ordering via a predicate.
+
+  Examples:
+    (priority-queue-by > [[1 :a] [3 :c] [2 :b]])  ; max-heap
+    (priority-queue-by > [])                         ; empty max-heap"
+  [pred pairs]
+  (pq/priority-queue-by pred pairs))
+
+(defn priority-queue-with
+  "Create a priority queue with a custom java.util.Comparator for priorities.
+
+  Examples:
+    (priority-queue-with long-compare [[1 :a] [2 :b]])
+    (priority-queue-with string-compare)"
+  ([^java.util.Comparator comparator]
+   (pq/priority-queue-with comparator))
+  ([^java.util.Comparator comparator pairs]
+   (pq/priority-queue-with comparator pairs)))
 
 (defalias push
   "Add an element to a priority queue with the given priority.

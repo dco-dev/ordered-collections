@@ -233,7 +233,7 @@
     (let [m (oc/ordered-map-by > [[3 :c] [1 :a] [2 :b]])]
       (is (clojure.string/starts-with? (pr-str m) "#<OrderedMap "))))
   (testing "priority-queue with custom comparator prints unreadable form"
-    (let [pq (oc/priority-queue [[1 :a] [3 :c]] :comparator >)]
+    (let [pq (oc/priority-queue-by > [[1 :a] [3 :c]])]
       (is (clojure.string/starts-with? (pr-str pq) "#<PriorityQueue "))))
   (testing "ordered-multiset with custom comparator prints unreadable form"
     (let [ms (oc/ordered-multiset-by > [3 1 2])]

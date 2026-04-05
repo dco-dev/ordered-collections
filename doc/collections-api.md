@@ -377,11 +377,12 @@ Queue order is defined by the configured comparator:
 
 - `priority-queue`
   - `(priority-queue)`
-  - `(priority-queue pairs & opts)`
-
-Options:
-
-- `:comparator`
+  - `(priority-queue pairs)`
+- `priority-queue-by`
+  - `(priority-queue-by pred pairs)`
+- `priority-queue-with`
+  - `(priority-queue-with comparator)`
+  - `(priority-queue-with comparator pairs)`
 
 ### Collection-specific operations
 

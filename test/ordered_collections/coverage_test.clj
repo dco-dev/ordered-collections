@@ -404,7 +404,7 @@
   (is (some? (interval-set)))
   (is (some? (interval-map)))
   (is (some? (priority-queue [])))
-  (is (some? (priority-queue [] :comparator >)))
+  (is (some? (priority-queue-by > [])))
   (is (some? (ordered-multiset [])))
   (is (some? (ordered-multiset-by < [])))
   (is (some? (fuzzy-set [])))
