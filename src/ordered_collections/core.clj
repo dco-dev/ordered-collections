@@ -1,7 +1,7 @@
 (ns ordered-collections.core
   "Public API for ordered-collections."
   (:refer-clojure :exclude [split-at])
-  (:require [clojure.core.reducers                            :as r]
+  (:require [clojure.core.reducers                         :as r]
             [ordered-collections.types.interop]
             [ordered-collections.tree.interval             :as interval]
             [ordered-collections.tree.node                 :as node]
@@ -43,6 +43,20 @@
   "Specialized java.util.Comparator for String keys.
    Uses String.compareTo directly for faster string comparisons."
   order/string-compare)
+
+(defalias general-compare
+  "General-purpose java.util.Comparator that provides a deterministic total
+   order over all values, including types that clojure.core/compare does not
+   order (such as Namespace and Var).
+
+   Use with ordered-set-with / ordered-map-with:
+     (ordered-set-with general-compare (all-ns))
+     (ordered-map-with general-compare [[#'clojure.core/map :map]])
+
+   Expect roughly 20% slower lookups compared to the default comparator on
+   Comparable types. Set algebra overhead is smaller and masked by parallelism
+   at scale."
+  order/general-compare)
 
 (defalias compare-by
   "Given a predicate that defines a total order (e.g., <), return a java.util.Comparator.

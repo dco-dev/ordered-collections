@@ -3,6 +3,7 @@
   (:require [clojure.core.reducers        :as r]
             [clojure.math.combinatorics   :as combo]
             [clojure.set                  :as set]
+            [clojure.string               :as str]
             [clojure.test                 :refer :all]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
@@ -111,6 +112,120 @@
           this (ordered-set data)]
       (is (= sum (r/fold chunk + + this)))
       (is (= sum (reduce + this))))))
+
+(deftest general-comparator-supports-common-non-comparable-values
+  (require 'clojure.edn 'clojure.string)
+  (testing "ordered-set-with general-compare accepts namespaces, including (all-ns)"
+    (let [nss (vec (all-ns))
+          os  (ordered-set-with general-compare nss)]
+      (is (= (set nss) os))
+      (is (= (sort-by str (distinct nss)) (seq os)))))
+
+  (testing "ordered-set-with general-compare accepts vars"
+    (let [vars [#'clojure.core/map
+                #'clojure.core/filter
+                #'clojure.core/reduce]
+          os   (ordered-set-with general-compare (reverse vars))]
+      (is (= (set vars) os))
+      (is (= (sort-by str vars) (seq os))))))
+
+(deftest general-compare-lookup-and-membership
+  (let [nss (vec (all-ns))
+        os  (ordered-set-with general-compare nss)]
+    (testing "contains? finds every element"
+      (doseq [ns nss]
+        (is (contains? os ns))))
+    (testing "contains? rejects absent element"
+      (is (not (contains? os :not-a-namespace))))
+    (testing "get returns element when present"
+      (let [ns1 (first nss)]
+        (is (= ns1 (get os ns1)))
+        (is (= ns1 (os ns1)))))
+    (testing "get returns not-found when absent"
+      (is (= ::miss (get os :nope ::miss))))))
+
+(deftest general-compare-deletion
+  (let [nss (vec (all-ns))
+        os  (ordered-set-with general-compare nss)
+        ns1 (first (seq os))]
+    (testing "disj removes element"
+      (let [os' (disj os ns1)]
+        (is (not (contains? os' ns1)))
+        (is (= (dec (count os)) (count os')))))
+    (testing "disj of absent element is identity"
+      (is (= os (disj os :not-a-namespace))))))
+
+(deftest general-compare-set-algebra
+  (let [nss  (vec (all-ns))
+        half (quot (count nss) 2)
+        os1  (ordered-set-with general-compare (take half nss))
+        os2  (ordered-set-with general-compare (drop (quot half 2) nss))]
+    (testing "union contains all elements from both"
+      (let [u (union os1 os2)]
+        (is (= (count u) (count (into #{} (concat (seq os1) (seq os2))))))))
+    (testing "intersection contains only shared elements"
+      (let [i (intersection os1 os2)]
+        (is (every? #(and (contains? os1 %) (contains? os2 %)) i))))
+    (testing "difference removes second set's elements"
+      (let [d (difference os1 os2)]
+        (is (every? #(not (contains? os2 %)) d))
+        (is (every? #(contains? os1 %) d))))))
+
+(deftest general-compare-comparable-values-match-normal
+  (testing "integers via general-compare have same order as normal-compare"
+    (let [xs   (shuffle (range 1000))
+          os   (ordered-set xs)
+          osg  (ordered-set-with general-compare xs)]
+      (is (= (seq os) (seq osg)))))
+  (testing "strings via general-compare have same order as normal-compare"
+    (let [xs (mapv str (shuffle (range 1000)))
+          os  (ordered-set xs)
+          osg (ordered-set-with general-compare xs)]
+      (is (= (seq os) (seq osg))))))
+
+(deftest general-compare-nil-handling
+  (let [os (ordered-set-with general-compare [3 nil 1 2])]
+    (is (= 4 (count os)))
+    (is (contains? os nil))
+    (is (= nil (first os)))
+    (is (= [nil 1 2 3] (vec os)))))
+
+(deftest general-compare-hash-and-equality
+  (let [nss (vec (all-ns))
+        os1 (ordered-set-with general-compare nss)
+        os2 (ordered-set-with general-compare (shuffle nss))]
+    (testing "hash is consistent across construction order"
+      (is (= (hash os1) (hash os2))))
+    (testing "equal to itself"
+      (is (= os1 os2)))
+    (testing "equal to plain set of same elements"
+      (is (= (set nss) os1)))))
+
+(deftest general-compare-positional-ops
+  (let [xs  (shuffle (range 100))
+        osg (ordered-set-with general-compare xs)]
+    (testing "nth matches sorted order"
+      (is (= 0 (nth osg 0)))
+      (is (= 50 (nth osg 50)))
+      (is (= 99 (nth osg 99))))
+    (testing "rank matches nth"
+      (is (= 0 (rank osg 0)))
+      (is (= 50 (rank osg 50)))
+      (is (nil? (rank osg 999))))
+    (testing "nearest works"
+      (is (= 49 (nearest osg :< 50)))
+      (is (= 51 (nearest osg :> 50))))))
+
+(deftest general-compare-prints-opaque
+  (let [os (ordered-set-with general-compare [1 2 3])]
+    (is (str/starts-with? (pr-str os) "#<OrderedSet"))))
+
+(deftest general-compare-deterministic-order
+  (testing "same elements produce same order across multiple constructions"
+    (let [nss (vec (all-ns))]
+      (is (= (vec (ordered-set-with general-compare nss))
+             (vec (ordered-set-with general-compare (shuffle nss)))
+             (vec (ordered-set-with general-compare (reverse nss))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Split and Range Operations (data.avl compatible)

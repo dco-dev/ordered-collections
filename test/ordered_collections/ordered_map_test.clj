@@ -1,9 +1,12 @@
 (ns ordered-collections.ordered-map-test
-  (:require [clojure.test                :refer :all]
+  (:require [clojure.string              :as str]
+            [clojure.test                :refer :all]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
-            [ordered-collections.core :refer [ordered-map ordered-map-by
+            [ordered-collections.core :refer [general-compare
+                                                       ordered-map ordered-map-by
+                                                       ordered-map-with
                                                        ordered-merge-with assoc-new]]
             [ordered-collections.test-utils :as tu])
   (:import  [java.util UUID]))
@@ -77,6 +80,52 @@
     (let [m (ordered-map [[1 :a] [3 :c] [5 :e]])]
       (is (= [[1 :a] [2 :b] [3 :c] [5 :e]]
              (seq (assoc-new m 2 :b)))))))
+
+(deftest general-comparator-supports-common-non-comparable-keys
+  (require 'clojure.edn 'clojure.string)
+  (testing "ordered-map accepts namespace keys"
+    (let [pairs [[(the-ns 'clojure.string) :string]
+                 [(the-ns 'clojure.core) :core]
+                 [(the-ns 'clojure.edn) :edn]]
+          om    (ordered-map-with general-compare (reverse pairs))]
+      (is (= (into {} pairs) om))
+      (is (= (sort-by (comp str first) pairs) (seq om)))))
+
+  (testing "ordered-map-with general-compare accepts var keys"
+    (let [pairs [[#'clojure.core/map :map]
+                 [#'clojure.core/filter :filter]
+                 [#'clojure.core/reduce :reduce]]
+          om    (ordered-map-with general-compare (reverse pairs))]
+      (is (= (into {} pairs) om))
+      (is (= (sort-by (comp str first) pairs) (seq om))))))
+
+(deftest general-compare-map-lookup-and-mutation
+  (let [pairs (mapv (fn [ns] [ns (str ns)]) (all-ns))
+        om    (ordered-map-with general-compare pairs)]
+    (testing "get finds every key"
+      (doseq [[k v] pairs]
+        (is (= v (get om k)))))
+    (testing "get returns not-found for absent key"
+      (is (= ::miss (get om :nope ::miss))))
+    (testing "assoc adds new entry"
+      (let [om' (assoc om :new-key :new-val)]
+        (is (= :new-val (get om' :new-key)))))
+    (testing "dissoc removes key"
+      (let [k (ffirst om)
+            om' (dissoc om k)]
+        (is (not (contains? om' k)))
+        (is (= (dec (count om)) (count om')))))))
+
+(deftest general-compare-map-comparable-match
+  (testing "integer-keyed map via general-compare has same order as normal"
+    (let [pairs (mapv (fn [i] [i (str i)]) (shuffle (range 500)))
+          om    (ordered-map pairs)
+          omg   (ordered-map-with general-compare pairs)]
+      (is (= (vec om) (vec omg))))))
+
+(deftest general-compare-map-prints-opaque
+  (let [om (ordered-map-with general-compare [[1 :a] [2 :b]])]
+    (is (str/starts-with? (pr-str om) "#<OrderedMap"))))
 
 (deftest ordered-merge-with-test
   (testing "non-overlapping keys — simple union"

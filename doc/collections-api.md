@@ -41,6 +41,7 @@ or custom ordering.
 | `long-compare` | — | Specialized `Comparator` for `Long` keys. |
 | `double-compare` | — | Specialized `Comparator` for `Double` keys. |
 | `string-compare` | — | Specialized `Comparator` for `String` keys. |
+| `general-compare` | — | Total order over all values, including non-`Comparable` types (Namespace, Var, etc.). Use with `ordered-set-with` / `ordered-map-with`. ~20% slower lookups on `Comparable` types vs default. |
 | `compare-by` | `[pred]` | Convert a total-order predicate such as `<` or `>` into a `Comparator`. |
 
 ---

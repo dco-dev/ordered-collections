@@ -1,4 +1,4 @@
-(defproject ordered-collections "0.2.0-SNAPSHOT"
+(defproject com.dean/ordered-collections "0.2.0-SNAPSHOT"
   :description "Fast collections that do more than sort."
   :author       "Dan Lentz"
   :url "http://github.com/dco-dev/ordered-collections"
@@ -21,6 +21,8 @@
             [lein-cloverage "1.2.4"]]
 
   :signing  {:gpg-key "0CA466A1AB48F0C0264AF55307BAD70176C4B179"}
+
+  :repl-options {:init-ns ordered-collections.core}
 
   :codox    {:output-path  "doc/api"
              :src-dir-uri "https://github.com/dco-dev/ordered-collections/blob/master/"
