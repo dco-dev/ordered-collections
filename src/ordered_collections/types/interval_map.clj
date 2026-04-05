@@ -220,7 +220,7 @@
 
 (defmethod print-method IntervalMap [^IntervalMap m ^java.io.Writer w]
   (if (order/default-comparator? (.getCmp ^IOrderedCollection m))
-    (do (.write w "#oc/interval-map [")
+    (do (.write w "#ordered/interval-map [")
         (let [s (seq m)]
           (when s
             (let [[k v] (first s)]

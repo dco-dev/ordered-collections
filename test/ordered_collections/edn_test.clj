@@ -29,9 +29,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftest ordered-set-tagged-literal-format
-  (testing "pr-str produces #oc/set tag"
+  (testing "pr-str produces #ordered/set tag"
     (let [s (oc/ordered-set [3 1 2])]
-      (is (= "#oc/set [1 2 3]" (pr-str s))))))
+      (is (= "#ordered/set [1 2 3]" (pr-str s))))))
 
 (deftest ordered-set-round-trip
   (testing "read-string round-trip"
@@ -43,7 +43,7 @@
       (is (= s (edn-round-trip s)))))
   (testing "empty set"
     (let [s (oc/ordered-set)]
-      (is (= "#oc/set []" (pr-str s)))
+      (is (= "#ordered/set []" (pr-str s)))
       (is (= s (round-trip s)))))
   (testing "single element"
     (let [s (oc/ordered-set [42])]
@@ -60,7 +60,7 @@
 
 (deftest ordered-set-read-from-literal
   (testing "read literal string directly"
-    (let [s (read-string "#oc/set [5 3 1]")]
+    (let [s (read-string "#ordered/set [5 3 1]")]
       (is (= 3 (count s)))
       (is (= [1 3 5] (vec s)))
       (is (= 1 (first s))))))
@@ -71,9 +71,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftest ordered-map-tagged-literal-format
-  (testing "pr-str produces #oc/map tag"
+  (testing "pr-str produces #ordered/map tag"
     (let [m (oc/ordered-map [[2 :b] [1 :a] [3 :c]])]
-      (is (= "#oc/map [[1 :a] [2 :b] [3 :c]]" (pr-str m))))))
+      (is (= "#ordered/map [[1 :a] [2 :b] [3 :c]]" (pr-str m))))))
 
 (deftest ordered-map-round-trip
   (testing "read-string round-trip"
@@ -85,7 +85,7 @@
       (is (= m (edn-round-trip m)))))
   (testing "empty map"
     (let [m (oc/ordered-map)]
-      (is (= "#oc/map []" (pr-str m)))
+      (is (= "#ordered/map []" (pr-str m)))
       (is (= m (round-trip m)))))
   (testing "single entry"
     (let [m (oc/ordered-map [[1 :only]])]
@@ -100,7 +100,7 @@
 
 (deftest ordered-map-read-from-literal
   (testing "read literal string directly"
-    (let [m (read-string "#oc/map [[1 :a] [2 :b]]")]
+    (let [m (read-string "#ordered/map [[1 :a] [2 :b]]")]
       (is (= 2 (count m)))
       (is (= :a (m 1)))
       (is (= :b (m 2))))))
@@ -111,9 +111,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftest interval-set-tagged-literal-format
-  (testing "pr-str produces #oc/interval-set tag"
+  (testing "pr-str produces #ordered/interval-set tag"
     (let [s (oc/interval-set [[1 5] [10 20]])]
-      (is (clojure.string/starts-with? (pr-str s) "#oc/interval-set ")))))
+      (is (clojure.string/starts-with? (pr-str s) "#ordered/interval-set ")))))
 
 (deftest interval-set-round-trip
   (testing "read-string round-trip"
@@ -138,9 +138,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftest interval-map-tagged-literal-format
-  (testing "pr-str produces #oc/interval-map tag"
+  (testing "pr-str produces #ordered/interval-map tag"
     (let [m (oc/interval-map {[1 5] :a [10 20] :b})]
-      (is (clojure.string/starts-with? (pr-str m) "#oc/interval-map ")))))
+      (is (clojure.string/starts-with? (pr-str m) "#ordered/interval-map ")))))
 
 (deftest interval-map-round-trip
   (testing "read-string round-trip"
@@ -163,9 +163,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftest range-map-tagged-literal-format
-  (testing "pr-str produces #oc/range-map tag"
+  (testing "pr-str produces #ordered/range-map tag"
     (let [rm (oc/range-map [[[0 10] :a] [[20 30] :b]])]
-      (is (clojure.string/starts-with? (pr-str rm) "#oc/range-map ")))))
+      (is (clojure.string/starts-with? (pr-str rm) "#ordered/range-map ")))))
 
 (deftest range-map-round-trip
   (testing "read-string round-trip"
@@ -184,9 +184,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftest priority-queue-tagged-literal-format
-  (testing "pr-str produces #oc/priority-queue tag"
+  (testing "pr-str produces #ordered/priority-queue tag"
     (let [pq (oc/priority-queue [[1 :a] [3 :c] [2 :b]])]
-      (is (clojure.string/starts-with? (pr-str pq) "#oc/priority-queue ")))))
+      (is (clojure.string/starts-with? (pr-str pq) "#ordered/priority-queue ")))))
 
 (deftest priority-queue-round-trip
   (testing "read-string round-trip"
@@ -205,9 +205,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftest ordered-multiset-tagged-literal-format
-  (testing "pr-str produces #oc/multiset tag"
+  (testing "pr-str produces #ordered/multiset tag"
     (let [ms (oc/ordered-multiset [3 1 2 1])]
-      (is (clojure.string/starts-with? (pr-str ms) "#oc/multiset ")))))
+      (is (clojure.string/starts-with? (pr-str ms) "#ordered/multiset ")))))
 
 (deftest ordered-multiset-round-trip
   (testing "read-string round-trip"

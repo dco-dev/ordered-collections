@@ -294,7 +294,7 @@
 
 (defmethod print-method IntervalSet [^IntervalSet s ^java.io.Writer w]
   (if (order/default-comparator? (.getCmp ^IOrderedCollection s))
-    (do (.write w "#oc/interval-set ")
+    (do (.write w "#ordered/interval-set ")
         (print-method (vec s) w))
     (do (.write w "#<IntervalSet ")
         (print-method (vec s) w)

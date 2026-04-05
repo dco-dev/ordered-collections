@@ -2,7 +2,7 @@
   "Tagged literal reader functions for EDN round-tripping.
 
    These functions are referenced by data_readers.clj and are called by
-   the Clojure reader when it encounters tagged literals like #oc/set.
+   the Clojure reader when it encounters tagged literals like #ordered/set.
 
    For use with clojure.edn/read-string, pass `readers` as the :readers option."
   (:require [ordered-collections.core :as oc]))
@@ -20,10 +20,10 @@
    Pass to clojure.edn/read-string as the :readers option:
 
      (clojure.edn/read-string {:readers readers} s)"
-  {'oc/set            ordered-set
-   'oc/map            ordered-map
-   'oc/interval-set   interval-set
-   'oc/interval-map   interval-map
-   'oc/range-map      range-map
-   'oc/priority-queue priority-queue
-   'oc/multiset       ordered-multiset})
+  {'ordered/set            ordered-set
+   'ordered/map            ordered-map
+   'ordered/interval-set   interval-set
+   'ordered/interval-map   interval-map
+   'ordered/range-map      range-map
+   'ordered/priority-queue priority-queue
+   'ordered/multiset       ordered-multiset})
