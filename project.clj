@@ -18,7 +18,8 @@
 
   :plugins [[lein-codox "0.10.8"]
             [lein-ancient "0.7.0"]
-            [lein-cloverage "1.2.4"]]
+            [lein-cloverage "1.2.4"]
+            [lein-shell "0.5.0"]]
 
   :signing  {:gpg-key "0CA466A1AB48F0C0264AF55307BAD70176C4B179"}
 
@@ -34,4 +35,5 @@
   :aliases {"bench"           ["run" "-m" "ordered-collections.bench-runner"]
              "bench-simple"    ["run" "-m" "ordered-collections.simple-bench"]
              "bench-range-map" ["run" "-m" "ordered-collections.range-map-bench"]
-             "bench-parallel"  ["run" "-m" "ordered-collections.parallel-threshold-bench"]})
+             "bench-parallel"  ["run" "-m" "ordered-collections.parallel-threshold-bench"]
+             "stats"           ["shell" "bb" "etc/stats.bb"]})

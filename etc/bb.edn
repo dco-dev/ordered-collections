@@ -1,0 +1,2 @@
+{:deps {com.github.danlentz/clj-figlet {:mvn/version "0.1.4"}
+        com.github.danlentz/clj-format {:mvn/version "0.1.1"}}}
