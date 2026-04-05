@@ -253,7 +253,7 @@
           ks    (int-array (repeatedly 10000 #(rand-int n)))]
       (print-row n
         [(bench 20 10 (dotimes [i 10000] (avl/rank-of as (aget ks i))))
-         (bench 20 10 (dotimes [i 10000] (.indexOf ^java.util.List os (aget ks i))))]))))
+         (bench 20 10 (dotimes [i 10000] (core/rank os (aget ks i))))]))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Split Operations (data.avl specialty)
@@ -269,11 +269,7 @@
           ^ints ks keys]
       (print-row n
         [(bench 2 5 (dotimes [i 100] (avl/split-key (aget ks i) data-avl)))
-         (bench 2 5 (dotimes [i 100]
-                      (let [k (aget ks i)]
-                        [(.headSet ^java.util.SortedSet ordered-set k)
-                         (contains? ordered-set k)
-                         (.tailSet ^java.util.SortedSet ordered-set k)])))]))))
+         (bench 2 5 (dotimes [i 100] (core/split-key (aget ks i) ordered-set)))]))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Parallel Fold Benchmarks (clojure.core.reducers/fold)
@@ -281,20 +277,17 @@
 
 (defn bench-set-parallel-fold
   "Benchmark r/fold performance across implementations.
-   ordered-set implements CollFold for efficient chunked/parallel reduction.
-   sorted-set and data.avl use default sequential fallback."
+   ordered-set implements CollFold for efficient tree-aware parallel reduction.
+   sorted-set and data.avl use the default reducers behavior."
   [sizes]
   (print-header "SET r/fold: Chunked fold performance comparison"
                 ["sorted-set" "data.avl" "ordered-set"])
   (doseq [n sizes]
     (let [elems (shuffle (range n))
           {:keys [sorted-set data-avl ordered-set]} (build-set-variants elems)
-          ;; Parallel fold with chunk size
           fold-time (fn [coll]
                       (first (bench 20 10
-                               (r/fold 512  ;; chunk size
-                                       +   ;; combinef
-                                       (fn [^long acc x] (+ acc (long x)))
+                               (r/fold + (fn [^long acc x] (+ acc (long x)))
                                        coll))))
           ss-fold (fold-time sorted-set)
           as-fold (fold-time data-avl)
@@ -316,7 +309,7 @@
     (let [elems (shuffle (range n))
           os    (core/ordered-set elems)
           [os-reduce _] (bench 20 10 (reduce (fn [^long acc x] (+ acc (long x))) 0 os))
-          [os-fold _]   (bench 20 10 (r/fold 512 + (fn [^long acc x] (+ acc (long x))) os))
+          [os-fold _]   (bench 20 10 (r/fold + (fn [^long acc x] (+ acc (long x))) os))
           os-speedup (if (pos? os-fold) (/ (double os-reduce) os-fold) 0.0)]
       (println (format "%-12d %-18s %-18s %-12.1fx"
                        n
