@@ -26,7 +26,6 @@ foundation for splitting, joining, and parallel operations.
 - [Cookbook](doc/cookbook.md) — Practical patterns: leaderboards, time-series, scheduling, queues, multisets, and more
 - [Collections API](doc/collections-api.md) — Collection-by-collection constructor and operation reference
 - [Benchmarks](doc/benchmarks.md) — Detailed performance measurements
-- [Benchmark Report](doc/report/benchmark-report-2026-04-04.md) — Visual summary of the latest full benchmark run
 - [Competitive Analysis](doc/competitive-analysis.md) — Comparison with other libraries
 - [vs clojure.data.avl](doc/vs-clojure-data-avl.md) — For data.avl users considering a switch
 - [Algorithms](doc/algorithms.md) — Tree structure, rotations, split/join, interval augmentation
