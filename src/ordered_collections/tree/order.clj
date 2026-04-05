@@ -20,40 +20,13 @@
 ;; Each comparator type implements equals/hashCode based on type,
 ;; so that equivalent comparators are considered equal after deserialization.
 
-(defn- incomparable-fallback-compare
-  "Total-order fallback for values that clojure.core/compare does not order,
-   such as Namespace and Var. Prefer value-based signals first and use
-   identity only as a final tie-break for otherwise opaque unequal objects."
-  ^long [x y]
-  (let [cx (.getName ^Class (class x))
-        cy (.getName ^Class (class y))
-        c0 (clojure.core/compare cx cy)]
-    (if-not (zero? c0)
-      c0
-      (let [sx (str x)
-            sy (str y)
-            c1 (clojure.core/compare sx sy)]
-        (if-not (zero? c1)
-          c1
-          (let [hx (hash x)
-                hy (hash y)
-                c2 (clojure.core/compare hx hy)]
-            (if-not (zero? c2)
-              c2
-              (Integer/compare (System/identityHashCode x)
-                               (System/identityHashCode y)))))))))
-
-(defn- same-class-compare
-  ^long [x y]
-  (cond
-    (instance? Number x)
-    (clojure.core/compare x y)
-
-    (instance? Comparable x)
-    (.compareTo ^Comparable x y)
-
-    :else
-    (incomparable-fallback-compare x y)))
+(defn- first-nonzero
+  "Return the first non-zero value, or 0."
+  ^long [^long a ^long b ^long c ^long d]
+  (cond (not (zero? a)) a
+        (not (zero? b)) b
+        (not (zero? c)) c
+        :else           d))
 
 (defn- general-compare* ^long [x y]
   (cond
@@ -64,19 +37,32 @@
     :else
     (let [cx (class x)
           cy (class y)]
-      (cond
-        (identical? cx cy)
-        (same-class-compare x y)
-
-        (and (instance? Number x) (instance? Number y))
-        (clojure.core/compare x y)
-
-        :else
-        (let [c0 (clojure.core/compare (.getName ^Class cx)
-                                       (.getName ^Class cy))]
-          (if-not (zero? c0)
-            c0
-            (incomparable-fallback-compare x y)))))))
+      (if (identical? cx cy)
+        ;; Same class: prefer native ordering, fall back for non-Comparable.
+        ;; Numbers go through clojure.core/compare rather than .compareTo
+        ;; because compare handles Clojure's mixed-precision numeric tower
+        ;; (e.g. BigDecimal vs Long) more reliably than Comparable alone.
+        (cond
+          (instance? Number x)     (clojure.core/compare x y)
+          (instance? Comparable x) (.compareTo ^Comparable x y)
+          :else (first-nonzero (clojure.core/compare (str x) (str y))
+                               (clojure.core/compare (hash x) (hash y))
+                               (Integer/compare (System/identityHashCode x)
+                                                (System/identityHashCode y))
+                               0))
+        ;; Different classes: sort by class name, then by value.
+        ;; Cross-class Number check handles e.g. (compare 1 1.0) where
+        ;; Long and Double are different classes but numerically ordered.
+        (let [cn (clojure.core/compare (.getName ^Class cx) (.getName ^Class cy))]
+          (if-not (zero? cn)
+            cn
+            (if (and (instance? Number x) (instance? Number y))
+              (clojure.core/compare x y)
+              (first-nonzero (clojure.core/compare (str x) (str y))
+                             (clojure.core/compare (hash x) (hash y))
+                             (Integer/compare (System/identityHashCode x)
+                                              (System/identityHashCode y))
+                             0))))))))
 
 (deftype NormalComparator []
   java.io.Serializable
