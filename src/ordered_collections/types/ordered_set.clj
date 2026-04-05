@@ -14,9 +14,6 @@
                                          IOrderedCollection]))
 
 
-;; - IMapIterable:  https://github.com/clojure/clojure/blob/master/src/jvm/clojure/lang/PersistentHashMap.java
-;; - Collection Check: https://github.com/ztellman/collection-check/blob/master/src/collection_check/core.cljc
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Ordered Set
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -416,90 +413,3 @@
     (do (.write w "#<OrderedSet ")
         (print-method (vec s) w)
         (.write w ">"))))
-
-
-
-(comment
-
-  ;; W00T!
-
-  (def foo (shuffle (range 500000)))
-  (def bar (shuffle (range 1000000)))
-
-  (def s0 (shuffle (range 0 1000000 2)))
-  (def s1 (shuffle (range 0 1000000 3)))
-
-  ;; Home Team:
-
-  (time (def x (ordered-set foo)))         ;; 500K: "Elapsed time: 564.248517 msecs"
-  (time (def y (ordered-set bar)))         ;;   1M: "Elapsed time: 1187.734211 msecs"
-  (time (def s (proto/intersection
-                 (ordered-set s0)
-                 (ordered-set s1))))       ;; 833K: "Elapsed time: 1242.961445 msecs"
-  (time (r/fold + + y))                    ;;   1M: "Elapsed time: 54.363545 msecs"
-
-  ;; Visitors:
-
-  (time (def v (into (sorted-set) foo)))   ;; 500K: "Elapsed time: 839.188189 msecs"
-  (time (def w (into (sorted-set) bar)))   ;;   1M: "Elapsed time: 1974.798286 msecs"
-  (time (def s (clojure.set/intersection
-                 (into (sorted-set) s0)
-                 (into (sorted-set) s1)))) ;; 833K: "Elapsed time: 1589.786106 msecs"
-  (time (r/fold + + w))                    ;;   1M: "Elapsed time: 167.916539 msecs"
-
-
-  (require '[criterium.core])
-
-  (criterium.core/bench (def x (ordered-set foo)))
-
-;;   Evaluation count : 120 in 60 samples of 2 calls.
-;;              Execution time mean : 612.435645 ms
-;;     Execution time std-deviation : 60.421726 ms
-;;    Execution time lower quantile : 565.022632 ms ( 2.5%)
-;;    Execution time upper quantile : 771.090227 ms (97.5%)
-;;                    Overhead used : 1.708588 ns
-;;
-;; Found 11 outliers in 60 samples (18.3333 %)
-;; 	low-severe	 1 (1.6667 %)
-;; 	low-mild	 10 (16.6667 %)
-;;  Variance from outliers : 68.6890 % Variance is severely inflated by outliers
-
-  (criterium.core/bench (def v (into (sorted-set) foo)))
-
-;;   Evaluation count : 120 in 60 samples of 2 calls.
-;;              Execution time mean : 819.376840 ms
-;;     Execution time std-deviation : 29.835432 ms
-;;    Execution time lower quantile : 789.678093 ms ( 2.5%)
-;;    Execution time upper quantile : 907.561055 ms (97.5%)
-;;                    Overhead used : 1.708588 ns
-;;
-;; Found 5 outliers in 60 samples (8.3333 %)
-;; 	low-severe	 3 (5.0000 %)
-;; 	low-mild	 2 (3.3333 %)
-;;  Variance from outliers : 22.2640 % Variance is moderately inflated by outliers
-
-;;;
-;; clojure.data.avl
-
-  (require '[clojure.data.avl :as avl])
-
-  (time (def z (into (avl/sorted-set) foo))) ;; 500K: "Elapsed time: 586.862601 msecs"
-  (time (def z (into (avl/sorted-set) bar))) ;; 1M:   "Elapsed time: 1399.241718 msecs"
-
-  (criterium.core/bench (def z (into (avl/sorted-set) foo)))
-
-;; Evaluation count : 120 in 60 samples of 2 calls.
-;;              Execution time mean : 606.249611 ms
-;;     Execution time std-deviation : 16.864172 ms
-;;    Execution time lower quantile : 560.393078 ms ( 2.5%)
-;;    Execution time upper quantile : 631.176588 ms (97.5%)
-;;                    Overhead used : 1.710404 ns
-;;
-;; Found 4 outliers in 60 samples (6.6667 %)
-;; 	low-severe	 3 (5.0000 %)
-;; 	low-mild	 1 (1.6667 %)
-;;  Variance from outliers : 14.2428 % Variance is moderately inflated by outliers
-
-  (time (r/fold + + z))
-
-  )
