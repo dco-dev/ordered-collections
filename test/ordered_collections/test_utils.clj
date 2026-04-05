@@ -119,6 +119,27 @@
   "Generator for segment-tree [k v] updates, allowing repeated keys."
   (gen/vector (gen/tuple gen/small-integer gen/small-integer) 0 50))
 
+(def gen-rope-op
+  "Generator for rope edit operations over small integer payloads."
+  (gen/one-of
+    [(gen/fmap (fn [[i x]] [:insert i [x] nil])
+       (gen/tuple (gen/choose 0 40) gen/small-integer))
+     (gen/fmap (fn [[i xs]] [:insert-many i xs nil])
+       (gen/tuple (gen/choose 0 40)
+                  (gen/vector gen/small-integer 0 8)))
+     (gen/fmap (fn [[a b]] [:remove (min a b) (max a b) nil])
+       (gen/tuple (gen/choose 0 40) (gen/choose 0 40)))
+     (gen/fmap (fn [[a b xs]] [:splice (min a b) (max a b) xs])
+       (gen/tuple (gen/choose 0 40)
+                  (gen/choose 0 40)
+                  (gen/vector gen/small-integer 0 8)))
+     (gen/fmap (fn [[a b]] [:subrope (min a b) (max a b) nil])
+       (gen/tuple (gen/choose 0 40) (gen/choose 0 40)))]))
+
+(def gen-rope-ops
+  "Generator for rope edit sequences."
+  (gen/vector gen-rope-op 0 60))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Reference Models for Property Tests

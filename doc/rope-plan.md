@@ -11,6 +11,8 @@ The current implementation is intentionally experimental:
 - it does **not** live in `core.clj`
 - it is **not** documented in the README
 - it is free to evolve until the design is clearly worthwhile
+- it should **not** be promoted unless it shows competitive performance on the
+  workloads ropes are actually supposed to serve well
 
 This document is a technical handoff for future work. It should let another
 competent AI continue the rope effort without having to rediscover the design
@@ -28,8 +30,8 @@ The experiment currently lives in:
 Validation status at the time of writing:
 
 - `lein test`
-- `529` tests
-- `469408` assertions
+- `530` tests
+- `467865` assertions
 - `0` failures
 - `0` errors
 
@@ -166,6 +168,7 @@ In [src/ordered_collections/tree/rope.clj](/Users/dan/src/ordered-collections/sr
 - `coll->root`
 - `normalize-chunks`
 - `normalize-root`
+- `normalize-split-parts`
 - `rope-concat`
 - `rope-nth`
 - `rope-assoc`
@@ -207,10 +210,10 @@ It is **not** yet a mature rope implementation.
 Major gaps:
 
 - no builder API
-- no local incremental chunk normalization policy
-- current normalization is rebuild-style repacking
-- `RopeSlice` is useful, but still implemented more simply than a mature
-  first-class slice type would be
+- normalization is local in the main structural paths now, but still heuristic
+  rather than fully principled
+- `RopeSlice` is now a real sliced root, but still not a mature first-class
+  slice design
 - no serious benchmarking yet
 - no proof that it beats built-in vectors on any important workload
 
@@ -282,6 +285,8 @@ Specifically:
 - `chunk-count`
 - `RopeSlice`
 - `normalize-root`
+- local boundary/fringe normalization
+- randomized edit-sequence property testing
 
 
 ## Current Assessment
@@ -291,7 +296,14 @@ The rope is now:
 - clearly rope-shaped
 - structurally useful
 - better than the original one-element-per-node prototype
+- backed by chunked leaves and subtree element counts
+- protected by both example tests and randomized edit-sequence tests
 - still not ready to be treated as a polished public collection
+
+And there is an explicit bar now:
+
+- if it cannot become performance-competitive on rope-appropriate workloads, it
+  should remain experimental or be dropped
 
 Roughly:
 
@@ -304,29 +316,33 @@ model*, not just missing basic operations.
 
 ## Current Main Weaknesses
 
-### 1. Normalization is too blunt
+### 1. Normalization is still heuristic
 
-The current normalization story is:
+The normalization story is now better than it was.
 
-- flatten chunk sequence
-- repartition by target chunk size
-- rebuild
+Current state:
 
-That is clean and correct, but not mature.
+- `concat` repairs the exposed concat boundary locally
+- `split` repairs the exposed left/right fringes locally
+- full-root rechunking is no longer the main path
 
-What a better rope would want:
+What is still missing:
 
-- local adjacent-chunk merge/split
-- normalization that preserves more of the existing structure
-- less full rebuilding after edits
+- a more principled normalization policy
+- better reasoning about when to merge vs split
+- broader invariants around chunk-shape quality after long edit sequences
 
 
-### 2. `RopeSlice` is semantically useful, but not yet elegant
+### 2. `RopeSlice` is better, but not final
 
-Current `RopeSlice` behavior is acceptable, but some methods still lean on
-simpler materializing paths rather than a true dedicated slice traversal layer.
+`RopeSlice` is now represented as a sliced rope root, which is much better than
+the earlier "original root plus range" wrapper.
 
-That is good enough for the experiment, but not the final form.
+That said, a mature slice design may still want:
+
+- slice-specific chunk traversal APIs
+- clearer distinction between read-only views and ordinary ropes
+- more deliberate support for slice-heavy editing workflows
 
 
 ### 3. No benchmarked compelling workload yet
@@ -338,44 +354,46 @@ There is still no demonstrated story like:
 
 Until that exists, the experiment should remain isolated.
 
+This is not merely a documentation concern. It is a go/no-go criterion for the
+feature.
+
 
 ## Recommended Next Work
 
-### 1. Improve local chunk normalization
+### 1. Improve chunk-normalization policy
 
-This is now the most important technical next step.
+This is still the most important technical next step.
 
 Possible direction:
 
-- after concat or split, inspect exposed boundary chunks
-- merge adjacent small chunks
-- split oversized chunks
-- rebuild only the small local fringe when possible
+- formalize chunk-shape invariants
+- make local merge/split decisions more principled
+- add tests that directly pressure long edit sequences and resulting chunk shape
 
-This would preserve the current clean tree model while making the rope less
-reliant on full rechunking.
+This would turn the current pragmatic local repair into something more robust.
 
 
 ### 2. Improve `RopeSlice`
 
 Possible next improvements:
 
-- direct slice chunk traversal without flattening through `vec`
-- direct chunk iteration over slices
-- slice-specific concat/split helpers where that reduces materialization
+- direct chunk iteration API on slices
+- slice-specific structural helpers where they reduce extra wrapping
+- decide whether slices should stay a distinct type or eventually collapse into
+  normalized ropes in more cases
 
 
-### 3. Add randomized edit-sequence testing
+### 3. Extend randomized testing
 
-The next best tests would be operation-sequence property tests against ordinary
-vectors:
+This now exists in first form, but should be extended.
 
-- random insert
-- random remove-range
-- random splice
-- random subrope/use-as-source cases
+Next best additions:
 
-That would do more for confidence than adding many more example tests.
+- stronger chunk-shape invariants after random edits
+- more slice-as-source cases
+- metadata/equality preservation through mixed edit sequences
+
+The key next step is not "more examples", but stronger invariants.
 
 
 ### 4. Only after that, explore benchmark claims
@@ -386,6 +404,12 @@ At that point, lightweight benchmark exploration would make sense for:
 - repeated split
 - repeated splice
 - workloads dominated by structural editing rather than random scalar `nth`
+
+The benchmark question is now sharper:
+
+- can the rope become *competitive enough* to justify inclusion?
+
+If the answer is no, the rope should not graduate.
 
 
 ## Previous "Next Additions"
@@ -441,11 +465,13 @@ more honest rope API than flattening everything immediately.
 
 ### Chunk-size drift
 
-This has improved, but not been solved completely.
+This has improved materially.
 
-The rope now normalizes chunk layout, but by rebuild-style rechunking rather
-than local incremental repair. So chunk drift is controlled, but still not in
-its ideal final form.
+The rope now does local boundary/fringe repair for the main structural paths,
+which is a real step forward.
+
+But the policy is still heuristic, and chunk-shape quality after long edit
+sequences has not been deeply characterized yet.
 
 
 ### Balancing metric mismatch
@@ -478,13 +504,14 @@ They currently cover:
 - normalization after repeated tiny concatenations
 - slice/view behavior
 - chunk iteration in both directions
+- randomized edit sequences against vectors
 
 Next tests to add when API grows:
 
-- repeated random edit sequences checked against ordinary vectors
 - chunk-seq invariants
 - preservation of equality / metadata through editing functions
 - slice-as-source editing/concat cases
+- stronger chunk-shape assertions after long random edit sequences
 
 For randomized tests, use ordinary vectors as the reference model.
 
@@ -511,6 +538,24 @@ Only once the rope API is more complete should it graduate to:
 
 - `simple_bench`
 - or a dedicated rope benchmark namespace
+
+Update:
+
+- there is now a dedicated experimental benchmark namespace:
+  [test/ordered_collections/rope_bench.clj](/Users/dan/src/ordered-collections/test/ordered_collections/rope_bench.clj)
+- and a Lein alias:
+  `lein bench-rope`
+
+That suite intentionally covers both:
+
+- text-like workloads
+- general sequence workloads
+
+Current read:
+
+- the rope is still not competitive on the major structural-edit workloads
+- chunk iteration is the clearest current strength
+- the experiment still needs a compelling performance story before promotion
 
 
 ## Naming Guidance
@@ -543,4 +588,5 @@ That is the correct direction. Keep the names rope-specific from here on.
 3. Add randomized edit-sequence tests against vectors.
 4. Do lightweight ad hoc benchmark exploration for structural-editing
    workloads.
-5. Only then revisit whether the experiment deserves broader exposure.
+5. Decide whether there is a believable path to competitive performance.
+6. Only then revisit whether the experiment deserves broader exposure.

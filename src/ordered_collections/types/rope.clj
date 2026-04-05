@@ -31,6 +31,7 @@
 
 (declare ->Rope)
 (declare ->RopeSlice)
+(declare rope-root)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Rope
@@ -158,7 +159,7 @@
 ;; Rope Slice
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(deftype RopeSlice [root ^long start ^long end _meta]
+(deftype RopeSlice [root _meta]
 
   java.io.Serializable
 
@@ -168,22 +169,22 @@
 
   IObj
   (withMeta [_ m]
-    (RopeSlice. root start end m))
+    (RopeSlice. root m))
 
   clojure.lang.Counted
   (count [_]
-    (- end start))
+    (ropetree/rope-size root))
 
   Indexed
   (nth [_ i]
-    (let [n (- end start)]
+    (let [n (ropetree/rope-size root)]
       (if (valid-index? n i)
-        (ropetree/rope-nth root (+ start (long i)))
+        (ropetree/rope-nth root (long i))
         (throw (IndexOutOfBoundsException.)))))
   (nth [_ i not-found]
-    (let [n (- end start)]
+    (let [n (ropetree/rope-size root)]
       (if (valid-index? n i)
-        (ropetree/rope-nth root (+ start (long i)))
+        (ropetree/rope-nth root (long i))
         not-found)))
 
   ILookup
@@ -206,12 +207,12 @@
         (throw (clojure.lang.ArityException. n (.. this getClass getSimpleName))))))
 
   Seqable
-  (seq [this]
-    (seq (subvec (vec (ropetree/rope-seq root)) start end)))
+  (seq [_]
+    (ropetree/rope-seq root))
 
   Reversible
-  (rseq [this]
-    (rseq (vec (seq this))))
+  (rseq [_]
+    (ropetree/rope-rseq root))
 
   Sequential
 
@@ -220,12 +221,12 @@
     (SeqIterator. (seq this)))
 
   IReduceInit
-  (reduce [this f init]
-    (reduce f init (seq this)))
+  (reduce [_ f init]
+    (ropetree/rope-reduce f init root))
 
   IReduce
-  (reduce [this f]
-    (reduce f (seq this)))
+  (reduce [_ f]
+    (ropetree/rope-reduce f root))
 
   cp/CollReduce
   (coll-reduce [this f]
@@ -235,13 +236,10 @@
 
   IPersistentCollection
   (cons [_ o]
-    (Rope. (ropetree/normalize-root
-             (ropetree/rope-concat
-               (ropetree/rope-subvec-root root start end)
-               (ropetree/coll->root [o])))
+    (Rope. (ropetree/rope-concat root (ropetree/coll->root [o]))
       _meta))
   (empty [_]
-    (RopeSlice. root start start _meta))
+    (RopeSlice. nil _meta))
   (equiv [this o]
     (seq-equiv this o))
 
@@ -267,9 +265,13 @@
   ([coll]
    (Rope. (ropetree/coll->root coll) {})))
 
-(defn- slice-root
-  [^RopeSlice x]
-  (ropetree/rope-subvec-root (.-root x) (.-start x) (.-end x)))
+(defn concat-ropes
+  "Bulk concatenation path for rope values or rope-coercible collections."
+  [& xs]
+  (Rope.
+    (ropetree/chunks->root
+      (mapcat ropetree/root->chunks (map rope-root xs)))
+    {}))
 
 (defn- rope-root
   [x]
@@ -278,15 +280,14 @@
     (.-root ^Rope x)
 
     (instance? RopeSlice x)
-    (slice-root x)
+    (.-root ^RopeSlice x)
 
     :else
     (ropetree/coll->root x)))
 
 (defn concat-rope
   [left right]
-  (Rope. (ropetree/normalize-root
-           (ropetree/rope-concat (rope-root left) (rope-root right)))
+  (Rope. (ropetree/rope-concat (rope-root left) (rope-root right))
     (meta left)))
 
 (defn rope-chunks
@@ -303,16 +304,17 @@
 
 (defn split-rope-at
   [v i]
-  (let [[l r] (ropetree/rope-split-at (rope-root v) (long i))]
-    [(Rope. (ropetree/normalize-root l) (meta v))
-     (Rope. (ropetree/normalize-root r) (meta v))]))
+  (let [[l r] (ropetree/normalize-split-parts
+                (ropetree/rope-split-at (rope-root v) (long i)))]
+    [(Rope. l (meta v))
+     (Rope. r (meta v))]))
 
 (defn subrope
   [v start end]
   (let [n (count v)]
     (when (or (neg? start) (neg? end) (> start end) (> end n))
       (throw (IndexOutOfBoundsException.)))
-    (RopeSlice. (rope-root v) (long start) (long end) (meta v))))
+    (RopeSlice. (ropetree/rope-subvec-root (rope-root v) start end) (meta v))))
 
 (defn insert-rope-at
   [v i inserted]

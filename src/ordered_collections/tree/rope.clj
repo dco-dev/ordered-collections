@@ -10,8 +10,8 @@
             [ordered-collections.tree.tree :as tree]))
 
 
- (def ^:const +target-chunk-size+ 64)
- (def ^:const +min-chunk-size+    32)
+ (def ^:const +target-chunk-size+ 256)
+ (def ^:const +min-chunk-size+    128)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Rope Node Basics
@@ -79,13 +79,29 @@
     nil
     (chunks->root (normalize-chunks (root->chunks root)))))
 
+(defn- normalize-boundary-chunks
+  [left-chunk right-chunk]
+  (let [lc (count left-chunk)
+        rc (count right-chunk)]
+    (if (and (<= lc +target-chunk-size+)
+             (<= rc +target-chunk-size+)
+             (>= lc +min-chunk-size+)
+             (>= rc +min-chunk-size+))
+      [left-chunk right-chunk]
+      (normalize-chunks [left-chunk right-chunk]))))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Structural Concatenation
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defn- rope-remove-greatest
+  [n]
+  (let [create rope-node-create]
+    (letfn [(rm-greatest [n]
+              (cond
+                (leaf? n)      (throw (ex-info "remove-greatest: empty rope" {:node n}))
+                (leaf? (-r n)) (-l n)
+                :else          (tree/node-stitch (-k n) nil (-l n)
+                                 (rm-greatest (-r n)) create)))]
+      (rm-greatest n))))
 
-(defn rope-concat
-  "Concatenate two rope trees, preserving left-before-right order."
+(defn- raw-rope-concat
   [l r]
   (let [create rope-node-create]
     (letfn [(cat [l r]
@@ -114,6 +130,59 @@
                         (tree/node-remove-least r create)
                         create))))))]
       (cat l r))))
+
+(defn- normalize-right-fringe
+  [root]
+  (if (leaf? root)
+    root
+    (let [last (node-chunk (tree/node-greatest root))
+          rest (rope-remove-greatest root)]
+      (if (or (>= (count last) +min-chunk-size+)
+              (leaf? rest))
+        root
+        (let [create rope-node-create
+              prev   (node-chunk (tree/node-greatest rest))
+              rest2  (rope-remove-greatest rest)
+              mid    (chunks->root (normalize-boundary-chunks prev last))]
+          (raw-rope-concat rest2 mid))))))
+
+(defn- normalize-left-fringe
+  [root]
+  (if (leaf? root)
+    root
+    (let [create rope-node-create
+          first  (node-chunk (tree/node-least root))
+          rest   (tree/node-remove-least root create)]
+      (if (or (>= (count first) +min-chunk-size+)
+              (leaf? rest))
+        root
+        (let [next   (node-chunk (tree/node-least rest))
+              rest2  (tree/node-remove-least rest create)
+              mid    (chunks->root (normalize-boundary-chunks first next))]
+          (raw-rope-concat mid rest2))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Structural Concatenation
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn rope-concat
+  "Concatenate two rope trees, preserving left-before-right order."
+  [l r]
+  (cond
+    (leaf? l) r
+    (leaf? r) l
+    :else
+    (let [create   rope-node-create
+          lchunk   (node-chunk (tree/node-greatest l))
+          rchunk   (node-chunk (tree/node-least r))
+          adjusted (normalize-boundary-chunks lchunk rchunk)]
+      (if (= adjusted [lchunk rchunk])
+        (raw-rope-concat l r)
+        (let [l'   (rope-remove-greatest l)
+              r'   (tree/node-remove-least r create)
+              mid  (chunks->root adjusted)]
+          (raw-rope-concat (raw-rope-concat l' mid) r'))))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -209,6 +278,11 @@
   (let [[_ right]  (rope-split-at root start)
         [mid _]    (rope-split-at right (- end start))]
     mid))
+
+(defn normalize-split-parts
+  [[l r]]
+  [(normalize-right-fringe l)
+   (normalize-left-fringe r)])
 
 (defn rope-peek-right
   [root]

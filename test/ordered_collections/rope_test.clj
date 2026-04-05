@@ -1,5 +1,10 @@
 (ns ordered-collections.rope-test
   (:require [clojure.test :refer :all]
+            [clojure.test.check.clojure-test :refer [defspec]]
+            [clojure.test.check.generators :as gen]
+            [clojure.test.check.properties :as prop]
+            [ordered-collections.tree.rope :as ropetree]
+            [ordered-collections.test-utils :as tu]
             [ordered-collections.types.rope :as rope]))
 
 
@@ -77,18 +82,17 @@
   (let [r (rope/rope (range 130))]
     (is (= 130 (count r)))
     (is (= (range 130) (vec r)))
-    (is (= [(vec (range 64))
-            (vec (range 64 128))
-            (vec (range 128 130))]
+    (is (= [(vec (range 130))]
           (vec (rope/rope-chunks r))))
-    (is (= 3 (rope/chunk-count r)))
+    (is (= 1 (rope/chunk-count r)))
     (is (= (range 60 70) (vec (rope/subrope r 60 70))))
-    (let [[l rr] (rope/split-rope-at r 64)]
-      (is (= (range 64) (vec l)))
-      (is (= (range 64 130) (vec rr))))
-    (let [[l rr] (rope/split-rope-at r 65)]
-      (is (= (range 65) (vec l)))
-      (is (= (range 65 130) (vec rr))))
+    (let [split ropetree/+min-chunk-size+]
+      (let [[l rr] (rope/split-rope-at r split)]
+        (is (= (range split) (vec l)))
+        (is (= (range split 130) (vec rr))))
+      (let [[l rr] (rope/split-rope-at r (inc split))]
+        (is (= (range (inc split)) (vec l)))
+        (is (= (range (inc split) 130) (vec rr)))))
     (is (= (range 140)
           (vec (reduce conj r (range 130 140)))))))
 
@@ -110,8 +114,8 @@
 (deftest rope-normalization-and-chunk-iteration
   (let [tiny (reduce rope/concat-rope (map #(rope/rope [%]) (range 130)))]
     (is (= (range 130) (vec tiny)))
-    (is (= [64 64 2] (mapv count (rope/rope-chunks tiny))))
-    (is (= [2 64 64] (mapv count (rope/rope-chunks-reverse tiny))))))
+    (is (= [130] (mapv count (rope/rope-chunks tiny))))
+    (is (= [130] (mapv count (rope/rope-chunks-reverse tiny))))))
 
 (deftest rope-slice-view
   (let [r  (rope/rope (range 20))
@@ -128,5 +132,87 @@
           (vec (assoc (rope/rope (vec sv)) 2 :x))))
     (is (= (range 5 15)
           (vec (rope/concat-rope sv (rope/rope [])))))
+    (is (= [0 1 2 3 4 5 6 7 8 9 10 11]
+          (vec (rope/concat-rope (rope/rope (range 5))
+                 (rope/subrope (rope/rope (range 20)) 5 12)))))
+    (is (= [5 6 :a :b 10 11 12 13 14]
+          (vec (rope/splice-rope sv 2 5 [:a :b]))))
     (is (= (range 7 12)
           (vec (rope/subrope sv 2 7)))))) 
+
+(deftest rope-chunk-shape-invariants
+  (let [tiny  (reduce rope/concat-rope (map #(rope/rope [%]) (range 1000)))
+        sizes (mapv count (rope/rope-chunks tiny))]
+    (is (= (range 1000) (vec tiny)))
+    (is (every? pos? sizes))
+    (is (every? #(<= % ropetree/+target-chunk-size+) sizes))
+    (is (<= (count (filter #(< % ropetree/+min-chunk-size+) sizes)) 1))
+    (is (<= (count sizes) 4))))
+
+(defn- clamp-index
+  [n i]
+  (min n (max 0 i)))
+
+(defn- apply-rope-op
+  [r [op a b c]]
+  (case op
+    :insert
+    (let [i (clamp-index (count r) a)]
+      (rope/insert-rope-at r i b))
+
+    :insert-many
+    (let [i (clamp-index (count r) a)]
+      (rope/insert-rope-at r i b))
+
+    :remove
+    (let [n (count r)
+          lo (clamp-index n a)
+          hi (clamp-index n b)]
+      (rope/remove-rope-range r lo hi))
+
+    :splice
+    (let [n (count r)
+          lo (clamp-index n a)
+          hi (clamp-index n b)]
+      (rope/splice-rope r lo hi c))
+
+    :subrope
+    (let [n (count r)
+          lo (clamp-index n a)
+          hi (clamp-index n b)]
+      (rope/subrope r lo hi))))
+
+(defn- apply-vector-op
+  [v [op a b c]]
+  (case op
+    :insert
+    (let [i (clamp-index (count v) a)]
+      (vec (concat (subvec v 0 i) b (subvec v i))))
+
+    :insert-many
+    (let [i (clamp-index (count v) a)]
+      (vec (concat (subvec v 0 i) b (subvec v i))))
+
+    :remove
+    (let [n  (count v)
+          lo (clamp-index n a)
+          hi (clamp-index n b)]
+      (vec (concat (subvec v 0 lo) (subvec v hi))))
+
+    :splice
+    (let [n  (count v)
+          lo (clamp-index n a)
+          hi (clamp-index n b)]
+      (vec (concat (subvec v 0 lo) c (subvec v hi))))
+
+    :subrope
+    (let [n  (count v)
+          lo (clamp-index n a)
+          hi (clamp-index n b)]
+      (subvec v lo hi))))
+
+(defspec prop-rope-random-edit-sequences 100
+  (prop/for-all [xs  (gen/vector gen/small-integer 0 40)
+                 ops tu/gen-rope-ops]
+    (= (reduce apply-vector-op (vec xs) ops)
+       (vec (reduce apply-rope-op (rope/rope xs) ops)))))
