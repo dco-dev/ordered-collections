@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="360" viewBox="0 0 900 360" role="img" aria-labelledby="title desc">
+  <title id="title">Structural wins</title>
+  <desc id="desc">Grouped bar chart showing split-key, frequency fold, and map construction speedups across 10K, 100K, and 500K.</desc>
+  <style>
+    .bg { fill: #faf8f1; }
+    .title { font: 700 24px Georgia, serif; fill: #191919; }
+    .subtitle { font: 13px Georgia, serif; fill: #615f58; }
+    .axis { stroke: #bdb5a7; stroke-width: 1; }
+    .grid { stroke: #e9e3d8; stroke-width: 1; }
+    .tick { font: 11px Menlo, monospace; fill: #605d57; }
+    .label { font: 13px Georgia, serif; fill: #2b2a27; }
+    .value { font: 11px Menlo, monospace; fill: #222; }
+    .split { fill: #3d8b74; }
+    .fold { fill: #4c7fc1; }
+    .construct { fill: #c67b39; }
+  </style>
+  <rect class="bg" width="900" height="360"/>
+  <text class="title" x="28" y="34">Structural Wins</text>
+  <text class="subtitle" x="28" y="56">Operations that most directly reflect the tree design: split/join, subtree metadata, and batch construction.</text>
+
+  <line class="axis" x1="80" y1="300" x2="860" y2="300"/>
+  <line class="axis" x1="80" y1="90" x2="80" y2="300"/>
+  <line class="grid" x1="80" y1="258" x2="860" y2="258"/>
+  <line class="grid" x1="80" y1="216" x2="860" y2="216"/>
+  <line class="grid" x1="80" y1="174" x2="860" y2="174"/>
+  <line class="grid" x1="80" y1="132" x2="860" y2="132"/>
+  <text class="tick" x="48" y="304">0x</text>
+  <text class="tick" x="42" y="262">2x</text>
+  <text class="tick" x="42" y="220">4x</text>
+  <text class="tick" x="42" y="178">6x</text>
+  <text class="tick" x="42" y="136">8x</text>
+
+  <text class="label" x="170" y="324">10K</text>
+  <text class="label" x="430" y="324">100K</text>
+  <text class="label" x="700" y="324">500K</text>
+
+  <rect class="split" x="140" y="122" width="46" height="178" rx="4"/>
+  <rect class="fold" x="192" y="219" width="46" height="81" rx="4"/>
+  <rect class="construct" x="244" y="253" width="46" height="47" rx="4"/>
+  <text class="value" x="146" y="116">6.8x</text>
+  <text class="value" x="198" y="213">3.8x</text>
+  <text class="value" x="250" y="247">2.1x</text>
+
+  <rect class="split" x="400" y="111" width="46" height="189" rx="4"/>
+  <rect class="fold" x="452" y="187" width="46" height="113" rx="4"/>
+  <rect class="construct" x="504" y="269" width="46" height="31" rx="4"/>
+  <text class="value" x="406" y="105">7.2x</text>
+  <text class="value" x="458" y="181">5.4x</text>
+  <text class="value" x="510" y="263">1.9x</text>
+
+  <rect class="split" x="660" y="95" width="46" height="205" rx="4"/>
+  <rect class="fold" x="712" y="172" width="46" height="128" rx="4"/>
+  <rect class="construct" x="764" y="252" width="46" height="48" rx="4"/>
+  <text class="value" x="666" y="89">7.8x</text>
+  <text class="value" x="718" y="166">6.1x</text>
+  <text class="value" x="770" y="246">2.3x</text>
+
+  <rect class="split" x="120" y="28" width="12" height="12" rx="2"/><text class="label" x="138" y="39">split-key vs data.avl</text>
+  <rect class="fold" x="300" y="28" width="12" height="12" rx="2"/><text class="label" x="318" y="39">freq-map fold vs data.avl fold</text>
+  <rect class="construct" x="570" y="28" width="12" height="12" rx="2"/><text class="label" x="588" y="39">map construction vs sorted-map</text>
+</svg>

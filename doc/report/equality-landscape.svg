@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="360" viewBox="0 0 900 360" role="img" aria-labelledby="title desc">
+  <title id="title">Equality landscape</title>
+  <desc id="desc">Heatmap-like matrix showing ordered-set speedups over hash-set, sorted-set, and data.avl for equal and one-different equality workloads at 10K, 100K, and 500K.</desc>
+  <style>
+    .bg { fill: #faf8f1; }
+    .title { font: 700 24px Georgia, serif; fill: #191919; }
+    .subtitle { font: 13px Georgia, serif; fill: #615f58; }
+    .hdr { font: 700 13px Georgia, serif; fill: #23211d; }
+    .row { font: 12px Menlo, monospace; fill: #2f2d29; }
+    .val { font: 700 13px Menlo, monospace; fill: #111; }
+    .grid { stroke: #ddd6c7; stroke-width: 1; }
+    .c1 { fill: #eef4df; }
+    .c2 { fill: #d9ecc7; }
+    .c3 { fill: #b7ddb3; }
+    .c4 { fill: #8ecb9f; }
+    .c5 { fill: #61b58d; }
+  </style>
+  <rect class="bg" width="900" height="360"/>
+  <text class="title" x="28" y="34">Equality Landscape</text>
+  <text class="subtitle" x="28" y="56">Cells show competitor time divided by ordered-set time. Darker means ordered-set is further ahead.</text>
+
+  <text class="hdr" x="210" y="92">10K</text>
+  <text class="hdr" x="420" y="92">100K</text>
+  <text class="hdr" x="640" y="92">500K</text>
+  <text class="hdr" x="105" y="124">equal</text>
+  <text class="hdr" x="88" y="238">one-different</text>
+
+  <text class="row" x="28" y="154">vs hash-set</text>
+  <text class="row" x="28" y="184">vs sorted-set</text>
+  <text class="row" x="28" y="214">vs data.avl</text>
+  <text class="row" x="28" y="268">vs hash-set</text>
+  <text class="row" x="28" y="298">vs sorted-set</text>
+  <text class="row" x="28" y="328">vs data.avl</text>
+
+  <g>
+    <rect class="c2" x="180" y="132" width="150" height="24" rx="4"/><text class="val" x="235" y="149">2.8x</text>
+    <rect class="c4" x="180" y="162" width="150" height="24" rx="4"/><text class="val" x="231" y="179">12.0x</text>
+    <rect class="c4" x="180" y="192" width="150" height="24" rx="4"/><text class="val" x="231" y="209">14.1x</text>
+
+    <rect class="c2" x="390" y="132" width="150" height="24" rx="4"/><text class="val" x="445" y="149">2.3x</text>
+    <rect class="c4" x="390" y="162" width="150" height="24" rx="4"/><text class="val" x="441" y="179">9.3x</text>
+    <rect class="c4" x="390" y="192" width="150" height="24" rx="4"/><text class="val" x="441" y="209">9.5x</text>
+
+    <rect class="c2" x="610" y="132" width="150" height="24" rx="4"/><text class="val" x="665" y="149">2.3x</text>
+    <rect class="c4" x="610" y="162" width="150" height="24" rx="4"/><text class="val" x="661" y="179">11.3x</text>
+    <rect class="c4" x="610" y="192" width="150" height="24" rx="4"/><text class="val" x="661" y="209">11.5x</text>
+
+    <rect class="c1" x="180" y="246" width="150" height="24" rx="4"/><text class="val" x="235" y="263">1.0x</text>
+    <rect class="c4" x="180" y="276" width="150" height="24" rx="4"/><text class="val" x="231" y="293">12.5x</text>
+    <rect class="c4" x="180" y="306" width="150" height="24" rx="4"/><text class="val" x="231" y="323">14.1x</text>
+
+    <rect class="c1" x="390" y="246" width="150" height="24" rx="4"/><text class="val" x="445" y="263">0.3x</text>
+    <rect class="c4" x="390" y="276" width="150" height="24" rx="4"/><text class="val" x="441" y="293">13.7x</text>
+    <rect class="c4" x="390" y="306" width="150" height="24" rx="4"/><text class="val" x="441" y="323">13.9x</text>
+
+    <rect class="c2" x="610" y="246" width="150" height="24" rx="4"/><text class="val" x="665" y="263">2.3x</text>
+    <rect class="c4" x="610" y="276" width="150" height="24" rx="4"/><text class="val" x="661" y="293">12.8x</text>
+    <rect class="c4" x="610" y="306" width="150" height="24" rx="4"/><text class="val" x="661" y="323">13.4x</text>
+  </g>
+
+  <rect class="grid" x="180" y="132" width="150" height="198" fill="none"/>
+  <rect class="grid" x="390" y="132" width="150" height="198" fill="none"/>
+  <rect class="grid" x="610" y="132" width="150" height="198" fill="none"/>
+</svg>
