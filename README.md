@@ -68,9 +68,9 @@ hood — and in the new things you can do.
 
 Across the measured workloads, `ordered-collections` is faster than
 both `clojure.core/sorted-set` and `clojure.data.avl` at every
-cardinality  Set algebra is the standout, with 30-46x wins at 500K.
+cardinality  Set algebra is the standout, with 28-57x wins at 500K.
 Even against unordered `clojure.core/set`the benchmarks still show
-roughly 4-24x wins.
+roughly 4-19x wins.
 
 ### Set algebra (speedup)
 
@@ -78,41 +78,41 @@ roughly 4-24x wins.
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **13.9x** | **22.4x** | **44.3x** |
-| Intersection | **8.7x** | **15.8x** | **32.4x** |
-| Difference | **9.4x** | **21.7x** | **46.1x** |
+| Union | **15.4x** | **26.4x** | **56.6x** |
+| Intersection | **9.0x** | **17.0x** | **36.2x** |
+| Difference | **9.6x** | **22.1x** | **50.2x** |
 
 #### vs clojure.data.avl
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **11.5x** | **19.3x** | **39.6x** |
-| Intersection | **7.2x** | **13.5x** | **27.5x** |
-| Difference | **7.3x** | **13.6x** | **32.3x** |
+| Union | **10.9x** | **20.5x** | **42.1x** |
+| Intersection | **7.2x** | **13.0x** | **28.1x** |
+| Difference | **7.2x** | **12.7x** | **32.0x** |
 
 #### vs clojure.core/set
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **4.1x** | **7.3x** | **19.7x** |
-| Intersection | **4.3x** | **7.6x** | **17.3x** |
-| Difference | **5.1x** | **9.2x** | **24.2x** |
+| Union | **4.2x** | **7.2x** | **16.3x** |
+| Intersection | **3.8x** | **6.1x** | **12.9x** |
+| Difference | **4.4x** | **7.6x** | **18.6x** |
 
 ### Set equality
 
 | | vs hash-set | vs sorted-set | vs data.avl |
 |--|------------:|--------------:|------------:|
-| N=10K | **2.4x** | **8.2x** | **9.7x** |
-| N=100K | **3.2x** | **9.7x** | **11.2x** |
+| N=10K | **2.8x** | **12.0x** | **14.1x** |
+| N=100K | **2.3x** | **9.3x** | **9.5x** |
 
 ### Other operations
 
 | Operation | vs sorted-set | vs data.avl |
 |-----------|---------------|-------------|
-| Construction | **2.9x / 2.8x / 2.7x** | **1.5x / 1.4x / 1.5x** |
-| Lookup | 1.3x / 1.2x / 1.2x | 1.0x / 1.0x / 1.0x |
-| Split | — | **3.1x / 3.6x / 3.7x** |
-| Fold | **3.7x / 7.3x / 9.7x** | 1.0x / **3.0x / 3.4x** |
+| Construction | **3.0x / 2.8x / 3.1x** | **1.5x / 1.3x / 1.7x** |
+| Lookup | 1.1x / 1.1x / 1.1x | 1.0x / 1.0x / 1.0x |
+| Split | — | **6.8x / 7.2x / 7.8x** |
+| Fold | **2.5x / 4.1x / 4.1x** | **5.8x / 5.9x / 8.8x** |
 
 *Benchmarked on a 2023 MacBook Pro (M2). See [Benchmarks](doc/benchmarks.md) for full results.*
 

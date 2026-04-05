@@ -54,17 +54,17 @@ to larger multicore workloads.
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **13.9x** | **22.4x** | **44.3x** |
-| Intersection | **8.7x** | **15.8x** | **32.4x** |
-| Difference | **9.4x** | **21.7x** | **46.1x** |
+| Union | **15.4x** | **26.4x** | **56.6x** |
+| Intersection | **9.0x** | **17.0x** | **36.2x** |
+| Difference | **9.6x** | **22.1x** | **50.2x** |
 
 ### vs data.avl (speedup)
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **11.5x** | **19.3x** | **39.6x** |
-| Intersection | **7.2x** | **13.5x** | **27.5x** |
-| Difference | **7.3x** | **13.6x** | **32.3x** |
+| Union | **10.9x** | **20.5x** | **42.1x** |
+| Intersection | **7.2x** | **13.0x** | **28.1x** |
+| Difference | **7.2x** | **12.7x** | **32.0x** |
 
 Interpretation:
 - against `sorted-set`, the gap is mainly algorithmic: generic `clojure.set`
@@ -82,41 +82,41 @@ current split/join implementation still wins decisively.
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **4.1x** | **7.3x** | **19.7x** |
-| Intersection | **4.3x** | **7.6x** | **17.3x** |
-| Difference | **5.1x** | **9.2x** | **24.2x** |
+| Union | **4.2x** | **7.2x** | **16.3x** |
+| Intersection | **3.8x** | **6.1x** | **12.9x** |
+| Difference | **4.4x** | **7.6x** | **18.6x** |
 
 ### Raw times (ms)
 
 | Operation | N | sorted-set | data.avl | ordered-set |
 |-----------|---|----------:|----------:|----------:|
-| Union | 10K | 3.09 | 2.55 | **0.22** |
-| | 100K | 38.23 | 33.03 | **1.71** |
-| | 500K | 207.15 | 184.85 | **4.67** |
-| Intersection | 10K | 2.14 | 1.78 | **0.25** |
-| | 100K | 27.14 | 23.29 | **1.72** |
-| | 500K | 145.60 | 123.64 | **4.49** |
-| Difference | 10K | 1.84 | 1.44 | **0.20** |
-| | 100K | 28.21 | 17.63 | **1.30** |
-| | 500K | 136.14 | 95.32 | **2.95** |
+| Union | 10K | 3.63 | 2.56 | **0.24** |
+| | 100K | 42.71 | 33.27 | **1.62** |
+| | 500K | 246.60 | 183.40 | **4.36** |
+| Intersection | 10K | 2.32 | 1.85 | **0.26** |
+| | 100K | 30.36 | 23.25 | **1.79** |
+| | 500K | 170.02 | 131.96 | **4.70** |
+| Difference | 10K | 2.02 | 1.51 | **0.21** |
+| | 100K | 30.70 | 17.71 | **1.39** |
+| | 500K | 156.97 | 100.24 | **3.13** |
 
 ### Raw times vs clojure.set on hash-set (ms)
 
 | Operation | N | clojure.set/hash-set | ordered-set |
 |-----------|---|---------------------:|------------:|
-| Union | 10K | 0.89 | **0.21** |
-| | 100K | 10.94 | **1.50** |
-| | 500K | 70.94 | **3.61** |
-| Intersection | 10K | 0.95 | **0.22** |
-| | 100K | 11.90 | **1.56** |
-| | 500K | 64.85 | **3.75** |
-| Difference | 10K | 0.87 | **0.17** |
-| | 100K | 10.38 | **1.13** |
-| | 500K | 57.86 | **2.40** |
+| Union | 10K | 1.00 | **0.24** |
+| | 100K | 11.65 | **1.62** |
+| | 500K | 70.93 | **4.36** |
+| Intersection | 10K | 0.98 | **0.26** |
+| | 100K | 10.85 | **1.79** |
+| | 500K | 60.70 | **4.70** |
+| Difference | 10K | 0.91 | **0.21** |
+| | 100K | 10.51 | **1.39** |
+| | 500K | 58.12 | **3.13** |
 
 ## Fold (r/fold)
 
-Chunked parallel fold via `r/fold`. The tree is split into equal subtrees and folded in parallel. sorted-set and data.avl fall back to sequential reduce.
+Parallel fold via `r/fold`. The tree is split into equal subtrees and folded in parallel. sorted-set and data.avl fall back to sequential reduce.
 
 Implementation note: `CollFold` is not just delegated blindly to `r/fold`.
 `node-fold` splits the tree eagerly in the caller thread and then folds chunk
@@ -126,11 +126,11 @@ inside worker tasks.
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| sorted-set | 0.31ms | 3.10ms | 15.56ms |
-| data.avl | 0.08ms | 1.26ms | 5.48ms |
-| **ordered-set** | **0.08ms** | **0.42ms** | **1.61ms** |
-| vs sorted-set | **3.7x** | **7.3x** | **9.7x** |
-| vs data.avl | 1.0x | **3.0x** | **3.4x** |
+| sorted-set | 0.33ms | 3.02ms | 16.37ms |
+| data.avl | 0.76ms | 4.34ms | 35.04ms |
+| **ordered-set** | **0.13ms** | **0.73ms** | **3.97ms** |
+| vs sorted-set | **2.5x** | **4.1x** | **4.1x** |
+| vs data.avl | **5.8x** | **5.9x** | **8.8x** |
 
 ## Construction
 
@@ -142,11 +142,11 @@ separately below.
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| sorted-set | 4.52ms | 72.12ms | 530.02ms |
-| data.avl | 2.32ms | 35.56ms | 297.27ms |
-| **ordered-set** | **1.56ms** | **25.71ms** | **194.96ms** |
-| vs sorted-set | **2.9x** | **2.8x** | **2.7x** |
-| vs data.avl | **1.5x** | **1.4x** | **1.5x** |
+| sorted-set | 4.65ms | 75.02ms | 542.18ms |
+| data.avl | 2.33ms | 35.16ms | 291.11ms |
+| **ordered-set** | **1.55ms** | **26.34ms** | **172.21ms** |
+| vs sorted-set | **3.0x** | **2.8x** | **3.1x** |
+| vs data.avl | **1.5x** | **1.3x** | **1.7x** |
 
 ## Split
 
@@ -157,9 +157,9 @@ composes trivially after join; AVL trees must recompute heights bottom-up.
 
 | | N=10K | N=100K | N=500K |
 |--|------:|-------:|-------:|
-| data.avl | 0.42ms | 0.68ms | 0.93ms |
-| **ordered-set** | **0.14ms** | **0.19ms** | **0.25ms** |
-| vs data.avl | **3.1x** | **3.6x** | **3.7x** |
+| data.avl | 0.45ms | 0.68ms | 0.96ms |
+| **ordered-set** | **0.07ms** | **0.09ms** | **0.12ms** |
+| vs data.avl | **6.8x** | **7.2x** | **7.8x** |
 
 ## Lookup
 
@@ -203,35 +203,36 @@ interesting.
 
 | | N=1K | N=10K | N=100K |
 |--|-----:|------:|-------:|
-| hash-set | 0.08ms | 0.31ms | 3.98ms |
-| sorted-set | 0.13ms | 1.03ms | 11.87ms |
-| data.avl | 0.15ms | 1.22ms | 13.77ms |
-| ordered-set | 0.27ms | 0.13ms | 1.23ms |
-| vs hash-set | 0.3x | **2.4x** | **3.2x** |
-| vs sorted-set | 0.5x | **8.2x** | **9.7x** |
-| vs data.avl | 0.6x | **9.7x** | **11.2x** |
+| hash-set | 0.03ms | 0.28ms | 3.66ms |
+| sorted-set | 0.10ms | 1.19ms | 14.80ms |
+| data.avl | 0.13ms | 1.40ms | 15.10ms |
+| ordered-set | 0.01ms | 0.10ms | 1.59ms |
+| vs hash-set | **3.4x** | **2.8x** | **2.3x** |
+| vs sorted-set | **11.3x** | **12.0x** | **9.3x** |
+| vs data.avl | **14.0x** | **14.1x** | **9.5x** |
 
 Interpretation:
 
-- at `1K`, hash-set and sorted-set are still cheaper
+- by `1K`, ordered-set is already competitive to clearly faster on equal-set comparison
 - by `10K`, ordered-set's direct ordered comparison path is clearly better
-- by `100K`, ordered-set is several times faster than hash-set and roughly an
-  order of magnitude faster than sorted-set and data.avl
+- by `100K`, ordered-set is still several times faster than hash-set and about
+  an order of magnitude faster than sorted-set and data.avl
 
 ### Same size, one different element
 
 | | N=1K | N=10K | N=100K |
 |--|-----:|------:|-------:|
-| hash-set | 0.02ms | 0.15ms | 0.38ms |
-| sorted-set | 0.10ms | 1.05ms | 11.96ms |
-| data.avl | 0.12ms | 1.35ms | 14.51ms |
-| ordered-set | 0.06ms | 0.43ms | 0.13ms |
+| hash-set | 0.01ms | 0.10ms | 0.33ms |
+| sorted-set | 0.10ms | 1.20ms | 14.93ms |
+| data.avl | 0.11ms | 1.36ms | 15.07ms |
+| ordered-set | 0.01ms | 0.10ms | 1.09ms |
 
 Interpretation:
 
-- hash-set still wins the small and medium unequal cases
+- hash-set still wins the unequal cases at larger sizes
 - ordered-set still substantially beats sorted-set and data.avl
-- at `100K`, ordered-set also beats hash-set on this near-miss workload
+- ordered-set is still in the same practical tier at `10K`, then well ahead of
+  the ordered competitors by `100K`
 
 This is a good example of where direct ordered traversal helps beyond set
 algebra itself: once sets are large enough, the library can compare two

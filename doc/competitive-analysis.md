@@ -75,7 +75,10 @@ traverses only the right spine of the tree.
 
 ### Parallel Fold
 
-ordered-collections implements `clojure.core.reducers/CollFold` by splitting the tree into larger chunks and delegating those chunks to `r/fold`. The implementation enforces a minimum chunk size of 4,096 to keep tree-splitting overhead under control.
+ordered-collections implements `clojure.core.reducers/CollFold` by splitting
+the tree into larger chunks and delegating those chunks to `r/fold`. Chunking
+follows the `r/fold` granularity provided by the caller rather than imposing a
+separate library-level floor.
 
 sorted-set and data.avl fall back to sequential reduce.
 
