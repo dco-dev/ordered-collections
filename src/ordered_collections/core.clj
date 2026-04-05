@@ -556,13 +556,22 @@
    (multiset/ordered-multiset coll)))
 
 (defn ordered-multiset-by
-  "Create an ordered multiset with a custom comparator.
+  "Create an ordered multiset with custom ordering via a predicate.
 
   Example:
-    (ordered-multiset-by > [3 1 4 1 5])
-    ;; => #OrderedMultiset[5 4 3 1 1]"
-  [comparator coll]
-  (multiset/ordered-multiset-by comparator coll))
+    (ordered-multiset-by > [3 1 4 1 5])"
+  [pred coll]
+  (multiset/ordered-multiset-by pred coll))
+
+(defn ordered-multiset-with
+  "Create an ordered multiset with a custom java.util.Comparator.
+
+  Example:
+    (ordered-multiset-with long-compare [3 1 4 1 5])"
+  ([^java.util.Comparator comparator]
+   (multiset/ordered-multiset-with comparator))
+  ([^java.util.Comparator comparator coll]
+   (multiset/ordered-multiset-with comparator coll)))
 
 (defalias multiplicity
   "Return the number of occurrences of x in a multiset.
