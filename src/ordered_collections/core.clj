@@ -786,11 +786,11 @@
 
 (defalias ranges
   "Return seq of [range value] pairs from a range-map."
-  rmap/ranges)
+  proto/ranges)
 
 (defalias gaps
   "Return a seq of [lo hi) ranges that have no mapping in a range-map."
-  rmap/gaps)
+  proto/gaps)
 
 (defalias assoc-coalescing
   "Insert range with coalescing. Adjacent ranges with the same value
@@ -804,7 +804,7 @@
          (assoc-coalescing [0 100] :a)
          (assoc-coalescing [100 200] :a))
      ;; => single range [0 200) :a"
-  rmap/assoc-coalescing)
+  proto/assoc-coalescing)
 
 (defalias get-entry
   "Return [range value] for the range containing point x, or nil.
@@ -812,7 +812,7 @@
 
    Example:
      (get-entry rm 50) ;; => [[0 100] :a]"
-  rmap/get-entry)
+  proto/get-entry)
 
 (defalias range-remove
   "Remove all mappings in the given range [lo hi).
@@ -822,7 +822,7 @@
    Example:
      (range-remove rm [25 75])
      ;; [0 100]:a becomes [0 25):a and [75 100):a"
-  rmap/range-remove)
+  proto/range-remove)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Segment Tree
