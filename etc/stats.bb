@@ -122,6 +122,47 @@
            (re-seq #"deftype\s+")
            count))
 
+;; clj-kondo analysis (exit code 2/3 = lint warnings, not failure)
+(def kondo-available? (some? (sh! "clj-kondo" "--version")))
+
+(def analysis
+  (when kondo-available?
+    (let [{:keys [out]} (sh "clj-kondo" "--lint" (path "src")
+                            "--config" "{:output {:analysis {:var-definitions {:meta true}} :format :edn}}"
+                            :dir root)]
+      (some-> out clojure.edn/read-string :analysis))))
+
+(def var-defs      (:var-definitions analysis))
+(def ns-defs       (:namespace-definitions analysis))
+(def var-usages    (:var-usages analysis))
+
+;; Vars per namespace (top 5)
+(def vars-per-ns
+  (when var-defs
+    (->> var-defs
+         (group-by :ns)
+         (map (fn [[ns vars]] [(name ns) (count vars)]))
+         (sort-by second >)
+         (take 5))))
+
+;; Public vs private vars
+(def public-var-count  (count (remove :private var-defs)))
+(def private-var-count (count (filter :private var-defs)))
+
+;; Namespace fan-in (who depends on me)
+(def ns-fan-in
+  (when var-usages
+    (let [src-nses (set (map :name ns-defs))]
+      (->> var-usages
+           (filter #(and (src-nses (:to %))
+                         (not= (:from %) (:to %))
+                         (src-nses (:from %))))
+           (map :to)
+           frequencies
+           (map (fn [[ns n]] [(name ns) n]))
+           (sort-by second >)
+           (take 5)))))
+
 ;; Environment
 (def java-version (System/getProperty "java.version"))
 
@@ -146,6 +187,10 @@
 (row "Protocols"            protocol-count)
 (row "Node types"           node-type-count)
 (row "Public API functions"  public-fn-count)
+(when analysis
+  (row "Total var definitions" (count var-defs))
+  (row "  public"              public-var-count)
+  (row "  private"             private-var-count))
 
 (section "Codebase Size")
 (row3 "" "Files" "Lines")
@@ -157,8 +202,25 @@
       (+ (count src-files) (count test-files) (count doc-files) 2)
       (+ src-lines test-lines doc-lines))
 
+(section "Largest Source Files")
+(doseq [[f n] (->> src-files
+                   (map (fn [f] [(last (str/split f #"/")) (count-lines f)]))
+                   (sort-by second >)
+                   (take 5))]
+  (row f n))
+
 (section "Tests")
 (row "Test definitions (deftest + defspec)" test-count)
+
+(when (seq vars-per-ns)
+  (section "Vars per Namespace (top 5)")
+  (doseq [[ns n] vars-per-ns]
+    (row ns n)))
+
+(when (seq ns-fan-in)
+  (section "Most-Depended-On Namespaces")
+  (doseq [[ns n] ns-fan-in]
+    (row ns n)))
 
 (section "Most-Modified Source Files (git churn)")
 (doseq [[f n] churn-data]

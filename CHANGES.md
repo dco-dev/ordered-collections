@@ -13,7 +13,7 @@
 ### New Operations
 
 - **Set algebra**: `union`, `intersection`, `difference`, `subset?`, `superset?`, `disjoint?`
-- **Positional**: `rank-of`, `slice`, `median`, `percentile`
+- **Positional**: `rank`, `slice`, `median`, `percentile`
 - **Navigation**: `nearest` (floor/ceiling with keyword tests `:<=`, `:>=`, `:<`, `:>`), `subrange`, `split-key`, `split-at`
 - **Interval**: `overlapping`, `span`
 - **Range map**: `ranges`, `span`, `gaps`, `assoc-coalescing`, `get-entry`, `range-remove`
@@ -22,60 +22,68 @@
 - **Multiset**: `multiplicity`, `disj-one`, `disj-all`, `distinct-elements`, `element-frequencies`
 - **Fuzzy**: `fuzzy-nearest`, `fuzzy-exact-contains?`, `fuzzy-exact-get`
 - **Map**: `assoc-new`, `ordered-merge-with`
+- **Comparator**: `general-compare` — opt-in total order over all values including non-Comparable types (Namespace, Var, etc.). ~20% slower lookups on Comparable types vs default.
 
 ### Specialized Constructors
 
 - Type-specific: `long-ordered-set`, `long-ordered-map`, `double-ordered-set`, `double-ordered-map`, `string-ordered-set`, `string-ordered-map`
 - Custom comparator: `ordered-set-by`, `ordered-map-by`, `ordered-set-with`, `ordered-map-with`, `ordered-multiset-by`, `fuzzy-set-by`, `fuzzy-map-by`, `segment-tree-by`, `segment-tree-with`
-- Exported comparators: `long-compare`, `double-compare`, `string-compare`, `compare-by`
+- Exported comparators: `long-compare`, `double-compare`, `string-compare`, `general-compare`, `compare-by`
 
 ### Interface Implementations
 
 - `clojure.lang.Sorted` — native `subseq`/`rsubseq` on ordered-set and ordered-map
 - `clojure.core.reducers/CollFold` — chunked parallel fold; ordered-set/map and compatible tree-backed types split into larger chunks before delegating to `r/fold`
+- `clojure.core.protocols/CollReduce` — implemented directly on all collection deftypes for correct fast-path reduction
 - `clojure.lang.IHashEq` — correct `hash` for use in hash-based collections
 - `java.io.Serializable` — Java serialization support
 - `IReduceInit`/`IReduce` — direct tree traversal for fast `reduce`
 - Direct `ISeq` implementations (`KeySeq`, `EntrySeq`) replace lazy-seq wrappers
-- Tree-rooted seq helpers are explicitly named `node-key-seq`, `node-entry-seq`, and reverse variants
 
 ### EDN Tagged Literals
 
-Round-trip serialization via `data_readers.clj`: `#ordered/set`, `#ordered/map`, `#ordered/interval-set`, `#ordered/interval-map`, `#ordered/range-map`, `#ordered/priority-queue`, `#ordered/multiset`.
+Round-trip serialization via `data_readers.clj`: `#ordered/set`, `#ordered/map`, `#ordered/interval-set`, `#ordered/interval-map`, `#ordered/range-map`, `#ordered/priority-queue`, `#ordered/multiset`. Collections with custom comparators (including `general-compare`) print in opaque `#<Type ...>` form to avoid non-round-trippable tagged literals.
 
 ### Performance
 
-- **Parallel set operations** via ForkJoinPool with operation-specific root thresholds (`65,536-131,072`), `65,536` recursive thresholds, and `64` sequential cutoff
+- **Parallel set operations** via ForkJoinPool with operation-specific root thresholds (`65,536–131,072`), `65,536` recursive thresholds, and `64` sequential cutoff
 - **Primitive node types** (`LongKeyNode`, `DoubleKeyNode`) — unboxed key storage
 - **Primitive lookup fast path** — `long-ordered-set` bypasses `Comparator` dispatch
-- Fold benchmarking now includes a non-trivial frequency-map workload comparing `ordered-set` fold against `hash-set` reduce, `sorted-set` fold/reduce, and `data.avl` fold/reduce
-- Benchmark/test infrastructure now shares more common workload generators, reference helpers, and competitor builders via `test-utils` and `bench-utils`
+- **Interval overlap** — `intersects?` reduced from up to 12 comparisons to 2 (closed-interval identity: `a0 <= b1 AND a1 <= b0`)
+- **Reduction refactor** — unary reducers (nodes, keys, entries) share a single enumerator-based kernel; kv reducers remain separate to avoid packing overhead. All support `reduced` short-circuiting.
+- Fold benchmarking includes a non-trivial frequency-map workload comparing `ordered-set` fold against `hash-set` reduce, `sorted-set` fold/reduce, and `data.avl` fold/reduce
+- Benchmark/test infrastructure shares common workload generators, reference helpers, and competitor builders via `test-utils` and `bench-utils`
 
 See [benchmarks](doc/benchmarks.md) for current numbers and analysis.
 
 ### Build
 
-- Added `deps.edn` with aliases: `:dev`, `:test`, `:bench`, `:bench-simple`, `:bench-range-map`, `:bench-parallel`
-- Namespace root is now `ordered-collections.*` / `ordered_collections.*` rather than `com.dean.ordered-collections.*`, and the source/test tree now lives under `src/ordered_collections` and `test/ordered_collections`
+- Namespace root is now `ordered-collections.*` / `ordered_collections.*` rather than `com.dean.ordered-collections.*`
+- Source/test tree lives under `src/ordered_collections` and `test/ordered_collections`
+- `lein stats` — babashka-based project statistics report (clj-kondo analysis, git churn, codebase metrics)
 
 ### Bug Fixes
 
 - `SortedSet.tailSet` now returns elements >= x (was exclusive)
 - `SortedSet.subSet` now returns elements >= from, < to
 - Interval tree construction uses sequential reduce (parallel fold lost dynamic binding for node allocator at >2048 elements)
-- `segment-tree` range queries are generic over ordered keys again rather than assuming integer-only query bounds
-- Priority queue now documents comparator-relative endpoint semantics, uses direct seq adapters instead of lazy `map` wrappers, supports Java serialization in the test suite, and has stronger coverage for duplicate-priority ordering and boundary cases
+- `segment-tree` range queries are generic over ordered keys rather than assuming integer-only query bounds
+- `general-compare` collections print opaque (`#<OrderedSet ...>`) rather than emitting tagged literals that cannot round-trip through EDN
+- Priority queue uses direct seq adapters instead of lazy `map` wrappers; stronger coverage for duplicate-priority ordering and boundary cases
 
 ### Documentation
 
-- Performance documentation is consolidated in `doc/benchmarks.md`; the older separate `perf-analysis.md` document is removed
-- Cookbook examples were refreshed to better match the collection lineup and current semantics, including new `priority-queue` and `ordered-multiset` examples
+- New [Collections API](doc/collections-api.md) — per-type constructor and operation reference
+- [Migration guide](doc/vs-clojure-data-avl.md) corrected (`oc/rank` not `oc/rank-of`)
+- Performance documentation consolidated in `doc/benchmarks.md`; the older `perf-analysis.md` and `when-to-use.md` are removed
+- Cookbook examples refreshed for current semantics
 - Generated `doc/api` output is no longer tracked in the repository
 
 ### Breaking Changes
 
 - **Removed** `mutable-ordered-set`, `mutable-ordered-map`, `mutable-interval-set`, `mutable-interval-map`
 - **Removed** `transient`/`persistent!` support (path-copying made it a no-op)
+- **Renamed** public function: `rank-of` → `rank` (returns `nil` instead of `-1` for missing elements)
 - Public namespace root and Maven/Lein artifact coordinate are now `ordered-collections`
 
 ---
