@@ -17,6 +17,13 @@
 ;; Ordered Map
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; Fields: root, cmp, alloc, stitch, _meta — same layout as OrderedSet.
+;;
+;; Lookup returns values (not nodes). Seq/reduce/nth return MapEntry.
+;; Implements IKVReduce for reduce-kv. The ordered-merge-with function
+;; (defined after the deftype) uses tree-level parallel merge for
+;; compatible maps, sequential assoc fallback otherwise.
+
 (deftype OrderedMap [root cmp alloc stitch _meta]
 
   java.io.Serializable  ;; marker interface for serialization

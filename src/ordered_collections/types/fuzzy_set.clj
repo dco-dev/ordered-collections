@@ -90,6 +90,17 @@
 ;; FuzzySet Type
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; Fields:
+;;   root        — ordered set tree (k = v = element)
+;;   cmp         — element comparator
+;;   distance-fn — (fn [query element] -> number), default numeric |a - b|
+;;   tiebreak    — :< (prefer smaller) or :> (prefer larger) when equidistant
+;;   _meta       — metadata map
+;;
+;; Lookup splits the tree at the query point, compares distances to floor
+;; and ceiling, and returns the nearest. ILookup/IFn return the nearest
+;; element, not a membership test.
+
 (deftype FuzzySet [root cmp distance-fn tiebreak _meta]
 
   java.io.Serializable

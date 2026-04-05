@@ -186,6 +186,16 @@
 ;; RangeMap Type
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; Fields:
+;;   root  — weight-balanced tree keyed by [lo hi] ranges
+;;   cmp   — fixed range-compare (by lower bound); not user-configurable
+;;   _meta — metadata map
+;;
+;; No alloc/stitch fields — uses default SimpleNode throughout.
+;; Does not implement IOrderedCollection; manages *compare* binding
+;; directly. Assoc implements Guava TreeRangeMap carve-out semantics:
+;; collect overlapping ranges, remove them, re-add trimmed portions.
+
 (declare ->RangeMap range-map-assoc rm-ranges rm-get-entry rm-spanning-range rm-gaps rm-range-remove)
 
 (deftype RangeMap [root cmp _meta]

@@ -20,6 +20,12 @@
 ;; Interval Map
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; Fields: root, cmp, alloc, stitch, _meta — same as IntervalSet.
+;;
+;; ILookup/IFn return values for overlapping intervals (not the
+;; intervals themselves). Seq/reduce/nth return MapEntry of [interval value].
+;; Like IntervalSet, requires with-tree-env for augmented node construction.
+
 (deftype IntervalMap [root cmp alloc stitch _meta]
 
   java.io.Serializable

@@ -18,6 +18,20 @@
 ;; Ordered Set
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; Fields:
+;;   root   — weight-balanced tree of elements (k = v = element)
+;;   cmp    — java.util.Comparator for element ordering
+;;   alloc  — node constructor for primitive variants (e.g. node-create-weight-balanced-long)
+;;   stitch — balanced node constructor; paired with alloc
+;;   _meta  — metadata map
+;;
+;; Lookup dispatch uses identity checks on cmp to select primitive-
+;; specialized search (Long, String) before falling back to generic
+;; Comparator. Set algebra operations (union, intersection, difference)
+;; delegate to tree-level parallel/sequential implementations based on
+;; combined size thresholds. Cross-type fallback (e.g. ordered-set vs
+;; hash-set) goes through clojure.set.
+
 (deftype OrderedSet [root cmp alloc stitch _meta]
 
   java.io.Serializable  ;; marker interface for serialization

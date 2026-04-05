@@ -21,6 +21,14 @@
 ;; Interval Set
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; Fields: root, cmp, alloc, stitch, _meta — same shape as OrderedSet.
+;;
+;; Requires with-tree-env (binds both *compare* and *t-join*) because
+;; IntervalNode propagates max-endpoint augmentation (-z) during node
+;; construction. ILookup/IFn return overlapping intervals, not a boolean
+;; membership test. isSimilar returns false — no cross-type fallback to
+;; clojure.set since interval semantics differ from flat set algebra.
+
 (deftype IntervalSet [root cmp alloc stitch _meta]
 
   java.io.Serializable

@@ -85,6 +85,12 @@
 ;; FuzzyMap Type
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; Fields: root, cmp, distance-fn, tiebreak, _meta — same as FuzzySet.
+;;
+;; ILookup/IFn return the value for the nearest key. Seq/reduce/nth
+;; return MapEntry. Implements IKVReduce for reduce-kv. exact-get and
+;; exact-contains? bypass fuzzy matching for precise key access.
+
 (deftype FuzzyMap [root cmp distance-fn tiebreak _meta]
 
   java.io.Serializable

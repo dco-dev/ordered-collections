@@ -117,6 +117,17 @@
 ;; SegmentTree Type
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; Fields:
+;;   root     — tree of AggregateNode (extends SimpleNode with agg field)
+;;   op       — associative binary operation (+, min, max, etc.)
+;;   identity — identity element for op (0 for +, Long/MAX_VALUE for min)
+;;   creator  — node constructor that recomputes agg = op(left.agg, val, right.agg)
+;;   cmp      — key comparator
+;;   _meta    — metadata map
+;;
+;; Range queries split twice and combine cached aggregates — O(log n).
+;; Point updates rebuild aggregates bottom-up via creator.
+
 (declare seg-assoc)
 
 (deftype SegmentTree [root op identity creator cmp _meta]

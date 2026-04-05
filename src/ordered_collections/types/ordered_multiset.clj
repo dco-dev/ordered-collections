@@ -69,6 +69,17 @@
 ;; Ordered Multiset
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; Fields:
+;;   root     — tree of [value seqnum] pairs
+;;   cmp      — MultisetComparator wrapping base-cmp + seqnum tiebreak
+;;   base-cmp — the user's value comparator (stored separately for multiplicity lookups)
+;;   seqnum   — monotonic counter; incremented on each conj
+;;   _meta    — metadata map
+;;
+;; Duplicates are distinguished by seqnum. multiplicity scans for all
+;; entries matching the value via base-cmp. The public API hides seqnum —
+;; seq/reduce/nth expose bare values.
+
 (declare ->OrderedMultiset)
 
 (deftype OrderedMultiset [root ^Comparator cmp ^Comparator base-cmp ^long seqnum _meta]
