@@ -392,7 +392,7 @@
 
 (defmethod print-method OrderedMap [^OrderedMap m ^java.io.Writer w]
   (if (order/default-comparator? (.getCmp ^IOrderedCollection m))
-    (do (.write w "#ordered/map [")
+    (do (.write w "#oc/map [")
         (let [s (seq m)]
           (when s
             (print-method (vec (first s)) w)

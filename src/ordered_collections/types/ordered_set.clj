@@ -411,7 +411,7 @@
 
 (defmethod print-method OrderedSet [^OrderedSet s ^java.io.Writer w]
   (if (order/default-comparator? (.getCmp ^IOrderedCollection s))
-    (do (.write w "#ordered/set ")
+    (do (.write w "#oc/set ")
         (print-method (vec s) w))
     (do (.write w "#<OrderedSet ")
         (print-method (vec s) w)

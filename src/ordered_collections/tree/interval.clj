@@ -54,8 +54,9 @@
   (order/<= (a i0) (a i1) (b i1) (b i0)))
 
 (defn intersects?
-  "returns true if there is any common point between intervals i0 and i1"
+  "returns true if there is any common point between intervals i0 and i1.
+  For closed intervals where a <= b is guaranteed (via ordered-pair),
+  this is equivalent to: a0 <= b1 AND a1 <= b0."
   [i0 i1]
-  (or (overlaps? i0 i1)
-      (includes? i0 i1)
-      (includes? i1 i0)))
+  (and (order/compare<= (a i0) (b i1))
+       (order/compare<= (a i1) (b i0))))
