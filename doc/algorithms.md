@@ -537,6 +537,237 @@ When equidistant, a configurable tiebreaker (`:< ` or `:>`) determines preferenc
 | Range-map assoc | O(k log n) | k = overlapping ranges |
 | Segment-tree query | O(log n) | Pre-computed aggregates |
 | Fuzzy lookup | O(log n) | Split + floor/ceiling |
+| Rope nth | O(log n) | Descent by element counts |
+| Rope concat | O(log n) | Structural join |
+| Rope split | O(log n) | Split-join with concat3 |
+| Rope splice / insert / remove | O(log n) | Split + concat |
+| Rope reduce | O(n) | Chunk-aware traversal |
+| Rope parallel fold | O(n/p + log²n) | Fork-join over split halves |
+
+## Ropes: Implicit-Index Chunk Trees
+
+A rope is a persistent sequence built on the same weight-balanced tree
+infrastructure, but with a fundamentally different indexing model. Where
+ordered sets and maps use a comparator to position elements by key, a rope
+uses **positional indexing** — the element's position in the sequence is
+determined entirely by subtree element counts.
+
+### Node Representation
+
+Each rope node reuses `SimpleNode` with repurposed fields:
+
+```
+        ┌────────────────────────┐
+        │  k: chunk [a b c ...]  │   ← vector of elements (the "chunk")
+        │  v: 1042               │   ← total element count of subtree
+        │  x: 9                  │   ← node count (for WBT balance)
+        │  l: ●  r: ●            │
+        └────────────────────────┘
+```
+
+Two distinct size metrics coexist:
+
+- `tree/node-size` (field `x`) — **node count**, used by WBT rotations
+- `rope-size` (field `v`) — **element count**, used for indexed access
+
+This separation is essential. The tree stays balanced by node count (so all the
+existing rotation machinery works unchanged), while indexed operations descend
+by element count.
+
+### Chunk Size Invariant (CSI)
+
+Chunks are bounded by a formal invariant analogous to B-tree minimum fill:
+
+```
+target = 256    min = 128
+
+Every chunk has size in [min, target] except:
+  - If the rope has ≤ 1 chunk, it may be any size in [1, target]
+  - Otherwise, only the rightmost chunk (the "runt") may be [1, target]
+```
+
+CSI is enforced locally at each mutation site:
+
+| Operation | Enforcement |
+|---|---|
+| `rope-concat` | Position-aware boundary check: l's rightmost becomes internal (must be ≥ min); r's leftmost only needs fixing if r has ≥ 2 chunks. `merge-boundary` pulls one neighbor when combined boundary < min. |
+| `rope-split` | `ensure-split-parts` repairs the right fringe of the left half and the left fringe of the right half. |
+| `rope-sub` | `ensure-left-fringe` + `ensure-right-fringe` after recursive extraction. |
+| `rope-conj-right` | Fills rightmost chunk up to target; overflows to new node. |
+| `coll->root` | `partition-all target` always produces valid chunks. |
+
+`rechunk-balanced` is the core partitioning helper: it packs greedily at target
+size, but when the last full chunk would leave a remainder below min, it splits
+the final two pieces evenly so both halves are ≥ min.
+
+### Indexed Access
+
+`rope-nth` descends by subtree element counts:
+
+```
+rope-nth(node, i):
+  ls = element-count(left)
+  cs = chunk-size(node)
+  if i < ls:            recurse into left
+  if i < ls + cs:       return chunk[i - ls]
+  else:                 recurse into right with i' = i - ls - cs
+```
+
+Cost: O(log n) — one comparison per tree level, then a constant-time vector
+lookup within the chunk.
+
+### Split
+
+`rope-split-at` follows the standard split-join pattern from Blelloch et al.,
+adapted for positional indexing. The key optimization: it uses `rope-join`
+(a concat3 — balanced join with a known pivot chunk) during unwind rather than
+`raw-rope-concat` (concat2, which must extract a pivot).
+
+```
+rope-split(node, i):
+  ls = element-count(left)
+  cs = chunk-size(node)
+
+  if i < ls:
+    (ll, lr) = rope-split(left, i)
+    return (ll, rope-join(chunk, lr, right))    ← concat3, O(|height diff|)
+
+  if i within chunk:
+    split the chunk vector via subvec
+    return (concat(left, left-piece), concat(right-piece, right))
+
+  if i > ls + cs:
+    (rl, rr) = rope-split(right, i - ls - cs)
+    return (rope-join(chunk, left, rl), rr)
+```
+
+`rope-join` is O(|height(l) - height(r)|) per call, and the height differences
+telescope across levels, giving **O(log n) total** for the full split. The
+earlier implementation used concat2 at each level, which was O(log²n).
+
+### Concatenation
+
+`rope-concat` is the rope's fundamental structural operation. For the common
+case (both boundary chunks ≥ min), it delegates directly to `raw-rope-concat`
+— the standard WBT join, O(log n).
+
+When boundary chunks need repair (the left tree's rightmost was a runt that
+now becomes internal), `merge-boundary` removes the two boundary chunks,
+combines them, rechunks, and rebuilds. If the combined content is still below
+min, it pulls one additional neighbor chunk — at most one level of cascading.
+
+### Subrope (Range Extraction)
+
+`rope-sub` does direct recursive range extraction rather than split-twice:
+
+```
+slice(node, start, end):
+  if range fully covers node: return node    ← full subtree sharing
+  left-part  = slice(left,  start, min(end, ls))
+  mid-part   = subvec chunk at boundaries
+  right-part = slice(right, max(0, start-rs), end-rs)
+  return concat(concat(left-part, mid-part), right-part)
+```
+
+This reuses whole subtrees when the requested window fully contains them,
+taking chunk subvecs only at the two cut boundaries. Fringe normalization
+is applied once at the end.
+
+### Transient Tail Buffer
+
+`TransientRope` uses a mutable `ArrayList` as a tail buffer. `conj!` appends
+to the tail in O(1); when the tail reaches target chunk size (256 elements),
+it is flushed into the persistent tree via `rope-concat`. This amortizes tree
+operations over 256 element appends, cutting build time roughly in half
+compared to persistent `conj`.
+
+```
+conj!(transient, x):
+  tail.add(x)
+  if tail.size >= target:
+    chunk = vec(tail)
+    tail.clear()
+    root = rope-concat(root, coll->root(chunk))
+
+persistent!(transient):
+  flush remaining tail
+  return Rope(root)
+```
+
+### Why Not a Comparator?
+
+The rope deliberately avoids the library's `order/*compare*` / `tree/*t-join*`
+dynamic variable hooks. Position is the ordering — there is no meaningful key
+to compare. This means the rope cannot reuse `node-split`, `node-concat3`,
+or the comparator-driven add/remove paths. Instead, it has its own
+position-aware equivalents (`rope-split-at`, `rope-join`, `rope-nth`, etc.)
+that thread through the tree by element count rather than key comparison.
+
+The shared infrastructure it *does* reuse: `node-stitch` (rotation logic),
+`node-weight` (balance metric), `SimpleNode` (storage), and the enumerator /
+reducer machinery for traversal.
+
+### Performance vs PersistentVector
+
+```
+Rope WINS (advantage grows with N):
+
+┌────────────────────┬───────┬────────┬────────┬──────────────────────┐
+│      Workload      │ N=10K │ N=100K │ N=500K │      Asymptotic      │
+├────────────────────┼───────┼────────┼────────┼──────────────────────┤
+│ 200 random edits   │   43x │   498x │  1968x │ O(k·log n) vs O(k·n) │
+│ Single splice      │    6x │   116x │   584x │ O(log n) vs O(n)     │
+│ Concat many pieces │  3.4x │   5.4x │   9.5x │ O(k) vs O(n)         │
+│ Chunk iteration    │   58x │    83x │   117x │ natural structure     │
+│ Reduce (sum)       │  0.4x │   1.7x │   1.3x │ 256-elem chunk wins  │
+└────────────────────┴───────┴────────┴────────┴──────────────────────┘
+
+Rope loses (bounded, inherent O(log n) vs O(1)):
+
+┌────────────────────┬───────┬────────┬────────┐
+│      Workload      │ N=10K │ N=100K │ N=500K │
+├────────────────────┼───────┼────────┼────────┤
+│ Split              │   19x │     7x │    21x │
+│ Slice              │   65x │    51x │    24x │
+│ Random nth (1000)  │  1.6x │   1.9x │   2.5x │
+└────────────────────┴───────┴────────┴────────┘
+```
+
+Reduce beats vectors at N ≥ 100K because the rope's 256-element chunk size
+gives better cache locality per reduction step than PersistentVector's 32-wide
+trie nodes. The direct recursive tree walk (no enumerator frames) and native
+vector `.reduce` delegation keep per-element overhead minimal.
+
+Every remaining loss is structural — there are no non-inherent performance gaps:
+
+```
+┌─────────────────────┬──────────┬───────────────────────────────────────────────────┐
+│        Loss         │  Ratio   │                   Why inherent                    │
+├─────────────────────┼──────────┼───────────────────────────────────────────────────┤
+│ Split/slice         │ ~15-60x  │ O(log n) tree walk vs O(1) subvec wrapper         │
+│ Random nth          │ 1.3-2.6x │ O(log n) tree descent vs O(1) trie lookup         │
+│ Reduce at 10K       │ 0.6x     │ Fixed tree-walk overhead for 39 chunks            │
+│ Build via transient │ 2.2-2.6x │ Periodic O(log n) tree flush vs O(1) array append │
+│ Build via conj      │ 12-18x   │ O(log n) per append vs O(1) amortized             │
+└─────────────────────┴──────────┴───────────────────────────────────────────────────┘
+```
+
+Split/slice/nth are the price of tree-backed indexing — `subvec` wraps the
+existing vector in constant time, while the rope must walk its tree. The
+absolute times are microseconds (5-12µs for split, ~250µs for 1000 random
+nths). Construction is best done via `(oc/rope coll)` which is a single O(n)
+chunking pass, not element-by-element `conj`.
+
+The editing wins are unbounded: each mid-sequence edit on a vector copies O(n)
+elements, while the rope does O(log n) tree work. At 500K elements, 200 random
+edits take 3ms on the rope vs 5.4 seconds on the vector.
+
+### References
+
+- Boehm, Atkinson & Plass (1995): "Ropes: an Alternative to Strings" — the canonical rope paper; lazy concatenation, Fibonacci rebalancing, stack-based iteration
+- Blelloch, Ferizovic & Sun (2016): "Just Join for Parallel Ordered Sets" — the split-join paradigm that the rope's `rope-split-at` / `rope-join` follows
+
+---
 
 ## References
 

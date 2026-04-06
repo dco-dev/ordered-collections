@@ -34,7 +34,6 @@
 
   :aliases {"bench"           ["run" "-m" "ordered-collections.bench-runner"]
              "bench-simple"    ["run" "-m" "ordered-collections.simple-bench"]
-             "bench-rope"      ["run" "-m" "ordered-collections.rope-bench"]
              "bench-range-map" ["run" "-m" "ordered-collections.range-map-bench"]
              "bench-parallel"  ["run" "-m" "ordered-collections.parallel-threshold-bench"]
              "stats"           ["shell" "bb" "etc/stats.bb"]})

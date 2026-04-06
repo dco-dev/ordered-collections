@@ -4,6 +4,13 @@
 
 ### New Collection Types
 
+- **Rope** (`rope`) — persistent chunked sequence for O(log n) structural editing
+  (concat, split, splice, insert, remove). Backed by a weight-balanced tree of
+  chunk vectors with a formal Chunk Size Invariant. Up to 1968x faster than
+  `PersistentVector` on repeated random edits at 500K elements; 3-10x faster
+  on concatenation; 1.3-1.7x faster on reduce at scale. Includes `RopeSlice` for
+  structure-sharing subrange views, transient support for batch construction,
+  parallel `r/fold`, `java.util.List` interop, and lexicographic `Comparable`.
 - **Range Map** (`range-map`) — non-overlapping `[lo, hi)` ranges with automatic carve-out on insert
 - **Segment Tree** (`segment-tree`, `sum-tree`, `min-tree`, `max-tree`) — O(log n) range aggregation with any associative operation
 - **Priority Queue** (`priority-queue`) — O(log n) push/peek/pop with min and max access
@@ -21,11 +28,13 @@
 - **Priority queue**: `push`, `push-all`, `peek-min`, `peek-min-val`, `pop-min`, `peek-max`, `peek-max-val`, `pop-max`
 - **Multiset**: `multiplicity`, `disj-one`, `disj-all`, `distinct-elements`, `element-frequencies`
 - **Fuzzy**: `fuzzy-nearest`, `fuzzy-exact-contains?`, `fuzzy-exact-get`
+- **Rope**: `rope-concat`, `rope-concat-all`, `rope-split`, `rope-sub`, `rope-insert`, `rope-remove`, `rope-splice`, `rope-chunks`, `rope-chunks-reverse`, `rope-chunk-count`
 - **Map**: `assoc-new`, `ordered-merge-with`
 - **Comparator**: `general-compare` — opt-in total order over all values including non-Comparable types (Namespace, Var, etc.). ~20% slower lookups on Comparable types vs default.
 
 ### Specialized Constructors
 
+- Rope: `rope`
 - Type-specific: `long-ordered-set`, `long-ordered-map`, `double-ordered-set`, `double-ordered-map`, `string-ordered-set`, `string-ordered-map`
 - Custom comparator: `ordered-set-by`, `ordered-map-by`, `ordered-set-with`, `ordered-map-with`, `ordered-multiset-by`, `fuzzy-set-by`, `fuzzy-map-by`, `segment-tree-by`, `segment-tree-with`
 - Exported comparators: `long-compare`, `double-compare`, `string-compare`, `general-compare`, `compare-by`
@@ -33,7 +42,8 @@
 ### Interface Implementations
 
 - `clojure.lang.Sorted` — native `subseq`/`rsubseq` on ordered-set and ordered-map
-- `clojure.core.reducers/CollFold` — chunked parallel fold; ordered-set/map and compatible tree-backed types split into larger chunks before delegating to `r/fold`
+- `clojure.core.reducers/CollFold` — chunked parallel fold; ordered-set/map, rope, and compatible tree-backed types split into larger chunks before delegating to `r/fold`
+- `clojure.lang.IEditableCollection` / `ITransientCollection` — transient support for `Rope` with mutable tail buffer for efficient batch construction
 - `clojure.core.protocols/CollReduce` — implemented directly on all collection deftypes for correct fast-path reduction
 - `clojure.lang.IHashEq` — correct `hash` for use in hash-based collections
 - `java.io.Serializable` — Java serialization support
@@ -73,6 +83,7 @@ See [benchmarks](doc/benchmarks.md) for current numbers and analysis.
 
 ### Documentation
 
+- New [Ropes](doc/ropes.md) — rope tutorial, use cases, and design
 - New [Collections API](doc/collections-api.md) — per-type constructor and operation reference
 - [Migration guide](doc/vs-clojure-data-avl.md) corrected (`oc/rank` not `oc/rank-of`)
 - Performance documentation consolidated in `doc/benchmarks.md`; the older `perf-analysis.md` and `when-to-use.md` are removed

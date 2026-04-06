@@ -2,20 +2,18 @@
 
 ## Status
 
-This library currently has an **experimental** rope implementation. It is not
-part of the public `ordered-collections.core` API yet.
+The rope is a **public** collection type in `ordered-collections.core`.
 
-Current experimental namespaces:
+```clojure
+(require '[ordered-collections.core :as oc])
 
-- `ordered-collections.types.rope`
-- `ordered-collections.tree.rope`
+(oc/rope [1 2 3 4 5])
+```
 
-That experimental status matters:
+Implementation namespaces:
 
-- the API is still evolving
-- the semantics are being shaped to fit the library cleanly
-- the implementation is meant to become a good rope, not merely a slower copy
-  of `PersistentVector`
+- `ordered-collections.types.rope` — `Rope` and `RopeSlice` deftypes
+- `ordered-collections.tree.rope` — low-level chunked tree operations
 
 
 ## What a Rope Is
@@ -129,50 +127,43 @@ This is also what distinguishes the rope from the earlier discarded
 "tree-vector" prototype.
 
 
-## Current Experimental API
+## API
 
-From `ordered-collections.types.rope`:
+From `ordered-collections.core`:
 
-- `empty-rope`
 - `rope`
-- `concat-rope`
-- `split-rope-at`
-- `subrope`
-- `insert-rope-at`
-- `remove-rope-range`
-- `splice-rope`
+- `rope-concat`
+- `rope-split`
+- `rope-sub`
+- `rope-insert`
+- `rope-remove`
+- `rope-splice`
 - `rope-chunks`
-- `chunk-count`
+- `rope-chunk-count`
 
-And the `Rope` type itself currently supports:
+And the `Rope` type itself supports:
 
-- `count`
-- `nth`
-- `get`
+- `count`, `nth`, `get`, `assoc`, `conj`, `peek`, `pop`
 - vector-style function lookup
-- `assoc`
-- `conj`
-- `peek`
-- `pop`
-- `seq`
-- `rseq`
-- `reduce`
-- metadata
-- sequential equality
+- `seq`, `rseq`
+- `reduce` (with correct early termination via `reduced`)
+- `clojure.core.reducers/fold` (parallel fork-join)
+- `compare` (lexicographic)
+- `java.util.List`: `get`, `indexOf`, `lastIndexOf`, `contains`, `subList`
+- `java.util.Collection`: `size`, `isEmpty`, `toArray`, `containsAll`
+- metadata, sequential equality, ordered hashing
 
 
 ## Examples
 
-Because the rope is experimental, examples use the type namespace directly:
-
 ```clojure
-(require '[ordered-collections.types.rope :as rope])
+(require '[ordered-collections.core :as oc])
 ```
 
 ### Construction
 
 ```clojure
-(def r (rope/rope [0 1 2 3 4 5]))
+(def r (oc/rope [0 1 2 3 4 5]))
 
 (count r)
 ;; => 6
@@ -187,59 +178,293 @@ Because the rope is experimental, examples use the type namespace directly:
 ### Concatenation
 
 ```clojure
-(def a (rope/rope [0 1 2]))
-(def b (rope/rope [3 4 5]))
+(def a (oc/rope [0 1 2]))
+(def b (oc/rope [3 4 5]))
 
-(vec (rope/concat-rope a b))
+(vec (oc/rope-concat a b))
 ;; => [0 1 2 3 4 5]
 ```
 
 ### Split and Slice
 
 ```clojure
-(let [[l r] (rope/split-rope-at (rope/rope (range 10)) 4)]
+(let [[l r] (oc/rope-split (oc/rope (range 10)) 4)]
   [(vec l) (vec r)])
 ;; => [[0 1 2 3] [4 5 6 7 8 9]]
 
-(vec (rope/subrope (rope/rope (range 10)) 3 7))
+(vec (oc/rope-sub (oc/rope (range 10)) 3 7))
 ;; => [3 4 5 6]
 ```
 
 ### Insertion
 
 ```clojure
-(vec (rope/insert-rope-at (rope/rope (range 6)) 2 [:a :b]))
+(vec (oc/rope-insert (oc/rope (range 6)) 2 [:a :b]))
 ;; => [0 1 :a :b 2 3 4 5]
 ```
 
 ### Range Removal
 
 ```clojure
-(vec (rope/remove-rope-range (rope/rope (range 10)) 4 7))
+(vec (oc/rope-remove (oc/rope (range 10)) 4 7))
 ;; => [0 1 2 3 7 8 9]
 ```
 
 ### Splicing
 
 ```clojure
-(vec (rope/splice-rope (rope/rope (range 10)) 2 5 [:x :y]))
+(vec (oc/rope-splice (oc/rope (range 10)) 2 5 [:x :y]))
 ;; => [0 1 :x :y 5 6 7 8 9]
 ```
 
 ### Chunk Introspection
 
 ```clojure
-(def r (rope/rope (range 130)))
+(def r (oc/rope (range 130)))
 
-(rope/chunk-count r)
+(oc/rope-chunk-count r)
 ;; => 3
 
-(mapv count (rope/rope-chunks r))
+(mapv count (oc/rope-chunks r))
 ;; => [64 64 2]
 ```
 
 This chunk view is useful because it exposes the real structure of the rope.
 Unlike a flat vector, a rope has meaningful chunk boundaries.
+
+
+## Tutorial: When and How to Use a Rope
+
+Most people encounter ropes in the context of text editors. That is a valid use
+case, but it is a narrow lens. A rope is a general-purpose persistent sequence
+type that excels at **structural editing** — any workload where you repeatedly
+split, concatenate, splice, or slice large sequences without wanting to copy the
+whole thing every time.
+
+This tutorial walks through several concrete scenarios where a rope is a better
+fit than a vector.
+
+
+### Setup
+
+```clojure
+(require '[ordered-collections.core :as oc])
+```
+
+
+### Scenario 1: Assembling a Large Sequence from Parts
+
+Suppose you are collecting data from many sources and need to merge the results
+into one ordered sequence. With vectors, each concatenation copies both sides:
+
+```clojure
+;; Expensive with vectors — every `into` copies everything accumulated so far
+(reduce into [] [chunk-a chunk-b chunk-c chunk-d ...])
+```
+
+With a rope, concatenation is structural. No bulk copying happens — the rope
+just records that the pieces sit next to each other in a tree:
+
+```clojure
+(def parts [(oc/rope sensor-readings-batch-1)
+            (oc/rope sensor-readings-batch-2)
+            (oc/rope sensor-readings-batch-3)])
+
+(def combined (reduce oc/rope-concat (oc/rope) parts))
+
+;; The full sequence is available for indexed access or reduce,
+;; but no flattening happened:
+(count combined)
+(nth combined 12345)
+(reduce + combined)
+```
+
+This matters when the parts are large and numerous. The rope grows by adding
+tree structure, not by copying elements.
+
+
+### Scenario 2: Splitting and Rearranging
+
+A common pattern in data pipelines: take a large sequence, split it at a
+position, and rearrange or process the halves independently.
+
+```clojure
+(def events (oc/rope (range 100000)))
+
+;; Split at position 40000
+(let [[head tail] (oc/rope-split events 40000)]
+  ;; head and tail share structure with the original
+  (count head)  ;; => 40000
+  (count tail)  ;; => 60000
+
+  ;; Process tail, then put it back in front of head
+  (def reordered (oc/rope-concat tail head)))
+```
+
+Both `rope-split` and `rope-concat` are O(log n). The original `events` rope
+is unchanged — this is persistent. You now have three independent snapshots of
+the sequence (original, head, tail) without tripling memory usage.
+
+
+### Scenario 3: Splicing Into the Middle
+
+Inserting elements into the middle of a vector is O(n) — every element after the
+insertion point must be shifted. With a rope, it is O(log n):
+
+```clojure
+(def timeline (oc/rope (range 1000)))
+
+;; Insert a burst of priority events at position 200
+(def updated (oc/rope-insert timeline 200 [:alert-1 :alert-2 :alert-3]))
+
+(nth updated 200)  ;; => :alert-1
+(nth updated 203)  ;; => 200  (original element, shifted right)
+```
+
+This is useful for any ordered stream where you need to retroactively inject
+data at a specific position.
+
+Remove a range just as easily:
+
+```clojure
+;; Remove positions 400 through 500
+(def trimmed (oc/rope-remove timeline 400 500))
+
+(count trimmed)  ;; => 900
+```
+
+Or replace a range:
+
+```clojure
+;; Replace positions 100–110 with new data
+(def patched (oc/rope-splice timeline 100 110 [:patched]))
+
+(count patched)  ;; => 991  (removed 10, inserted 1)
+```
+
+
+### Scenario 4: Windowing and Slicing
+
+Extract a subrange without copying the entire sequence:
+
+```clojure
+(def measurements (oc/rope (range 1000000)))
+
+;; Extract a window — this shares structure with the original
+(def window (oc/rope-sub measurements 499000 501000))
+
+(count window)  ;; => 2000
+(nth window 0)  ;; => 499000
+```
+
+The resulting `RopeSlice` supports all the same read operations: `nth`, `get`,
+`reduce`, `seq`, `rseq`, iteration.
+
+Slicing is particularly useful when you want to pass a "view" of a large dataset
+to a function without materializing a copy.
+
+
+### Scenario 5: Version History / Undo
+
+Because ropes are persistent, every edit produces a new rope that shares
+structure with the previous version. This makes version history cheap:
+
+```clojure
+(def v0 (oc/rope [:a :b :c :d :e]))
+(def v1 (oc/rope-insert v0 2 [:x :y]))
+(def v2 (oc/rope-remove v1 0 2))
+(def v3 (oc/rope-splice v2 1 3 [:z]))
+
+;; All four versions coexist, sharing most of their structure:
+(into [] v0)  ;; => [:a :b :c :d :e]
+(into [] v1)  ;; => [:a :b :x :y :c :d :e]
+(into [] v2)  ;; => [:x :y :c :d :e]
+(into [] v3)  ;; => [:x :z :d :e]
+```
+
+The memory cost of keeping all four versions is much less than four independent
+copies. This pattern applies to any application that needs to track or undo
+edits to an ordered collection: document editing, configuration changes,
+simulation state, game replay.
+
+
+### Scenario 6: Parallel Reduction
+
+Ropes support `clojure.core.reducers/fold` for parallel reduction via
+fork-join:
+
+```clojure
+(require '[clojure.core.reducers :as r])
+
+(def large (oc/rope (range 1000000)))
+
+;; Sequential reduce
+(reduce + large)
+
+;; Parallel fold — splits the rope at its natural tree structure
+(r/fold + large)
+```
+
+The rope's internal tree structure provides natural split points for parallel
+work distribution. This is useful for compute-heavy aggregation over large
+sequences.
+
+
+### Scenario 7: Chunk-Aware Processing
+
+Unlike a flat vector, a rope has visible internal structure. You can iterate
+over the chunks directly, which is useful when the data was assembled from
+meaningful pieces:
+
+```clojure
+(def assembled (reduce oc/rope-concat
+                 (map oc/rope [[1 2 3] [4 5 6] [7 8 9]])))
+
+;; Iterate over the internal chunks
+(doseq [chunk (oc/rope-chunks assembled)]
+  (println "chunk:" chunk "sum:" (reduce + chunk)))
+;; chunk: [1 2 3 4 5 6 7 8 9] sum: 45
+```
+
+Note that the rope may merge small chunks for efficiency. The chunk boundaries
+reflect the rope's internal balancing, not necessarily the original assembly
+boundaries. But for large pieces, the original structure is typically preserved.
+
+
+### Scenario 8: Java Interop
+
+The rope implements `java.util.List` and `java.util.Collection`, so it works
+with Java APIs that expect these interfaces:
+
+```clojure
+(def r (oc/rope [10 20 30 40 50]))
+
+(.get r 2)           ;; => 30
+(.size r)            ;; => 5
+(.contains r 30)     ;; => true
+(.indexOf r 40)      ;; => 3
+(.subList r 1 4)     ;; => #rope/slice [20 30 40]
+(.toArray r)         ;; => Object[5] {10, 20, 30, 40, 50}
+```
+
+
+### When to Use a Rope vs. a Vector
+
+Use a **vector** when:
+
+- you mostly append to the end and read by index
+- random access performance matters more than edit performance
+- the sequence is small or medium-sized
+- you never split, splice, or concatenate in the middle
+
+Use a **rope** when:
+
+- you frequently concatenate large sequences
+- you frequently split or slice sequences
+- you need to splice into the middle of large sequences
+- you want cheap persistent snapshots after structural edits
+- you want to reduce over very large sequences in parallel
+- you assemble a sequence from many parts and then process it
 
 
 ## Conceptual Tradeoffs
@@ -254,11 +479,11 @@ Unlike a flat vector, a rope has meaningful chunk boundaries.
 
 ### Weaknesses
 
-- chunk normalization is still primitive
-- there is no slice/view type yet
-- the API is still narrower than mature rope libraries
-- there is no claim yet that this is broadly competitive with
-  `PersistentVector`
+- random `nth` access is O(log n) rather than O(1) — inherent tree tradeoff
+- split and slice are O(log n) vs O(1) for `subvec` — inherent
+- reduce is slower than vectors at small N (< 10K elements)
+- element-by-element construction via `conj` is slower than vectors; prefer
+  `(oc/rope coll)` for bulk construction
 
 
 ## How This Relates to Other Rope Designs
@@ -381,17 +606,23 @@ This is especially relevant for this project because it shows a rope living in
 a Lisp ecosystem next to weight-balanced tree structures.
 
 
-## Where This Could Go
+## Current Capabilities
 
-If the experimental rope continues to develop, the next natural steps are:
+The rope now provides:
 
-- improve chunk normalization
-- add richer chunk iteration
-- consider a slice/view type
-- decide whether the rope deserves promotion into the public library API
+- full Clojure collection interfaces: `Indexed`, `Associative`,
+  `IPersistentVector`, `IPersistentStack`, `Seqable`, `Reversible`,
+  `IReduceInit`, `IReduce`, `Counted`, `IHashEq`, `IMeta`, `IObj`,
+  `Sequential`, `Comparable`
+- `java.util.List` and `java.util.Collection` for Java interop
+- `clojure.core.reducers/CollFold` for parallel fold
+- `RopeSlice` type for subrange views
+- chunk-level iteration in both directions
+- structural editing: `rope-insert`, `rope-remove`, `rope-splice`
+- correct `reduced` early-termination in all reduce paths
+- `print-method` for readable REPL output
 
-Until then, it should be treated as:
+## Future Work
 
-- promising
-- structurally interesting
-- still experimental
+- Further constant-factor optimization of reduce at small N (0.6x at 10K;
+  already 1.4x faster than vectors at N ≥ 100K)

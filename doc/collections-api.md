@@ -539,3 +539,60 @@ Also callable as a function:
 - `(fm query)`
 
 returns the value for the nearest key.
+
+---
+
+## Rope
+
+Persistent chunked sequence optimized for structural editing: O(log n) concat,
+split, splice, insert, and remove. Backed by a weight-balanced tree of chunk
+vectors. Implements `IPersistentVector`, `java.util.List`,
+`java.util.Collection`, `Comparable`, and `clojure.core.reducers/CollFold`.
+
+### Constructors
+
+- `rope`
+  - `(rope)`
+  - `(rope coll)`
+
+### Collection-specific operations
+
+| Function | Signature(s) | Notes |
+|---|---|---|
+| `rope-concat` | `[left right]` | Structural concatenation. O(log n). |
+| `rope-concat-all` | `[& xs]` | Bulk concatenation of multiple ropes. |
+| `rope-split` | `[rope i]` | Split at index, returns `[left right]`. O(log n). |
+| `rope-sub` | `[rope start end]` | Subrange view (RopeSlice). O(log n). |
+| `rope-insert` | `[rope i coll]` | Insert elements at index. O(log n). |
+| `rope-remove` | `[rope start end]` | Remove range `[start, end)`. O(log n). |
+| `rope-splice` | `[rope start end coll]` | Replace range with new content. O(log n). |
+| `rope-chunks` | `[rope]` | Seq of internal chunk vectors. |
+| `rope-chunks-reverse` | `[rope]` | Reverse seq of internal chunk vectors. |
+| `rope-chunk-count` | `[rope]` | Number of chunks. |
+
+### Standard collection operations
+
+| Operation | Signature(s) | Notes |
+|---|---|---|
+| `conj` | `[rope x]` | Append to end. |
+| `assoc` | `[rope i x]` | Replace element at index (or append if `i = count`). |
+| `nth` | `[rope i]` `[rope i not-found]` | Positional access. O(log n). |
+| `get` | `[rope i]` `[rope i not-found]` | Same as `nth`. |
+| `peek` | `[rope]` | Last element. |
+| `pop` | `[rope]` | Remove last element. |
+| `seq` / `rseq` | `[rope]` | Forward / reverse traversal. |
+| `reduce` | `[f rope]` `[f init rope]` | Chunk-aware reduction with `reduced` support. |
+| `r/fold` | `[n combinef reducef rope]` | Parallel fork-join fold. |
+| `compare` | `[rope1 rope2]` | Lexicographic comparison. |
+| `count` | `[rope]` | O(1). |
+
+Also supports `java.util.List` methods: `.get`, `.indexOf`, `.lastIndexOf`,
+`.contains`, `.containsAll`, `.subList`, `.size`, `.toArray`.
+
+### RopeSlice
+
+`rope-sub` returns a `RopeSlice` — a lightweight read-only view that shares
+structure with the original rope. A `RopeSlice` supports all read operations
+(`nth`, `get`, `seq`, `rseq`, `reduce`, `r/fold`, `count`, `compare`,
+`java.util.List`) but not `assoc`, `peek`, or `pop`. Use `(rope (vec slice))`
+to materialize a slice into a full rope if mutation is needed.

@@ -17,6 +17,7 @@
             [ordered-collections.types.ordered-set         :refer [->OrderedSet]]
             [ordered-collections.types.priority-queue      :as pq]
             [ordered-collections.types.range-map           :as rmap]
+            [ordered-collections.types.rope               :as rope]
             [ordered-collections.types.segment-tree        :as segtree]
             [ordered-collections.protocol                  :as proto]
             [ordered-collections.util                      :refer [defalias]])
@@ -981,3 +982,94 @@
      ;=> [3 :b]"
   [coll test k]
   (proto/nearest coll test k))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Rope
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defalias rope
+  "Create a persistent rope from a collection.
+
+   A rope is a chunked, tree-backed persistent sequence optimized for
+   structural editing: O(log n) concat, split, splice, insert, and remove.
+   Use a rope when you need to repeatedly edit the middle of a large
+   sequence. Use a vector for random-access-heavy workloads.
+
+   Supports nth, get, assoc, conj, peek, pop, seq, rseq, reduce,
+   r/fold, compare, java.util.List, and all standard Clojure sequence
+   operations.
+
+   Examples:
+     (rope [1 2 3 4 5])
+     (rope (range 100000))
+     (nth (rope (range 1000)) 500)  ;=> 500"
+  rope/rope)
+
+(defalias rope-concat
+  "Concatenate two ropes (or rope-coercible collections). O(log n).
+
+   Examples:
+     (rope-concat (rope [1 2 3]) (rope [4 5 6]))
+     ;=> #rope [1 2 3 4 5 6]"
+  rope/rope-concat)
+
+(defalias rope-concat-all
+  "Concatenate multiple ropes via pairwise structural concat.
+
+   Examples:
+     (rope-concat-all (rope [1 2]) (rope [3 4]) (rope [5 6]))
+     ;=> #rope [1 2 3 4 5 6]"
+  rope/rope-concat-all)
+
+(defalias rope-split
+  "Split a rope at element index i, returning [left right]. O(log n).
+
+   Examples:
+     (rope-split (rope (range 10)) 4)
+     ;=> [#rope [0 1 2 3] #rope [4 5 6 7 8 9]]"
+  rope/rope-split)
+
+(defalias rope-sub
+  "Extract a subrange [start, end) as a RopeSlice. O(log n).
+   The slice shares structure with the original.
+
+   Examples:
+     (rope-sub (rope (range 100)) 20 30)
+     ;=> #rope/slice [20 21 22 23 24 25 26 27 28 29]"
+  rope/rope-sub)
+
+(defalias rope-insert
+  "Insert elements at index i. O(log n).
+
+   Examples:
+     (rope-insert (rope [0 1 2 3]) 2 [:a :b])
+     ;=> #rope [0 1 :a :b 2 3]"
+  rope/rope-insert)
+
+(defalias rope-remove
+  "Remove elements in range [start, end). O(log n).
+
+   Examples:
+     (rope-remove (rope (range 10)) 3 7)
+     ;=> #rope [0 1 2 7 8 9]"
+  rope/rope-remove)
+
+(defalias rope-splice
+  "Replace elements in range [start, end) with new content. O(log n).
+
+   Examples:
+     (rope-splice (rope (range 10)) 2 5 [:x :y])
+     ;=> #rope [0 1 :x :y 5 6 7 8 9]"
+  rope/rope-splice)
+
+(defalias rope-chunks
+  "Return a seq of the rope's internal chunk vectors."
+  rope/rope-chunks)
+
+(defalias rope-chunks-reverse
+  "Return a reverse seq of the rope's internal chunk vectors."
+  rope/rope-chunks-reverse)
+
+(defalias rope-chunk-count
+  "Return the number of chunks in the rope."
+  rope/rope-chunk-count)

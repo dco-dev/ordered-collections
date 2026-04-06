@@ -8,6 +8,7 @@ parallel fold, and specialized collections for problems you didn't know
 you could solve efficiently:
 
 - **Sets and Maps** work exactly as you're used to, but do more, faster
+- **Ropes** for O(log n) concat, split, splice, and insert on large sequences
 - **Interval maps** for overlap queries ("what's scheduled at 3pm?")
 - **Range maps** for non-overlapping regions ("which subnet owns this IP?")
 - **Segment trees** for range aggregation ("total sales from day 10 to 50?")
@@ -25,6 +26,7 @@ foundation for splitting, joining, and parallel operations.
 - [Zorp's Sneaker Emporium](doc/zorp-example.md) — Narrative guide with extended examples
 - [Cookbook](doc/cookbook.md) — Practical patterns: leaderboards, time-series, scheduling, queues, multisets, and more
 - [Collections API](doc/collections-api.md) — Collection-by-collection constructor and operation reference
+- [Ropes](doc/ropes.md) — Rope tutorial, use cases, and design
 - [Benchmarks](doc/benchmarks.md) — Detailed performance measurements
 - [Competitive Analysis](doc/competitive-analysis.md) — Comparison with other libraries
 - [vs clojure.data.avl](doc/vs-clojure-data-avl.md) — For data.avl users considering a switch
@@ -148,9 +150,9 @@ with red-black and AVL trees.
 ## Collections
 
 The fundamental collection types currently implemented are:
-`ordered-set`, `ordered-map`, `interval-set`, `interval-map`, `range-map`,
-`segment-tree`, `priority-queue`, `ordered-multiset`, `fuzzy-set`, and
-`fuzzy-map`.
+`ordered-set`, `ordered-map`, `rope`, `interval-set`, `interval-map`,
+`range-map`, `segment-tree`, `priority-queue`, `ordered-multiset`, `fuzzy-set`,
+and `fuzzy-map`.
 
 | Constructor | Description |
 |-------------|-------------|
@@ -177,9 +179,54 @@ The fundamental collection types currently implemented are:
 | `(oc/priority-queue pairs)` | Priority queue from `[priority value]` pairs |
 | **Ordered Multiset** | |
 | `(oc/ordered-multiset coll)` | Sorted multiset (allows duplicates) |
+| **Rope** | |
+| `(oc/rope coll)` | Persistent sequence for structural editing |
+| `(oc/rope-concat a b)` | Concatenate two ropes — O(log n) |
+| `(oc/rope-splice r start end items)` | Replace a range — O(log n) |
 | **Fuzzy Collections** | |
 | `(oc/fuzzy-set coll)` | Returns closest element to query |
 | `(oc/fuzzy-map coll)` | Returns value for closest key to query |
+
+---
+
+## Ropes
+
+A rope is a persistent sequence optimized for **structural editing** —
+concatenation, splitting, splicing, and insertion in the middle of large
+sequences. Where `PersistentVector` is O(n) for mid-sequence edits,
+the rope is O(log n).
+
+```clojure
+(def r (oc/rope (range 100000)))
+
+;; Splice into the middle — O(log n), not O(n)
+(def edited (oc/rope-splice r 50000 50010 [:new :data]))
+
+;; Split — O(log n)
+(let [[left right] (oc/rope-split r 50000)]
+  [(count left) (count right)])  ;=> [50000 50000]
+
+;; Concatenate — O(log n)
+(oc/rope-concat (oc/rope [1 2 3]) (oc/rope [4 5 6]))
+;=> #rope [1 2 3 4 5 6]
+```
+
+### Rope vs PersistentVector
+
+| Workload | N=10K | N=100K | N=500K |
+|---|---:|---:|---:|
+| 200 random edits | **43x** | **498x** | **1968x** |
+| Single splice | **6x** | **116x** | **584x** |
+| Concat many pieces | **3.4x** | **5.4x** | **9.5x** |
+| Chunk iteration | **58x** | **83x** | **117x** |
+| Reduce (sum) | 0.4x | **1.7x** | **1.3x** |
+| Random nth (1000) | 0.7x | 0.5x | 0.4x |
+
+The rope wins on 5 of 6 workloads at scale and the advantage grows with
+collection size. Concat improves with N because the rope collects chunks in
+O(k) while the vector copies O(n) elements. Reduce beats vectors at N ≥ 100K
+thanks to 256-element chunk locality. Random access is slower (O(log n) vs
+O(1)) but bounded. See [Ropes](doc/ropes.md) for the full tutorial.
 
 ---
 
@@ -438,6 +485,11 @@ structure library was inspired by the following:
    'Just Join for Parallel Ordered Sets'
    ACM SPAA 2016
    <https://dl.acm.org/doi/10.1145/2935764.2935768>
+
+-  Boehm, Atkinson, and Plass (1995)
+   'Ropes: an Alternative to Strings'
+   Software: Practice and Experience 25(12)
+   <https://www.cs.rit.edu/usr/local/pub/jeh/courses/QUARTERS/FP/Labs/CesswordsII/boehm-ropes.pdf>
 
 -  Haskell containers library (Data.Set, Data.Map)
    <https://hackage.haskell.org/package/containers>

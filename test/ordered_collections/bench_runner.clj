@@ -22,7 +22,8 @@
                      split-workload fold-frequency-workload set-comparison-workload format-ns
                      parse-standard-args]]
             [ordered-collections.core :as core]
-            [ordered-collections.tree.order :as order])
+            [ordered-collections.tree.order :as order]
+            [ordered-collections.tree.rope :as ropetree])
   (:import [java.lang.management ManagementFactory]
            [java.net InetAddress]
            [java.time Duration Instant LocalDateTime]
@@ -415,6 +416,53 @@
        :interval-set-fold   #(r/fold + sum-intervals is)})))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Rope Benchmarks
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn bench-rope-concat [n]
+  (let [piece-size ropetree/+target-chunk-size+
+        pieces     (->> (range n)
+                     (partition-all piece-size)
+                     (mapv vec))
+        rope-parts (mapv core/rope pieces)
+        vec-parts  pieces]
+    (run-cases
+      {:rope   #(apply core/rope-concat-all rope-parts)
+       :vector #(reduce into [] vec-parts)})))
+
+(defn bench-rope-splice [n]
+  (let [r     (core/rope (range n))
+        v     (vec (range n))
+        mid   (quot n 2)
+        start (max 0 (- mid 16))
+        end   (min n (+ mid 16))
+        ins   (vec (range 32))]
+    (run-cases
+      {:rope   #(core/rope-splice r start end ins)
+       :vector #(vec (concat (subvec v 0 start) ins (subvec v end)))})))
+
+(defn bench-rope-repeated-edits [n]
+  (let [r     (core/rope (range n))
+        v     (vec (range n))
+        rng   (java.util.Random. 42)
+        nops  200
+        idxs  (vec (repeatedly nops #(.nextInt rng (max 1 n))))
+        ins   (vec (range nops))]
+    (run-cases
+      {:rope   #(loop [r r, i 0]
+                  (if (< i nops)
+                    (let [pos (rem (nth idxs i) (count r))]
+                      (recur (core/rope-splice r pos (min (+ pos 5) (count r)) [(nth ins i)])
+                        (inc i)))
+                    r))
+       :vector #(loop [v v, i 0]
+                  (if (< i nops)
+                    (let [pos (rem (nth idxs i) (count v))]
+                      (recur (vec (concat (subvec v 0 pos) [(nth ins i)] (subvec v (min (+ pos 5) (count v)))))
+                        (inc i)))
+                    v))})))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Suite Runners
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -430,7 +478,10 @@
    [:set-difference bench-set-difference]
    [:split bench-split]
    {:key :first-last :fn bench-first-last :when #(<= % 100000)}
-   [:rank-access bench-rank-access]])
+   [:rank-access bench-rank-access]
+   [:rope-concat bench-rope-concat]
+   [:rope-splice bench-rope-splice]
+   [:rope-repeated-edits bench-rope-repeated-edits]])
 
 (def ^:private readme-benchmark-specs
   [[:set-construction bench-set-construction]
@@ -472,7 +523,10 @@
    [:interval-construction bench-interval-construction]
    [:interval-map-construction bench-interval-map-construction]
    [:interval-lookup bench-interval-lookup]
-   [:interval-fold bench-interval-fold]])
+   [:interval-fold bench-interval-fold]
+   [:rope-concat bench-rope-concat]
+   [:rope-splice bench-rope-splice]
+   [:rope-repeated-edits bench-rope-repeated-edits]])
 
 (defn run-wins-benchmarks
   "Run benchmarks focused on where ordered-collections wins."
