@@ -19,7 +19,7 @@ All built from a modular, extensible, weight-balanced tree platform with shared
 foundation for splitting, joining, and parallel operations.
 
 ![tests](https://github.com/dco-dev/ordered-collections/actions/workflows/clojure.yml/badge.svg)
-[![Clojars Project](https://img.shields.io/clojars/v/ordered-collections.svg)](https://clojars.org/ordered-collections)
+[![Clojars Project](https://img.shields.io/clojars/v/com.dean/ordered-collections.svg)](https://clojars.org/com.dean/ordered-collections)
 
 ### Documentation
 
@@ -208,7 +208,7 @@ the rope is O(log n).
 
 ;; Concatenate — O(log n)
 (oc/rope-concat (oc/rope [1 2 3]) (oc/rope [4 5 6]))
-;=> #rope [1 2 3 4 5 6]
+;=> #ordered/rope [1 2 3 4 5 6]
 ```
 
 ### Rope vs PersistentVector

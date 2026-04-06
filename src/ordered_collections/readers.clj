@@ -14,6 +14,7 @@
 (def range-map        oc/range-map)
 (def priority-queue   oc/priority-queue)
 (def ordered-multiset oc/ordered-multiset)
+(def rope             oc/rope)
 
 (def readers
   "Map of tag symbols to reader functions.
@@ -26,4 +27,5 @@
    'ordered/interval-map   interval-map
    'ordered/range-map      range-map
    'ordered/priority-queue priority-queue
-   'ordered/multiset       ordered-multiset})
+   'ordered/multiset       ordered-multiset
+   'ordered/rope           rope})

@@ -1010,7 +1010,7 @@
 
    Examples:
      (rope-concat (rope [1 2 3]) (rope [4 5 6]))
-     ;=> #rope [1 2 3 4 5 6]"
+     ;=> #ordered/rope [1 2 3 4 5 6]"
   rope/rope-concat)
 
 (defalias rope-concat-all
@@ -1018,7 +1018,7 @@
 
    Examples:
      (rope-concat-all (rope [1 2]) (rope [3 4]) (rope [5 6]))
-     ;=> #rope [1 2 3 4 5 6]"
+     ;=> #ordered/rope [1 2 3 4 5 6]"
   rope/rope-concat-all)
 
 (defalias rope-split
@@ -1026,7 +1026,7 @@
 
    Examples:
      (rope-split (rope (range 10)) 4)
-     ;=> [#rope [0 1 2 3] #rope [4 5 6 7 8 9]]"
+     ;=> [#ordered/rope [0 1 2 3] #ordered/rope [4 5 6 7 8 9]]"
   rope/rope-split)
 
 (defalias rope-sub
@@ -1035,7 +1035,7 @@
 
    Examples:
      (rope-sub (rope (range 100)) 20 30)
-     ;=> #rope/slice [20 21 22 23 24 25 26 27 28 29]"
+     ;=> #ordered/rope [20 21 22 23 24 25 26 27 28 29]"
   rope/rope-sub)
 
 (defalias rope-insert
@@ -1043,7 +1043,7 @@
 
    Examples:
      (rope-insert (rope [0 1 2 3]) 2 [:a :b])
-     ;=> #rope [0 1 :a :b 2 3]"
+     ;=> #ordered/rope [0 1 :a :b 2 3]"
   rope/rope-insert)
 
 (defalias rope-remove
@@ -1051,7 +1051,7 @@
 
    Examples:
      (rope-remove (rope (range 10)) 3 7)
-     ;=> #rope [0 1 2 7 8 9]"
+     ;=> #ordered/rope [0 1 2 7 8 9]"
   rope/rope-remove)
 
 (defalias rope-splice
@@ -1059,7 +1059,7 @@
 
    Examples:
      (rope-splice (rope (range 10)) 2 5 [:x :y])
-     ;=> #rope [0 1 :x :y 5 6 7 8 9]"
+     ;=> #ordered/rope [0 1 :x :y 5 6 7 8 9]"
   rope/rope-splice)
 
 (defalias rope-chunks

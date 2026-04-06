@@ -443,7 +443,7 @@ with Java APIs that expect these interfaces:
 (.size r)            ;; => 5
 (.contains r 30)     ;; => true
 (.indexOf r 40)      ;; => 3
-(.subList r 1 4)     ;; => #rope/slice [20 30 40]
+(.subList r 1 4)     ;; => #ordered/rope [20 30 40]
 (.toArray r)         ;; => Object[5] {10, 20, 30, 40, 50}
 ```
 

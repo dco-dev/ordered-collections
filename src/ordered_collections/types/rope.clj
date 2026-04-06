@@ -579,9 +579,10 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmethod print-method Rope [^Rope r ^java.io.Writer w]
-  (.write w "#rope ")
+  (.write w "#ordered/rope ")
   (print-method (into [] r) w))
 
 (defmethod print-method RopeSlice [^RopeSlice r ^java.io.Writer w]
-  (.write w "#rope/slice ")
+  ;; Slices materialize to a rope on print so they round-trip via the same reader.
+  (.write w "#ordered/rope ")
   (print-method (into [] r) w))

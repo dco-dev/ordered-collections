@@ -349,9 +349,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftest rope-print-method
-  (is (= "#rope [1 2 3]" (pr-str (oc/rope [1 2 3]))))
-  (is (= "#rope []" (pr-str (oc/rope))))
-  (is (= "#rope/slice [5 6 7]"
+  (is (= "#ordered/rope [1 2 3]" (pr-str (oc/rope [1 2 3]))))
+  (is (= "#ordered/rope []" (pr-str (oc/rope))))
+  (is (= "#ordered/rope [5 6 7]"
         (pr-str (oc/rope-sub (oc/rope (range 10)) 5 8)))))
 
 

@@ -279,3 +279,41 @@
       (is (= :b (m 2)))
       (is (= :d (get (assoc m 4 :d) 4)))
       (is (nil? (get (dissoc m 2) 2))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Rope
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest rope-tagged-literal-format
+  (testing "pr-str produces #ordered/rope tag"
+    (is (= "#ordered/rope [1 2 3]" (pr-str (oc/rope [1 2 3])))))
+  (testing "empty rope"
+    (is (= "#ordered/rope []" (pr-str (oc/rope)))))
+  (testing "slice materializes with same tag"
+    (is (= "#ordered/rope [2 3 4]"
+          (pr-str (oc/rope-sub (oc/rope (range 6)) 2 5))))))
+
+(deftest rope-round-trip
+  (testing "read-string round-trip"
+    (let [r (oc/rope [10 20 30 40 50])]
+      (is (= r (round-trip r)))
+      (is (= (into [] r) (into [] (round-trip r))))))
+  (testing "edn/read-string round-trip"
+    (let [r (oc/rope (range 100))]
+      (is (= r (edn-round-trip r)))))
+  (testing "empty round-trip"
+    (let [r (oc/rope)]
+      (is (= r (round-trip r)))))
+  (testing "slice round-trips as rope"
+    (let [sl (oc/rope-sub (oc/rope (range 20)) 5 15)
+          rt (round-trip sl)]
+      (is (= (into [] sl) (into [] rt))))))
+
+(deftest rope-operations-after-round-trip
+  (testing "operations work after EDN round-trip"
+    (let [r (round-trip (oc/rope [10 20 30 40 50]))]
+      (is (= 30 (nth r 2)))
+      (is (= [10 20 30 40 50 60] (into [] (conj r 60))))
+      (is (= [10 20 99 40 50] (into [] (assoc r 2 99))))
+      (is (= [10 20] (into [] (first (oc/rope-split r 2)))))
+      (is (= 150 (reduce + r))))))
