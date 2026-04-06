@@ -52,7 +52,7 @@
 
 ### EDN Tagged Literals
 
-Round-trip serialization via `data_readers.clj`: `#ordered/set`, `#ordered/map`, `#ordered/interval-set`, `#ordered/interval-map`, `#ordered/range-map`, `#ordered/priority-queue`, `#ordered/multiset`. Collections with custom comparators (including `general-compare`) print in opaque `#<Type ...>` form to avoid non-round-trippable tagged literals.
+Round-trip serialization via `data_readers.clj`: `#ordered/set`, `#ordered/map`, `#ordered/interval-set`, `#ordered/interval-map`, `#ordered/range-map`, `#ordered/priority-queue`, `#ordered/multiset`, `#ordered/rope`. Collections with custom comparators (including `general-compare`) print in opaque `#<Type ...>` form to avoid non-round-trippable tagged literals.
 
 ### Performance
 
