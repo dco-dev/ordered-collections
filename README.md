@@ -32,6 +32,7 @@ foundation for splitting, joining, and parallel operations.
 - [vs clojure.data.avl](doc/vs-clojure-data-avl.md) — For data.avl users considering a switch
 - [Algorithms](doc/algorithms.md) — Tree structure, rotations, split/join, interval augmentation
 - [Why Weight-Balanced Trees?](doc/why-weight-balanced-trees.md) — Comparison with red-black and AVL trees
+- [One Tree, Many Forests](doc/concept/concept.md) — Conceptual architecture and design rationale
 
 ---
 

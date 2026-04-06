@@ -38,4 +38,4 @@
              "bench-parallel"  ["run" "-m" "ordered-collections.parallel-threshold-bench"]
              "bench-rope-tuning" ["run" "-m" "ordered-collections.rope-tuning-bench"]
              "stats"           ["shell" "bb" "etc/stats.bb"]
-             "paper"           ["shell" "etc/paper.sh"]})
+             "paper"           ["shell" "bb" "etc/paper.bb"]})
