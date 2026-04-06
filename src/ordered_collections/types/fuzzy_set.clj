@@ -8,14 +8,14 @@
    smaller element, or :> to prefer the larger element."
   (:require [clojure.core.reducers       :as r :refer [coll-fold]]
             [ordered-collections.types.shared :refer [with-compare]]
-            [ordered-collections.tree.node     :as node]
-            [ordered-collections.tree.order    :as order]
+            [ordered-collections.kernel.node     :as node]
+            [ordered-collections.kernel.order    :as order]
             [ordered-collections.protocol      :as proto :refer [PRanked PNearest PSplittable]]
-            [ordered-collections.tree.root]
-            [ordered-collections.tree.tree     :as tree])
+            [ordered-collections.kernel.root]
+            [ordered-collections.kernel.tree     :as tree])
   (:import  [clojure.lang                RT Murmur3]
             [ordered_collections.protocol PFuzzy]
-            [ordered_collections.tree.root     INodeCollection
+            [ordered_collections.kernel.root     INodeCollection
                                          IBalancedCollection
                                          IOrderedCollection]))
 

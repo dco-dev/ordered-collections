@@ -5,7 +5,7 @@
             [clojure.core.reducers :as r]
             [ordered-collections.parallel :as par]
             [ordered-collections.protocol :as proto]
-            [ordered-collections.tree.rope :as ropetree])
+            [ordered-collections.kernel.rope :as ropetree])
   (:import  [clojure.lang RT Murmur3 MapEntry ILookup
                            Associative Indexed Seqable Reversible Sequential
                            IPersistentCollection IPersistentStack IObj IMeta

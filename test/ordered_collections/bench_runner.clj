@@ -22,8 +22,8 @@
                      split-workload fold-frequency-workload set-comparison-workload format-ns
                      parse-standard-args]]
             [ordered-collections.core :as core]
-            [ordered-collections.tree.order :as order]
-            [ordered-collections.tree.rope :as ropetree])
+            [ordered-collections.kernel.order :as order]
+            [ordered-collections.kernel.rope :as ropetree])
   (:import [java.lang.management ManagementFactory]
            [java.net InetAddress]
            [java.time Duration Instant LocalDateTime]

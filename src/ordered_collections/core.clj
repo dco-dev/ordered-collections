@@ -3,10 +3,10 @@
   (:refer-clojure :exclude [split-at])
   (:require [clojure.core.reducers                         :as r]
             [ordered-collections.types.interop]
-            [ordered-collections.tree.interval             :as interval]
-            [ordered-collections.tree.node                 :as node]
-            [ordered-collections.tree.order                :as order]
-            [ordered-collections.tree.tree                 :as tree]
+            [ordered-collections.kernel.interval             :as interval]
+            [ordered-collections.kernel.node                 :as node]
+            [ordered-collections.kernel.order                :as order]
+            [ordered-collections.kernel.tree                 :as tree]
             [ordered-collections.types.fuzzy-map           :as fuzzy-map]
             [ordered-collections.types.fuzzy-set           :as fuzzy-set]
             [ordered-collections.types.interval-map        :refer [->IntervalMap]]
@@ -23,7 +23,7 @@
             [ordered-collections.util                      :refer [defalias]])
   (:import  [ordered_collections.types.ordered_map OrderedMap]
             [ordered_collections.types.ordered_set OrderedSet]
-            [ordered_collections.tree.root INodeCollection IOrderedCollection IBalancedCollection]))
+            [ordered_collections.kernel.root INodeCollection IOrderedCollection IBalancedCollection]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

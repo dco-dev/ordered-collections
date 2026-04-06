@@ -157,8 +157,8 @@
           small-map (oc/ordered-map [[1 :a] [2 :b] [3 :c]])
 
           ;; Get root nodes via reflection (for analysis only)
-          set-root (.getRoot ^ordered_collections.tree.root.INodeCollection small-set)
-          map-root (.getRoot ^ordered_collections.tree.root.INodeCollection small-map)]
+          set-root (.getRoot ^ordered_collections.kernel.root.INodeCollection small-set)
+          map-root (.getRoot ^ordered_collections.kernel.root.INodeCollection small-map)]
 
       (println)
       (println "=== Node Structure Analysis ===")

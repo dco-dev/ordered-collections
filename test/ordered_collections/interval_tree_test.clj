@@ -13,9 +13,9 @@
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
             [ordered-collections.core :as oc]
-            [ordered-collections.tree.node :as node]
-            [ordered-collections.tree.interval :as interval])
-  (:import [ordered_collections.tree.root INodeCollection]))
+            [ordered-collections.kernel.node :as node]
+            [ordered-collections.kernel.interval :as interval])
+  (:import [ordered_collections.kernel.root INodeCollection]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

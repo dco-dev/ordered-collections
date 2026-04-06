@@ -1,4 +1,4 @@
-(ns ordered-collections.tree.root)
+(ns ordered-collections.kernel.root)
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

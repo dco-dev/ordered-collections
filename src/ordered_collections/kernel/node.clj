@@ -1,4 +1,4 @@
-(ns ordered-collections.tree.node
+(ns ordered-collections.kernel.node
   (:import  [clojure.lang MapEntry]))
 
 
@@ -120,11 +120,11 @@
 
 ;; @gunnarson style
 
-(definline -k  [n] `(.k  ~(with-meta n {:tag 'ordered_collections.tree.node.INode})))
-(definline -v  [n] `(.v  ~(with-meta n {:tag 'ordered_collections.tree.node.INode})))
-(definline -l  [n] `(.l  ~(with-meta n {:tag 'ordered_collections.tree.node.INode})))
-(definline -r  [n] `(.r  ~(with-meta n {:tag 'ordered_collections.tree.node.INode})))
-(definline -x  [n] `(.x  ~(with-meta n {:tag 'ordered_collections.tree.node.IBalancedNode})))
-(definline -z  [n] `(.z  ~(with-meta n {:tag 'ordered_collections.tree.node.IAugmentedNode})))
-(definline -kv [n] `(.kv ~(with-meta n {:tag 'ordered_collections.tree.node.INode})))
+(definline -k  [n] `(.k  ~(with-meta n {:tag 'ordered_collections.kernel.node.INode})))
+(definline -v  [n] `(.v  ~(with-meta n {:tag 'ordered_collections.kernel.node.INode})))
+(definline -l  [n] `(.l  ~(with-meta n {:tag 'ordered_collections.kernel.node.INode})))
+(definline -r  [n] `(.r  ~(with-meta n {:tag 'ordered_collections.kernel.node.INode})))
+(definline -x  [n] `(.x  ~(with-meta n {:tag 'ordered_collections.kernel.node.IBalancedNode})))
+(definline -z  [n] `(.z  ~(with-meta n {:tag 'ordered_collections.kernel.node.IAugmentedNode})))
+(definline -kv [n] `(.kv ~(with-meta n {:tag 'ordered_collections.kernel.node.INode})))
 

@@ -2,15 +2,15 @@
   (:require [clojure.core.reducers       :as r :refer [coll-fold]]
             [ordered-collections.types.shared :refer [with-tree-env]
              :rename {with-tree-env with-interval-map}]
-            [ordered-collections.tree.interval :as interval]
-            [ordered-collections.tree.node     :as node]
+            [ordered-collections.kernel.interval :as interval]
+            [ordered-collections.kernel.node     :as node]
             [ordered-collections.protocol      :as proto]
-            [ordered-collections.tree.root]
-            [ordered-collections.tree.order    :as order]
-            [ordered-collections.tree.tree     :as tree])
+            [ordered-collections.kernel.root]
+            [ordered-collections.kernel.order    :as order]
+            [ordered-collections.kernel.tree     :as tree])
   (:import  [clojure.lang                RT MapEntry Murmur3]
             [ordered_collections.protocol PIntervalCollection PSpan]
-            [ordered_collections.tree.root     INodeCollection
+            [ordered_collections.kernel.root     INodeCollection
                                          IBalancedCollection
                                          IOrderedCollection
                                          IIntervalCollection]))

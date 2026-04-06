@@ -1,6 +1,6 @@
 (ns ordered-collections.interval-test
   (:require [clojure.test :refer :all]
-            [ordered-collections.tree.interval :as interval :refer :all])
+            [ordered-collections.kernel.interval :as interval :refer :all])
   (:import  [clojure.lang MapEntry]))
 
 

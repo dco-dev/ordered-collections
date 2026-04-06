@@ -1,10 +1,10 @@
-(ns ordered-collections.tree.tree
+(ns ordered-collections.kernel.tree
   (:require [clojure.core.reducers                      :as r]
             [ordered-collections.parallel      :as parallel]
-            [ordered-collections.tree.interval :as interval]
-            [ordered-collections.tree.node     :as node
+            [ordered-collections.kernel.interval :as interval]
+            [ordered-collections.kernel.node     :as node
              :refer [leaf? leaf -k -v -l -r -x -z -kv]]
-            [ordered-collections.tree.order    :as order])
+            [ordered-collections.kernel.order    :as order])
   (:import  [clojure.lang ASeq MapEntry RT ISeq Seqable Sequential IPersistentCollection]
             [java.util Comparator]))
 

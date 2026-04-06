@@ -36,10 +36,10 @@
      (query st 1 3)     ; => 90 (20 + 30 + 40)
      (update st 2 100)  ; => new tree with index 2 = 100
      (query st 1 3)     ; => 160 (20 + 100 + 40)"
-  (:require [ordered-collections.tree.node     :as node]
-            [ordered-collections.tree.order    :as order]
-            [ordered-collections.tree.root]
-            [ordered-collections.tree.tree     :as tree]
+  (:require [ordered-collections.kernel.node     :as node]
+            [ordered-collections.kernel.order    :as order]
+            [ordered-collections.kernel.root]
+            [ordered-collections.kernel.tree     :as tree]
             [ordered-collections.protocol      :as proto]
             [ordered-collections.types.shared :refer [with-tree-env]
              :rename {with-tree-env with-segment-tree}])
@@ -47,7 +47,7 @@
              Counted IFn IMeta IObj MapEntry Murmur3]
             [java.util Comparator]
             [ordered_collections.protocol PRangeAggregate]
-            [ordered_collections.tree.root INodeCollection
+            [ordered_collections.kernel.root INodeCollection
                                          IBalancedCollection
                                          IOrderedCollection]))
 

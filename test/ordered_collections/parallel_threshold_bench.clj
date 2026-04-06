@@ -16,11 +16,11 @@
   (:require [ordered-collections.bench-utils :refer [has-flag?]]
             [ordered-collections.core :as oc]
             [ordered-collections.parallel :as parallel]
-            [ordered-collections.tree.tree :as tree]
-            [ordered-collections.tree.node :as node]
-            [ordered-collections.tree.order :as order]
+            [ordered-collections.kernel.tree :as tree]
+            [ordered-collections.kernel.node :as node]
+            [ordered-collections.kernel.order :as order]
             [ordered-collections.bench-utils :as bu])
-  (:import [ordered_collections.tree.root INodeCollection IOrderedCollection]))
+  (:import [ordered_collections.kernel.root INodeCollection IOrderedCollection]))
 
 
 (defn warmup
@@ -135,16 +135,16 @@
    :merge tree/+parallel-merge-recursive-threshold+})
 
 (def ^:private union-parallel-kernel
-  (ns-resolve 'ordered-collections.tree.tree 'node-set-union-parallel*))
+  (ns-resolve 'ordered-collections.kernel.tree 'node-set-union-parallel*))
 
 (def ^:private intersect-parallel-kernel
-  (ns-resolve 'ordered-collections.tree.tree 'node-set-intersection-parallel*))
+  (ns-resolve 'ordered-collections.kernel.tree 'node-set-intersection-parallel*))
 
 (def ^:private diff-parallel-kernel
-  (ns-resolve 'ordered-collections.tree.tree 'node-set-difference-parallel*))
+  (ns-resolve 'ordered-collections.kernel.tree 'node-set-difference-parallel*))
 
 (def ^:private merge-parallel-kernel
-  (ns-resolve 'ordered-collections.tree.tree 'node-map-merge-parallel*))
+  (ns-resolve 'ordered-collections.kernel.tree 'node-map-merge-parallel*))
 
 (defn bench-threshold-for-size
   "Benchmark production-style dispatch at a given combined size."

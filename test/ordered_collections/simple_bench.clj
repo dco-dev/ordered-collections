@@ -25,10 +25,10 @@
                      split-workload fold-frequency-workload
                      set-comparison-workload]]
             [ordered-collections.core :as core]
-            [ordered-collections.tree.node :as node]
-            [ordered-collections.tree.tree :as tree]
-            [ordered-collections.tree.order :as order]
-            [ordered-collections.tree.interval :as interval]))
+            [ordered-collections.kernel.node :as node]
+            [ordered-collections.kernel.tree :as tree]
+            [ordered-collections.kernel.order :as order]
+            [ordered-collections.kernel.interval :as interval]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Map Benchmarks

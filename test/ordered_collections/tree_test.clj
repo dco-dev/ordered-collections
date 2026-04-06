@@ -1,7 +1,7 @@
 (ns ordered-collections.tree-test
   (:require [clojure.test :refer :all]
-            [ordered-collections.tree.node :as node]
-            [ordered-collections.tree.tree :as tree]
+            [ordered-collections.kernel.node :as node]
+            [ordered-collections.kernel.tree :as tree]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]))

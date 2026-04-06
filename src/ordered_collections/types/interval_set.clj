@@ -3,15 +3,15 @@
             [clojure.set]
             [ordered-collections.types.shared :refer [with-tree-env]
              :rename {with-tree-env with-interval-set}]
-            [ordered-collections.tree.interval :as interval]
-            [ordered-collections.tree.node     :as node]
-            [ordered-collections.tree.order    :as order]
+            [ordered-collections.kernel.interval :as interval]
+            [ordered-collections.kernel.node     :as node]
+            [ordered-collections.kernel.order    :as order]
             [ordered-collections.protocol      :as proto]
-            [ordered-collections.tree.root]
-            [ordered-collections.tree.tree     :as tree])
+            [ordered-collections.kernel.root]
+            [ordered-collections.kernel.tree     :as tree])
   (:import  [clojure.lang                RT Murmur3]
             [ordered_collections.protocol PExtensibleSet PIntervalCollection PSpan]
-            [ordered_collections.tree.root     INodeCollection
+            [ordered_collections.kernel.root     INodeCollection
                                          IBalancedCollection
                                          IOrderedCollection
                                          IIntervalCollection]))

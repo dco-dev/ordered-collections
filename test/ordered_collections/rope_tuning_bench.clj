@@ -12,9 +12,9 @@
    This is the rope analogue of bench-parallel: it finds the chunk size
    that gives the best overall profile rather than guessing."
   (:require [ordered-collections.bench-utils :as bu :refer [has-flag?]]
-            [ordered-collections.tree.rope :as ropetree]
-            [ordered-collections.tree.node :as node :refer [leaf leaf?]]
-            [ordered-collections.tree.tree :as tree]))
+            [ordered-collections.kernel.rope :as ropetree]
+            [ordered-collections.kernel.node :as node :refer [leaf leaf?]]
+            [ordered-collections.kernel.tree :as tree]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

@@ -118,7 +118,7 @@
 
 ;; Node types
 (def node-type-count
-  (some->> (slurp (path "src/ordered_collections/tree/node.clj"))
+  (some->> (slurp (path "src/ordered_collections/kernel/node.clj"))
            (re-seq #"deftype\s+")
            count))
 

@@ -1,4 +1,4 @@
-(ns ordered-collections.tree.order
+(ns ordered-collections.kernel.order
   (:refer-clojure :exclude [compare <= >= max])
   (:import [java.util Comparator]))
 

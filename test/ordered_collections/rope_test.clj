@@ -4,7 +4,7 @@
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
             [ordered-collections.core :as oc]
-            [ordered-collections.tree.rope :as ropetree]
+            [ordered-collections.kernel.rope :as ropetree]
             [ordered-collections.test-utils :as tu]))
 
 
@@ -602,7 +602,7 @@
   [root]
   (and (ropetree/invariant-valid? root)
        (or (nil? root)
-           (ordered-collections.tree.tree/node-healthy? root))))
+           (ordered-collections.kernel.tree/node-healthy? root))))
 
 (defspec prop-multi-chunk-edit-sequences 50
   ;; Inputs large enough to span many chunks (target=512, so 2000+ elements)

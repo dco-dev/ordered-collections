@@ -21,13 +21,13 @@
    - Remove: O(k log n)
    For typical use (k=1-3 overlaps), effectively O(log n)."
   (:require [clojure.core.reducers       :as r :refer [coll-fold]]
-            [ordered-collections.tree.node     :as node]
-            [ordered-collections.tree.order    :as order]
+            [ordered-collections.kernel.node     :as node]
+            [ordered-collections.kernel.order    :as order]
             [ordered-collections.protocol      :as proto]
-            [ordered-collections.tree.tree     :as tree])
+            [ordered-collections.kernel.tree     :as tree])
   (:import  [clojure.lang MapEntry Murmur3]
             [ordered_collections.protocol PRangeMap PSpan]
-            [ordered_collections.tree.tree EnumFrame]))
+            [ordered_collections.kernel.tree EnumFrame]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

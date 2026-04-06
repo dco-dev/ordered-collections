@@ -1,4 +1,4 @@
-(ns ordered-collections.tree.rope
+(ns ordered-collections.kernel.rope
   "Chunked implicit-index rope helpers.
 
   Rope trees are ordered by position, not by comparator. Each node stores a
@@ -28,9 +28,9 @@
     - rope-conj-right:  fills rightmost chunk, overflows to new node
     - rope-pop-right:   shrinks rightmost chunk, removes if empty
     - coll->root:       partition-all target produces valid chunks"
-  (:require [ordered-collections.tree.node :as node
+  (:require [ordered-collections.kernel.node :as node
              :refer [leaf leaf? -k -v -l -r]]
-            [ordered-collections.tree.tree :as tree]))
+            [ordered-collections.kernel.tree :as tree]))
 
 
 (def ^:const +target-chunk-size+ 256)

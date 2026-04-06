@@ -1,5 +1,5 @@
-(ns ordered-collections.tree.interval
-  (:require [ordered-collections.tree.order :as order])
+(ns ordered-collections.kernel.interval
+  (:require [ordered-collections.kernel.order :as order])
   (:import  [clojure.lang MapEntry PersistentVector]))
 
 
