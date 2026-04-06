@@ -41,12 +41,14 @@
     (set (filter pred intervals))))
 
 (defn naive-query-map
-  "Brute-force O(n) query for interval-map: find all values for overlapping intervals."
+  "Brute-force O(n) query for interval-map: find all values for overlapping intervals.
+   Deduplicates by interval key (last-wins) to match map assoc semantics."
   [entries query]
-  (let [pred (if (number? query)
-               #(naive-point-overlaps? (first %) query)
-               #(naive-overlaps? (first %) query))]
-    (set (map second (filter pred entries)))))
+  (let [deduped (into {} entries)
+        pred    (if (number? query)
+                  (fn [[iv _]] (naive-point-overlaps? iv query))
+                  (fn [[iv _]] (naive-overlaps? iv query)))]
+    (set (map val (filter pred deduped)))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
