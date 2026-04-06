@@ -30,7 +30,8 @@
     - coll->root:       partition-all target produces valid chunks"
   (:require [ordered-collections.kernel.node :as node
              :refer [leaf leaf? -k -v -l -r]]
-            [ordered-collections.kernel.tree :as tree])
+            [ordered-collections.kernel.tree :as tree]
+            [ordered-collections.parallel :as par])
   (:import  [clojure.lang Murmur3 SeqIterator Util]))
 
 
@@ -928,6 +929,43 @@
              (let [rest-root (tree/node-remove-least root rope-node-create)
                    result    (walk acc0 rest-root)]
                (if (reduced? result) @result result)))))))))
+
+(defn rope-fold
+  "Parallel fold over the rope's existing tree shape.
+
+  Unlike a split-based fold, this does not rebuild intermediate half-ropes.
+  It recursively folds left subtree, current chunk, and right subtree in
+  left-to-right order, using subtree sizes to decide when to stop splitting."
+  [root ^long n combinef reducef]
+  (letfn [(reduce-chunk [acc chunk]
+            (if (instance? clojure.lang.IReduceInit chunk)
+              (.reduce ^clojure.lang.IReduceInit chunk reducef acc)
+              (reduce-chunk-indexed reducef acc chunk)))
+          (fold-node [node]
+            (cond
+              (leaf? node)
+              (combinef)
+
+              (<= (long (-v node)) n)
+              (letfn [(walk [acc n]
+                        (if (leaf? n)
+                          acc
+                          (let [acc (walk acc (-l n))
+                                acc (reduce-chunk acc (-k n))]
+                            (recur acc (-r n)))))]
+                (walk (combinef) node))
+
+              :else
+              (let [l      (-l node)
+                    chunk  (-k node)
+                    r      (-r node)
+                    chunkv (reduce-chunk (combinef) chunk)]
+                (par/fork-join
+                  [lv (fold-node l) rv (fold-node r)]
+                  (combinef (combinef lv chunkv) rv)))))]
+    (if (par/in-fork-join-pool?)
+      (fold-node root)
+      (par/invoke-root #(fold-node root)))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

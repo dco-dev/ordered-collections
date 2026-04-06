@@ -3,7 +3,6 @@
   weight-balanced tree."
   (:require [clojure.core.protocols :as cp]
             [clojure.core.reducers :as r]
-            [ordered-collections.parallel :as par]
             [ordered-collections.protocol :as proto]
             [ordered-collections.kernel.rope :as ropetree])
   (:import  [clojure.lang RT Murmur3 MapEntry Indexed Util
@@ -267,21 +266,7 @@
 
   r/CollFold
   (coll-fold [this n combinef reducef]
-    (let [sz (ropetree/rope-size root)]
-      (if (<= sz (long n))
-        (.reduce ^IReduceInit this reducef (combinef))
-        (letfn [(fold* [^Rope child]
-                  (let [csz (count child)]
-                    (if (<= csz (long n))
-                      (.reduce ^IReduceInit child reducef (combinef))
-                      (let [cmid   (quot csz 2)
-                            [cl cr] (proto/rope-split child cmid)]
-                        (par/fork-join
-                          [lv (fold* cl) rv (fold* cr)]
-                          (combinef lv rv))))))]
-          (if (par/in-fork-join-pool?)
-            (fold* this)
-            (par/invoke-root #(fold* this)))))))
+    (ropetree/rope-fold root (long n) combinef reducef))
 
   clojure.lang.IHashEq
   (hasheq [this]
