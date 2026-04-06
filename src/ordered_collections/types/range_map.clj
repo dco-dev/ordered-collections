@@ -99,40 +99,33 @@
   [root lo hi]
   (if (node/leaf? root)
     []
-    (let [result (volatile! (transient []))
-          floor (find-floor-range root lo)
-          start-range (if (and floor (> (range-hi (first floor)) lo))
-                        floor
-                        (find-ceiling-range root lo))]
-      (when start-range
-        (let [[start-key _] start-range
-              start-lo (range-lo start-key)]
-          (loop [n root
-                 enum nil]
-            (if (node/leaf? n)
-              (loop [e enum]
-                (when e
-                  (let [node (tree/node-enum-first e)
-                        [rl rh] (node/-k node)]
-                    (when (< rl hi)
-                      (when (> rh lo)
-                        (vswap! result conj! [(node/-k node) (node/-v node)]))
-                      (recur (tree/node-enum-rest e))))))
-              (let [[rl _] (node/-k n)]
-                (cond
-                  (< start-lo rl) (recur (node/-l n) (EnumFrame. n (node/-r n) enum))
-                  (> start-lo rl) (recur (node/-r n) enum)
-                  :else
-                  (let [e (EnumFrame. n (node/-r n) enum)]
-                    (loop [e e]
-                      (when e
-                        (let [node (tree/node-enum-first e)
-                              [rl rh] (node/-k node)]
-                          (when (< rl hi)
-                            (when (> rh lo)
-                              (vswap! result conj! [(node/-k node) (node/-v node)]))
-                            (recur (tree/node-enum-rest e)))))))))))))
-      (persistent! @result))))
+    (let [floor (find-floor-range root lo)
+          start (if (and floor (> (range-hi (first floor)) lo))
+                  floor
+                  (find-ceiling-range root lo))]
+      (if-not start
+        []
+        (let [start-lo (range-lo (first start))
+              ;; Navigate to start position and build enumerator
+              enum (loop [n root, frames nil]
+                     (if (node/leaf? n)
+                       frames
+                       (let [rl (range-lo (node/-k n))]
+                         (cond
+                           (< start-lo rl) (recur (node/-l n) (EnumFrame. n (node/-r n) frames))
+                           (> start-lo rl) (recur (node/-r n) frames)
+                           :else           (EnumFrame. n (node/-r n) frames)))))
+              acc (transient [])]
+          ;; Walk forward collecting overlapping ranges
+          (loop [e enum]
+            (when e
+              (let [node (tree/node-enum-first e)
+                    [rl rh] (node/-k node)]
+                (when (< rl hi)
+                  (when (> rh lo)
+                    (conj! acc [(node/-k node) (node/-v node)]))
+                  (recur (tree/node-enum-rest e))))))
+          (persistent! acc))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Adjacent Range Detection for Coalescing
@@ -163,7 +156,7 @@
           (< hi rl) (recur (node/-l n))
           :else     (recur (node/-r n)))))))
 
-(declare range-map-assoc range-map-remove)
+(declare range-map-assoc range-map-remove ->RangeMap)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; RangeMap Type
@@ -322,42 +315,50 @@
          (range-hi (node/-k (tree/node-greatest root)))]))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Assoc with Carve-Out
+;; Carve-Out and Insertion
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- carve-out
+  "Remove overlapping ranges and re-add trimmed non-overlapping portions."
+  [root lo hi overlapping]
+  (let [root (reduce (fn [n [r _]] (tree/node-remove n r))
+                     root overlapping)]
+    (reduce (fn [n [[rl rh] rv]]
+              (cond-> n
+                (< rl lo) (tree/node-add [rl lo] rv)
+                (> rh hi) (tree/node-add [hi rh] rv)))
+            root overlapping)))
+
+(defn- coalesce-and-insert
+  "Insert [lo hi) -> v, merging with adjacent same-value ranges."
+  [root lo hi v]
+  (let [left-adj  (find-adjacent-left root lo)
+        right-adj (find-adjacent-right root hi)
+        [lo root] (if (and left-adj (= (second left-adj) v))
+                    [(range-lo (first left-adj))
+                     (tree/node-remove root (first left-adj))]
+                    [lo root])
+        [hi root] (if (and right-adj (= (second right-adj) v))
+                    [(range-hi (first right-adj))
+                     (tree/node-remove root (first right-adj))]
+                    [hi root])]
+    (tree/node-add root [lo hi] v)))
 
 (defn- range-map-assoc
   "Insert range [lo hi) -> val, removing any overlapping portions.
    If coalesce? is true, adjacent ranges with the same value are merged."
   [^RangeMap rm rng v coalesce?]
   (let [[lo hi] rng
-        cmp     (.-cmp rm)]
+        cmp (.-cmp rm)]
     (when (>= lo hi)
       (throw (ex-info "Invalid range: lo must be < hi" {:range rng})))
     (binding [order/*compare* cmp]
       (let [overlapping (collect-overlapping (.-root rm) lo hi)
-            root' (reduce (fn [n [r _]] (tree/node-remove n r))
-                          (.-root rm) overlapping)
-            root'' (reduce
-                    (fn [n [[rl rh] rv]]
-                      (cond-> n
-                        (< rl lo) (tree/node-add [rl lo] rv)
-                        (> rh hi) (tree/node-add [hi rh] rv)))
-                    root' overlapping)]
-        (if coalesce?
-          (let [left-adj (find-adjacent-left root'' lo)
-                right-adj (find-adjacent-right root'' hi)
-                [final-lo root'''] (if (and left-adj (= (second left-adj) v))
-                                     [(range-lo (first left-adj))
-                                      (tree/node-remove root'' (first left-adj))]
-                                     [lo root''])
-                [final-hi root''''] (if (and right-adj (= (second right-adj) v))
-                                      [(range-hi (first right-adj))
-                                       (tree/node-remove root''' (first right-adj))]
-                                      [hi root'''])
-                root''''' (tree/node-add root'''' [final-lo final-hi] v)]
-            (RangeMap. root''''' cmp (.-_meta rm)))
-          (let [root''' (tree/node-add root'' [lo hi] v)]
-            (RangeMap. root''' cmp (.-_meta rm))))))))
+            root (carve-out (.-root rm) lo hi overlapping)
+            root (if coalesce?
+                   (coalesce-and-insert root lo hi v)
+                   (tree/node-add root [lo hi] v))]
+        (RangeMap. root cmp (.-_meta rm))))))
 
 (defn- range-map-remove
   "Remove all mappings in [lo hi). Overlapping ranges are trimmed."
@@ -368,15 +369,8 @@
       (throw (ex-info "Invalid range: lo must be < hi" {:range rng})))
     (binding [order/*compare* cmp]
       (let [overlapping (collect-overlapping (.-root rm) lo hi)
-            root' (reduce (fn [n [r _]] (tree/node-remove n r))
-                          (.-root rm) overlapping)
-            root'' (reduce
-                     (fn [n [[rl rh] rv]]
-                       (cond-> n
-                         (< rl lo) (tree/node-add [rl lo] rv)
-                         (> rh hi) (tree/node-add [hi rh] rv)))
-                     root' overlapping)]
-        (RangeMap. root'' cmp (.-_meta rm))))))
+            root (carve-out (.-root rm) lo hi overlapping)]
+        (RangeMap. root cmp (.-_meta rm))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Constructor
