@@ -16,6 +16,7 @@ $ lein bench-simple           # Quick iteration bench (100 to 100K)
 $ lein bench-simple --full    # Full suite (100 to 1M)
 $ lein bench-range-map        # Range-map vs Guava TreeRangeMap
 $ lein bench-parallel         # Parallel threshold crossover analysis
+$ lein bench-rope-tuning      # Rope chunk-size sweep
 ```
 
 Results are written to `bench-results/<timestamp>.edn` with system info, sizes, and per-operation Criterium statistics.
@@ -336,6 +337,77 @@ Sub-linear growth — O(log n + k) means query time depends more on result count
 | ordered-map | **1.45ms** | **28.81ms** | **191.14ms** |
 
 2.3x faster than sorted-map and 1.8x faster than data.avl at N=500K in these measurements.
+
+## Rope vs PersistentVector
+
+The rope is a persistent sequence optimized for structural editing. Where
+PersistentVector is O(n) for mid-sequence splice/insert/remove, the rope is
+O(log n). The advantage is unbounded and grows linearly with collection size.
+
+### Structural Editing
+
+| Workload | N=10K | N=100K | N=500K |
+|---|---:|---:|---:|
+| 200 random edits — rope | 2.6ms | 2.2ms | 2.9ms |
+| 200 random edits — vector | 97ms | 1.04s | 5.4s |
+| **Speedup** | **38x** | **473x** | **1862x** |
+
+| Workload | N=10K | N=100K | N=500K |
+|---|---:|---:|---:|
+| Single splice — rope | 128µs | 54µs | 49µs |
+| Single splice — vector | 842µs | 6.0ms | 27ms |
+| **Speedup** | **7x** | **111x** | **551x** |
+
+At 500K elements, 200 random splice operations take ~3ms on the rope vs ~5.4
+seconds on the vector. The rope's time is nearly constant across sizes because
+each operation is O(log n).
+
+### Concatenation
+
+| Workload | N=10K | N=100K | N=500K |
+|---|---:|---:|---:|
+| Concat many pieces — rope | 36µs | 123µs | 364µs |
+| Concat many pieces — vector | 102µs | 800µs | 3.4ms |
+| **Speedup** | **3x** | **7x** | **9x** |
+
+Bulk concatenation collects chunks in O(total chunks) and builds the tree
+directly, avoiding pairwise tree operations.
+
+### Reduce
+
+| Workload | N=10K | N=100K | N=500K |
+|---|---:|---:|---:|
+| Reduce sum — rope | 145µs | 601µs | 2.8ms |
+| Reduce sum — vector | 93µs | 617µs | 3.6ms |
+| **Ratio** | 0.6x | ~1x | **1.3x** |
+
+The rope beats vectors on reduce at N >= 100K because 256-element chunks give
+better cache locality per reduction step than PersistentVector's 32-wide trie
+nodes. The rope uses a direct in-order tree walk (no enumerator frames) and
+delegates to the vector's native `.reduce` for chunk-internal iteration.
+
+### Rope vs String (text workload)
+
+For text-editing workloads, the rope also beats `java.lang.String` at scale:
+
+| Workload (N=100K chars) | Rope | String | Speedup |
+|---|---:|---:|---:|
+| Splice 32 chars at midpoint | 3.6µs | 13.4µs | **3.8x** |
+| Split at midpoint | 425ns | 2.6µs | **6.1x** |
+
+String splice and split copy the entire string (O(n)); the rope does O(log n)
+tree work.
+
+### Where the Rope Loses
+
+| Workload | Ratio | Why |
+|---|---|---|
+| Split / slice | ~20x slower | O(log n) vs O(1) `subvec` wrapper |
+| Random nth | 0.4-0.7x | O(log n) vs O(1) trie lookup |
+| Build via transient | 2-3x slower | Periodic O(log n) tree flush vs O(1) array append |
+
+These losses are inherent to the tree-backed design, not to the
+implementation. The absolute times are microseconds.
 
 ## Specialized Node Types
 
