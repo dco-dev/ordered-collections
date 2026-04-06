@@ -6,25 +6,16 @@
             [ordered-collections.parallel :as par]
             [ordered-collections.protocol :as proto]
             [ordered-collections.kernel.rope :as ropetree])
-  (:import  [clojure.lang RT Murmur3 MapEntry ILookup
-                           Associative Indexed Seqable Reversible Sequential
-                           IPersistentCollection IPersistentStack IObj IMeta
+  (:import  [clojure.lang RT Murmur3 MapEntry Indexed Util
+                           IPersistentCollection IPersistentStack IPersistentVector
                            IEditableCollection ITransientCollection
-                           IReduce IReduceInit SeqIterator Util]
+                           IReduce IReduceInit SeqIterator]
             [java.util ArrayList]))
 
 
-(defn- seq-equiv
-  [s1 o]
-  (if-not (or (instance? clojure.lang.Sequential o)
-              (instance? java.util.List o))
-    false
-    (loop [s1 (seq s1) s2 (seq o)]
-      (cond
-        (nil? s1) (nil? s2)
-        (nil? s2) false
-        (not (Util/equiv (first s1) (first s2))) false
-        :else (recur (next s1) (next s2))))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Helpers
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn- valid-index?
   [^long n k]
@@ -37,6 +28,46 @@
   (and (integer? k)
        (let [i (long k)]
          (and (<= 0 i) (<= i n)))))
+
+(defn- check-range!
+  "Validate [start, end) against rope of size n."
+  [^long start ^long end ^long n]
+  (when (or (neg? start) (neg? end) (> start end) (> end n))
+    (throw (IndexOutOfBoundsException.))))
+
+(declare ->rope)
+
+(defn- rope-equiv
+  "Vector-style equality. If both are IPersistentVector, compare by index.
+   Otherwise fall back to sequential element-wise comparison."
+  [^IPersistentVector this o]
+  (cond
+    (identical? this o) true
+
+    (instance? IPersistentVector o)
+    (let [n (.length this)]
+      (and (= n (.length ^IPersistentVector o))
+           (loop [i 0]
+             (if (= i n)
+               true
+               (if (Util/equiv (.nth this i) (.nth ^IPersistentVector o i))
+                 (recur (unchecked-inc i))
+                 false)))))
+
+    (or (instance? clojure.lang.Sequential o)
+        (instance? java.util.List o))
+    (let [n (.length this)]
+      (if (and (instance? clojure.lang.Counted o)
+               (not= n (.count ^clojure.lang.Counted o)))
+        false
+        (loop [s (seq o) i 0]
+          (cond
+            (= i n) (nil? s)
+            (nil? s) false
+            (not (Util/equiv (.nth this i) (first s))) false
+            :else (recur (next s) (unchecked-inc i))))))
+
+    :else false))
 
 (defn- seq-compare
   "Lexicographic comparison of two sequential collections."
@@ -67,13 +98,14 @@
 (defn- linear-last-index-of
   "Forward linear scan tracking the last matching index. O(n)."
   [root x]
-  (let [result (ropetree/rope-reduce
-                 (fn [[^long i ^long found] elem]
-                   [(unchecked-inc i)
-                    (if (Util/equiv elem x) i found)])
-                 [(long 0) (long -1)]
-                 root)]
-    (long (second result))))
+  (let [found (volatile! (long -1))]
+    (ropetree/rope-reduce
+      (fn [^long i elem]
+        (when (Util/equiv elem x) (vreset! found i))
+        (unchecked-inc i))
+      (long 0)
+      root)
+    (long @found)))
 
 (defn- rope-to-array
   ^objects [root]
@@ -87,25 +119,31 @@
       root)
     arr))
 
-(declare ->Rope)
 (declare ->TransientRope)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Rope
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; Fields:
+;;   root  — implicit-index weight-balanced tree of chunk vectors, or nil
+;;   _meta — metadata map
+;;
+;; Each tree node stores a chunk vector in the key slot and the total
+;; element count of the subtree in the value slot. Implements
+;; IPersistentVector for full vector-contract compatibility, including
+;; indexed access, assoc, conj-to-end, peek/pop-right.
+
 (deftype Rope [root _meta]
 
   java.io.Serializable
   java.util.RandomAccess
 
-  IMeta
-  (meta [_]
-    _meta)
+  clojure.lang.IMeta
+  (meta [_] _meta)
 
-  IObj
-  (withMeta [_ m]
-    (Rope. root m))
+  clojure.lang.IObj
+  (withMeta [_ m] (Rope. root m))
 
   clojure.lang.Counted
   (count [_]
@@ -121,7 +159,7 @@
       (ropetree/rope-nth root (long i))
       not-found))
 
-  ILookup
+  clojure.lang.ILookup
   (valAt [this k]
     (.nth this k nil))
   (valAt [this k not-found]
@@ -140,7 +178,7 @@
         2 (.invoke this (first args) (second args))
         (throw (clojure.lang.ArityException. n (.. this getClass getSimpleName))))))
 
-  Associative
+  clojure.lang.Associative
   (containsKey [_ k]
     (valid-index? (ropetree/rope-size root) k))
   (entryAt [this k]
@@ -158,7 +196,7 @@
         :else
         (Rope. (ropetree/rope-assoc root (long k) v) _meta))))
 
-  clojure.lang.IPersistentVector
+  IPersistentVector
   (assocN [this i v]
     (.assoc this i v))
   (length [_]
@@ -170,7 +208,7 @@
   (empty [_]
     (Rope. nil _meta))
   (equiv [this o]
-    (seq-equiv this o))
+    (rope-equiv this o))
 
   IPersistentStack
   (peek [_]
@@ -178,15 +216,15 @@
   (pop [_]
     (Rope. (ropetree/rope-pop-right root) _meta))
 
-  Seqable
+  clojure.lang.Seqable
   (seq [_]
     (ropetree/rope-seq root))
 
-  Reversible
+  clojure.lang.Reversible
   (rseq [_]
     (ropetree/rope-rseq root))
 
-  Sequential
+  clojure.lang.Sequential
 
   java.lang.Comparable
   (compareTo [this o]
@@ -217,32 +255,25 @@
     (let [sz (ropetree/rope-size root)]
       (if (<= sz (long n))
         (.reduce ^IReduceInit this reducef (combinef))
-        (let [mid (quot sz 2)
-              [l r] (proto/rope-split this mid)
-              fold* (fn fold* [^Rope child]
-                      (let [csz (count child)]
-                        (if (<= csz (long n))
-                          (.reduce ^IReduceInit child reducef (combinef))
-                          (let [cmid   (quot csz 2)
-                                [cl cr] (proto/rope-split child cmid)]
-                            (par/fork-join
-                              [lv (fold* cl) rv (fold* cr)]
-                              (combinef lv rv))))))]
+        (letfn [(fold* [^Rope child]
+                  (let [csz (count child)]
+                    (if (<= csz (long n))
+                      (.reduce ^IReduceInit child reducef (combinef))
+                      (let [cmid   (quot csz 2)
+                            [cl cr] (proto/rope-split child cmid)]
+                        (par/fork-join
+                          [lv (fold* cl) rv (fold* cr)]
+                          (combinef lv rv))))))]
           (if (par/in-fork-join-pool?)
-            (par/fork-join
-              [lv (fold* l) rv (fold* r)]
-              (combinef lv rv))
-            (par/invoke-root
-              #(par/fork-join
-                 [lv (fold* l) rv (fold* r)]
-                 (combinef lv rv))))))))
+            (fold* this)
+            (par/invoke-root #(fold* this)))))))
 
   clojure.lang.IHashEq
   (hasheq [this]
     (Murmur3/hashOrdered this))
 
   java.util.Collection
-  (toArray [this]
+  (toArray [_]
     (rope-to-array root))
   (isEmpty [_]
     (nil? root))
@@ -285,40 +316,35 @@
                        (.-root ^Rope other)
                        (ropetree/coll->root other))]
       (Rope. (ropetree/rope-concat root other-root) _meta)))
-  (rope-split [this i]
+  (rope-split [_ i]
     (let [[l r] (ropetree/ensure-split-parts
                   (ropetree/rope-split-at root (long i)))]
       [(Rope. l _meta) (Rope. r _meta)]))
-  (rope-sub [this start end]
+  (rope-sub [_ start end]
     (let [n (ropetree/rope-size root)]
-      (when (or (neg? start) (neg? end) (> start end) (> end n))
-        (throw (IndexOutOfBoundsException.)))
+      (check-range! start end n)
       (Rope. (ropetree/rope-subvec-root root start end) _meta)))
   (rope-insert [this i coll]
     (let [n (ropetree/rope-size root)]
       (when (or (neg? i) (> i n))
         (throw (IndexOutOfBoundsException.)))
       (let [[l r] (proto/rope-split this i)
-            mid   (if (instance? Rope coll) coll (Rope. (ropetree/coll->root coll) {}))]
+            mid   (->rope coll)]
         (proto/rope-concat (proto/rope-concat l mid) r))))
   (rope-remove [this start end]
-    (let [n (ropetree/rope-size root)]
-      (when (or (neg? start) (neg? end) (> start end) (> end n))
-        (throw (IndexOutOfBoundsException.)))
-      (let [[l r]  (proto/rope-split this start)
-            [_ rr] (proto/rope-split r (- end start))]
-        (proto/rope-concat l rr))))
+    (check-range! start end (ropetree/rope-size root))
+    (let [[l r]  (proto/rope-split this start)
+          [_ rr] (proto/rope-split r (- end start))]
+      (proto/rope-concat l rr)))
   (rope-splice [this start end coll]
-    (let [n (ropetree/rope-size root)]
-      (when (or (neg? start) (neg? end) (> start end) (> end n))
-        (throw (IndexOutOfBoundsException.)))
-      (let [[l r]  (proto/rope-split this start)
-            [_ rr] (proto/rope-split r (- end start))
-            mid    (if (instance? Rope coll) coll (Rope. (ropetree/coll->root coll) {}))]
-        (proto/rope-concat (proto/rope-concat l mid) rr))))
-  (rope-chunks [this]
+    (check-range! start end (ropetree/rope-size root))
+    (let [[l r]  (proto/rope-split this start)
+          [_ rr] (proto/rope-split r (- end start))
+          mid    (->rope coll)]
+      (proto/rope-concat (proto/rope-concat l mid) rr)))
+  (rope-chunks [_]
     (ropetree/rope-chunks-seq root))
-  (rope-str [this]
+  (rope-str [_]
     (ropetree/rope->str root))
 
   IEditableCollection
@@ -333,6 +359,13 @@
   (toString [this]
     (pr-str this)))
 
+
+(defn- ->rope
+  "Coerce x to a Rope, returning x if already a Rope."
+  [x]
+  (if (instance? Rope x)
+    x
+    (Rope. (ropetree/coll->root x) {})))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Transient Rope
@@ -355,7 +388,7 @@
                      (ropetree/rope-concat root cnode)))))
     this)
 
-  (persistent [this]
+  (persistent [_]
     (when-not edit (throw (IllegalAccessError. "Transient used after persistent! call")))
     (set! edit false)
     (let [final-root (if (.isEmpty tail)
@@ -392,12 +425,8 @@
 ;; Constructors
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn- rope-empty
-  []
-  (Rope. nil {}))
-
 (defn rope
-  ([] (rope-empty))
+  ([] (Rope. nil {}))
   ([coll]
    (Rope. (ropetree/coll->root coll) {})))
 
@@ -417,6 +446,7 @@
     {}))
 
 (defn rope-chunks-reverse
+  "Reverse seq of internal chunk vectors."
   [v]
   (ropetree/rope-chunks-rseq (rope-root v)))
 
@@ -428,7 +458,7 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Print Methods
+;; Literal Representation
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmethod print-method Rope [^Rope r ^java.io.Writer w]
