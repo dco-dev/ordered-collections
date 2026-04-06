@@ -163,3 +163,28 @@
     "Check if collection contains exactly k (no fuzzy matching).")
   (exact-get [coll k] [coll k not-found]
     "Get value for exactly k (maps only, no fuzzy matching)."))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Rope Protocol
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defprotocol PRope
+  "Protocol for persistent rope operations — structural editing of
+  indexed sequences in O(log n)."
+  (rope-concat [r1 r2]
+    "Concatenate two ropes. O(log n).")
+  (rope-split [r i]
+    "Split rope at index i, returning [left right]. O(log n).")
+  (rope-sub [r start end]
+    "Extract subrange [start, end) as a new rope. O(log n).")
+  (rope-insert [r i coll]
+    "Insert elements from coll at index i. O(log n).")
+  (rope-remove [r start end]
+    "Remove range [start, end). O(log n).")
+  (rope-splice [r start end coll]
+    "Replace range [start, end) with elements from coll. O(log n).")
+  (rope-chunks [r]
+    "Return a seq of the rope's internal chunk vectors.")
+  (rope-str [r]
+    "Efficiently convert a rope of characters/strings to a String."))

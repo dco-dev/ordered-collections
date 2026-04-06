@@ -4,6 +4,7 @@
   (:require [clojure.core.protocols :as cp]
             [clojure.core.reducers :as r]
             [ordered-collections.parallel :as par]
+            [ordered-collections.protocol :as proto]
             [ordered-collections.tree.rope :as ropetree])
   (:import  [clojure.lang RT Murmur3 MapEntry ILookup
                            Associative Indexed Seqable Reversible Sequential
@@ -84,9 +85,6 @@
 
 (declare ->Rope)
 (declare ->TransientRope)
-(declare rope-sub)
-(declare rope-split)
-(declare rope-concat)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Rope
@@ -209,13 +207,13 @@
       (if (<= sz (long n))
         (.reduce ^IReduceInit this reducef (combinef))
         (let [mid (quot sz 2)
-              [l r] (rope-split this mid)
+              [l r] (proto/rope-split this mid)
               fold* (fn fold* [^Rope child]
                       (let [csz (count child)]
                         (if (<= csz (long n))
                           (.reduce ^IReduceInit child reducef (combinef))
                           (let [cmid   (quot csz 2)
-                                [cl cr] (rope-split child cmid)]
+                                [cl cr] (proto/rope-split child cmid)]
                             (par/fork-join
                               [lv (fold* cl) rv (fold* cr)]
                               (combinef lv rv))))))]
@@ -268,7 +266,49 @@
   (set [_ _ _]
     (throw (UnsupportedOperationException.)))
   (subList [this from to]
-    (rope-sub this from to))
+    (proto/rope-sub this from to))
+
+  proto/PRope
+  (rope-concat [this other]
+    (let [other-root (if (instance? Rope other)
+                       (.-root ^Rope other)
+                       (ropetree/coll->root other))]
+      (Rope. (ropetree/rope-concat root other-root) _meta)))
+  (rope-split [this i]
+    (let [[l r] (ropetree/ensure-split-parts
+                  (ropetree/rope-split-at root (long i)))]
+      [(Rope. l _meta) (Rope. r _meta)]))
+  (rope-sub [this start end]
+    (let [n (ropetree/rope-size root)]
+      (when (or (neg? start) (neg? end) (> start end) (> end n))
+        (throw (IndexOutOfBoundsException.)))
+      (Rope. (ropetree/rope-subvec-root root start end) _meta)))
+  (rope-insert [this i coll]
+    (let [n (ropetree/rope-size root)]
+      (when (or (neg? i) (> i n))
+        (throw (IndexOutOfBoundsException.)))
+      (let [[l r] (proto/rope-split this i)
+            mid   (if (instance? Rope coll) coll (Rope. (ropetree/coll->root coll) {}))]
+        (proto/rope-concat (proto/rope-concat l mid) r))))
+  (rope-remove [this start end]
+    (let [n (ropetree/rope-size root)]
+      (when (or (neg? start) (neg? end) (> start end) (> end n))
+        (throw (IndexOutOfBoundsException.)))
+      (let [[l r]  (proto/rope-split this start)
+            [_ rr] (proto/rope-split r (- end start))]
+        (proto/rope-concat l rr))))
+  (rope-splice [this start end coll]
+    (let [n (ropetree/rope-size root)]
+      (when (or (neg? start) (neg? end) (> start end) (> end n))
+        (throw (IndexOutOfBoundsException.)))
+      (let [[l r]  (proto/rope-split this start)
+            [_ rr] (proto/rope-split r (- end start))
+            mid    (if (instance? Rope coll) coll (Rope. (ropetree/coll->root coll) {}))]
+        (proto/rope-concat (proto/rope-concat l mid) rr))))
+  (rope-chunks [this]
+    (ropetree/rope-chunks-seq root))
+  (rope-str [this]
+    (ropetree/rope->str root))
 
   IEditableCollection
   (asTransient [_]
@@ -365,15 +405,6 @@
            (into [] (mapcat (comp ropetree/root->chunks rope-root)) xs))
     {}))
 
-(defn rope-concat
-  [left right]
-  (Rope. (ropetree/rope-concat (rope-root left) (rope-root right))
-    (meta left)))
-
-(defn rope-chunks
-  [v]
-  (ropetree/rope-chunks-seq (rope-root v)))
-
 (defn rope-chunks-reverse
   [v]
   (ropetree/rope-chunks-rseq (rope-root v)))
@@ -381,55 +412,6 @@
 (defn rope-chunk-count
   [v]
   (count (ropetree/root->chunks (rope-root v))))
-
-(defn rope-split
-  [v i]
-  (let [[l r] (ropetree/ensure-split-parts
-                (ropetree/rope-split-at (rope-root v) (long i)))]
-    [(Rope. l (meta v))
-     (Rope. r (meta v))]))
-
-(defn rope-sub
-  [v start end]
-  (let [n (count v)]
-    (when (or (neg? start) (neg? end) (> start end) (> end n))
-      (throw (IndexOutOfBoundsException.)))
-    (Rope. (ropetree/rope-subvec-root (rope-root v) start end) (meta v))))
-
-(defn rope-insert
-  [v i inserted]
-  (let [n (count v)]
-    (when (or (neg? i) (> i n))
-      (throw (IndexOutOfBoundsException.)))
-    (let [[l r] (rope-split v i)
-          mid   (if (instance? Rope inserted) inserted (rope inserted))]
-      (rope-concat (rope-concat l mid) r))))
-
-(defn rope-remove
-  [v start end]
-  (let [n (count v)]
-    (when (or (neg? start) (neg? end) (> start end) (> end n))
-      (throw (IndexOutOfBoundsException.)))
-    (let [[l r]    (rope-split v start)
-          [_ rr]   (rope-split r (- end start))]
-      (rope-concat l rr))))
-
-(defn rope-splice
-  [v start end inserted]
-  (let [n (count v)]
-    (when (or (neg? start) (neg? end) (> start end) (> end n))
-      (throw (IndexOutOfBoundsException.)))
-    (let [[l r]    (rope-split v start)
-          [_ rr]   (rope-split r (- end start))
-          mid      (if (instance? Rope inserted) inserted (rope inserted))]
-      (rope-concat (rope-concat l mid) rr))))
-
-
-(defn rope-str
-  "Efficiently convert a rope of characters/strings to a String via
-  StringBuilder. Much faster than (apply str r) for large ropes."
-  ^String [v]
-  (ropetree/rope->str (rope-root v)))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
