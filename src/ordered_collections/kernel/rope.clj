@@ -37,6 +37,8 @@
 (def ^:const +target-chunk-size+ 256)
 (def ^:const +min-chunk-size+    128)
 
+(declare raw-rope-concat)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Rope Node Basics
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -159,6 +161,24 @@
             (recur (+ pos +target-chunk-size+)
               (conj! acc (subvec elems pos (+ pos +target-chunk-size+))))))))))
 
+(defn- rechunk-root
+  "Build a rope root from a small flat vector by rechunking to CSI.
+  Boundary repair only produces a handful of chunks, so it is worth
+  constructing those shapes directly instead of routing through the
+  general chunks->root builder."
+  [elems]
+  (let [chunks (rechunk-balanced elems)]
+    (case (count chunks)
+      0 nil
+      1 (chunk-node (nth chunks 0))
+      2 (raw-rope-concat
+          (chunk-node (nth chunks 0))
+          (chunk-node (nth chunks 1)))
+      3 (rope-node-create (nth chunks 1) nil
+          (chunk-node (nth chunks 0))
+          (chunk-node (nth chunks 2)))
+      (build-root chunks))))
+
 (defn normalize-root
   "Full O(n) rechunk of a rope tree so every chunk satisfies CSI."
   [root]
@@ -259,7 +279,7 @@
             prev-chunk (node-chunk (tree/node-greatest rest))
             rest2      (rope-remove-greatest rest)
             combined   (into prev-chunk last-chunk)
-            mid        (chunks->root (rechunk-balanced combined))]
+            mid        (rechunk-root combined)]
         (raw-rope-concat rest2 mid)))))
 
 (defn- ensure-left-fringe
@@ -311,20 +331,20 @@
     (if (or (>= cn +min-chunk-size+)
             (and (leaf? l') (leaf? r')))
       ;; Combined is large enough or it is the only content
-      (let [mid (chunks->root (rechunk-balanced combined))]
+      (let [mid (rechunk-root combined)]
         (raw-rope-concat (raw-rope-concat l' mid) r'))
       ;; Combined still below min — pull one more neighbor
       (if-not (leaf? l')
         (let [prev  (node-chunk (tree/node-greatest l'))
               l''   (rope-remove-greatest l')
               all   (into prev combined)
-              mid   (chunks->root (rechunk-balanced all))]
+              mid   (rechunk-root all)]
           (raw-rope-concat (raw-rope-concat l'' mid) r'))
         ;; l' is empty so r' must be non-empty (both-empty handled above)
         (let [nxt  (node-chunk (tree/node-least r'))
               r''  (tree/node-remove-least r' create)
               all  (into combined nxt)
-              mid  (chunks->root (rechunk-balanced all))]
+              mid  (rechunk-root all)]
           (raw-rope-concat (raw-rope-concat l' mid) r''))))))
 
 (defn rope-concat
@@ -363,11 +383,12 @@
     (let [l  (-l n)
           ls (if (leaf? l) 0 (long (-v l)))
           ck (-k n)
-          cs (long (.count ^clojure.lang.Counted ck))]
+          cs (long (.count ^clojure.lang.Counted ck))
+          rs (+ ls cs)]
       (cond
         (< i ls) (recur l i)
-        (< i (+ ls cs)) (.nth ^clojure.lang.Indexed ck (unchecked-int (- i ls)))
-        :else (recur (-r n) (- i ls cs))))))
+        (< i rs) (.nth ^clojure.lang.Indexed ck (unchecked-int (- i ls)))
+        :else (recur (-r n) (- i rs))))))
 
 (defn rope-assoc
   [root ^long i x]
@@ -377,17 +398,18 @@
                     l  (-l n)
                     r  (-r n)
                     ls (if (leaf? l) 0 (long (-v l)))
-                    cs (long (.count ^clojure.lang.Counted ck))]
+                    cs (long (.count ^clojure.lang.Counted ck))
+                    rs (+ ls cs)]
                 (cond
                   (< i ls)
                   (tree/node-stitch ck nil (assoc* l i) r create)
 
-                  (< i (+ ls cs))
+                  (< i rs)
                   (create (assoc ck (- i ls) x) nil l r)
 
                   :else
                   (tree/node-stitch ck nil l
-                    (assoc* r (- i ls cs))
+                    (assoc* r (- i rs))
                     create))))]
       (assoc* root i))))
 
@@ -442,7 +464,22 @@
 
 (defn rope-subvec-root
   [root ^long start ^long end]
-  (letfn [(slice* [n ^long start ^long end]
+  (letfn [(slice-3 [left mid-chunk right]
+            (cond
+              (nil? mid-chunk)
+              (raw-rope-concat left right)
+
+              (leaf? left)
+              (if (leaf? right)
+                (chunk-node mid-chunk)
+                (raw-rope-concat (chunk-node mid-chunk) right))
+
+              (leaf? right)
+              (raw-rope-concat left (chunk-node mid-chunk))
+
+              :else
+              (rope-join mid-chunk left right)))
+          (slice* [n ^long start ^long end]
             (cond
               (leaf? n) nil
               (>= start end) nil
@@ -455,18 +492,27 @@
                         r     (-r n)
                         ls    (if (leaf? l) 0 (long (-v l)))
                         cs    (long (.count ^clojure.lang.Counted chunk))
-                        rs    (+ ls cs)
-                        left  (when (< start ls)
-                                (slice* l start (min end ls)))
-                        c0    (max 0 (- start ls))
-                        c1    (min cs (- end ls))
-                        mid   (when (< c0 c1)
-                                (chunk-node (subvec chunk c0 c1)))
-                        right (when (> end rs)
-                                (slice* r (max 0 (- start rs)) (- end rs)))]
-                    (raw-rope-concat
-                      (raw-rope-concat left mid)
-                      right))))))]
+                        rs    (+ ls cs)]
+                    (cond
+                      (<= end ls)
+                      (slice* l start end)
+
+                      (>= start rs)
+                      (slice* r (- start rs) (- end rs))
+
+                      (and (>= start ls) (<= end rs))
+                      (chunk-node (subvec chunk (- start ls) (- end ls)))
+
+                      :else
+                      (let [left      (when (< start ls)
+                                        (slice* l start ls))
+                            c0        (max 0 (- start ls))
+                            c1        (min cs (- end ls))
+                            mid-chunk (when (< c0 c1)
+                                        (subvec chunk c0 c1))
+                            right     (when (> end rs)
+                                        (slice* r 0 (- end rs)))]
+                        (slice-3 left mid-chunk right))))))))]
     (-> (slice* root start end)
       ensure-left-fringe
       ensure-right-fringe)))
@@ -478,6 +524,41 @@
   [[l r]]
   [(ensure-right-fringe l)
    (ensure-left-fringe r)])
+
+(defn rope-splice-root
+  "Replace [start, end) in root with mid-root, where all arguments are rope
+  roots. Uses raw positional splits and repairs only the fringes that remain
+  exposed in the final result."
+  [root ^long start ^long end mid-root]
+  (let [[l r]  (rope-split-at root start)
+        [_ rr] (rope-split-at r (- end start))]
+    (cond
+      (leaf? mid-root)
+      (cond
+        (leaf? l)  (ensure-left-fringe rr)
+        (leaf? rr) (ensure-right-fringe l)
+        :else      (rope-concat l rr))
+
+      (leaf? l)
+      (if (leaf? rr)
+        mid-root
+        (rope-concat mid-root rr))
+
+      :else
+      (let [left+mid (rope-concat l mid-root)]
+        (if (leaf? rr)
+          left+mid
+          (rope-concat left+mid rr))))))
+
+(defn rope-insert-root
+  "Insert mid-root at start in root."
+  [root ^long start mid-root]
+  (rope-splice-root root start start mid-root))
+
+(defn rope-remove-root
+  "Remove [start, end) from root."
+  [root ^long start ^long end]
+  (rope-splice-root root start end nil))
 
 (defn rope-peek-right
   [root]

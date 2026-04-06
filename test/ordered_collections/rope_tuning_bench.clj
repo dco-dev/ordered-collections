@@ -114,9 +114,7 @@
         ins   (vec (range 32))
         ins-root (build-rope-root ins ropetree/+target-chunk-size+)]
     {:rope   (bench-op-samples
-               #(let [[l _] (ropetree/rope-split-at root start)
-                      [_ r] (ropetree/rope-split-at root end)]
-                  (ropetree/rope-concat (ropetree/rope-concat l ins-root) r))
+               #(ropetree/rope-splice-root root start end ins-root)
                (:warmup opts) (:iters opts) (:samples opts))
      :vector (bench-op-samples
                #(vec (concat (subvec v 0 start) ins (subvec v end)))
@@ -142,9 +140,7 @@
         ins-s "REPLACED-CONTENT!!!!!!!!!!!!!!!!"
         ins-root (build-rope-root ins ropetree/+target-chunk-size+)]
     {:rope   (bench-op-samples
-               #(let [[l _] (ropetree/rope-split-at root start)
-                      [_ r] (ropetree/rope-split-at root end)]
-                  (ropetree/rope-concat (ropetree/rope-concat l ins-root) r))
+               #(ropetree/rope-splice-root root start end ins-root)
                (:warmup opts) (:iters opts) (:samples opts))
      :string (bench-op-samples
                #(str (subs s 0 start) ins-s (subs s end))

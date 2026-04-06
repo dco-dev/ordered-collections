@@ -229,30 +229,33 @@
           hi (clamp-index n b)]
       (subvec v lo hi))))
 
-(def gen-full-rope-op
-  "Extended rope operation generator including conj, pop, and assoc
-  alongside the structural editing operations."
+(defn gen-rope-op
+  "Generate a rope operation with index range [0, max-idx].
+  Callers control the index range to match collection scale."
+  [max-idx]
   (gen/one-of
-    [;; Structural ops from test-utils
+    [;; Structural ops
      (gen/fmap (fn [[i x]] [:insert i [x] nil])
-       (gen/tuple (gen/choose 0 40) gen/small-integer))
+       (gen/tuple (gen/choose 0 max-idx) gen/small-integer))
      (gen/fmap (fn [[i xs]] [:insert-many i xs nil])
-       (gen/tuple (gen/choose 0 40) (gen/vector gen/small-integer 0 8)))
+       (gen/tuple (gen/choose 0 max-idx) (gen/vector gen/small-integer 0 8)))
      (gen/fmap (fn [[a b]] [:remove (min a b) (max a b) nil])
-       (gen/tuple (gen/choose 0 40) (gen/choose 0 40)))
+       (gen/tuple (gen/choose 0 max-idx) (gen/choose 0 max-idx)))
      (gen/fmap (fn [[a b xs]] [:splice (min a b) (max a b) xs])
-       (gen/tuple (gen/choose 0 40) (gen/choose 0 40)
+       (gen/tuple (gen/choose 0 max-idx) (gen/choose 0 max-idx)
          (gen/vector gen/small-integer 0 8)))
      (gen/fmap (fn [[a b]] [:subrope (min a b) (max a b) nil])
-       (gen/tuple (gen/choose 0 40) (gen/choose 0 40)))
+       (gen/tuple (gen/choose 0 max-idx) (gen/choose 0 max-idx)))
      ;; Vector-like ops
      (gen/fmap (fn [x] [:conj x nil nil]) gen/small-integer)
      (gen/return [:pop nil nil nil])
      (gen/fmap (fn [[i x]] [:assoc i x nil])
-       (gen/tuple (gen/choose 0 40) gen/small-integer))]))
+       (gen/tuple (gen/choose 0 max-idx) gen/small-integer))]))
 
-(def gen-full-rope-ops
-  (gen/vector gen-full-rope-op 0 60))
+(defn gen-rope-ops
+  "Generate 0-n rope operations with index range [0, max-idx]."
+  [n max-idx]
+  (gen/vector (gen-rope-op max-idx) 0 n))
 
 (defn- apply-full-rope-op
   [r [op a b c]]
@@ -273,8 +276,8 @@
     (apply-vector-op v [op a b c])))
 
 (defspec prop-rope-random-edit-sequences 100
-  (prop/for-all [xs  (gen/vector gen/small-integer 0 40)
-                 ops gen-full-rope-ops]
+  (prop/for-all [xs  (gen/vector gen/small-integer 0 100)
+                 ops (gen-rope-ops 60 100)]
     (= (reduce apply-full-vector-op (vec xs) ops)
        (vec (reduce apply-full-rope-op (oc/rope xs) ops)))))
 
@@ -546,7 +549,7 @@
 
 (defspec prop-large-edit-sequences 50
   (prop/for-all [xs  (gen/vector gen/small-integer 200 600)
-                 ops gen-full-rope-ops]
+                 ops (gen-rope-ops 100 600)]
     (let [r (reduce apply-full-rope-op (oc/rope xs) ops)
           v (reduce apply-full-vector-op (vec xs) ops)]
       (and (= v (into [] r))
@@ -566,10 +569,35 @@
       (and (= (reduce + 0 r) (reduce + 0 v))
            (= (reduce conj [] r) (reduce conj [] v))))))
 
-(defspec prop-rseq-matches-vector 100
-  (prop/for-all [xs (gen/vector gen/small-integer 1 200)]
+(defspec prop-seq-reduce-consistency 100
+  (prop/for-all [xs (gen/vector gen/small-integer 1 2000)]
     (let [r (oc/rope xs)]
-      (= (vec (rseq r)) (vec (rseq (vec xs)))))))
+      ;; seq and reduce must agree with each other
+      (= (reduce conj [] r)
+         (into [] (seq r))))))
+
+(defspec prop-seq-walk-matches-vector 100
+  (prop/for-all [xs (gen/vector gen/small-integer 1 2000)]
+    (let [r (oc/rope xs)]
+      ;; Walk the RopeSeq via .next chain, element by element
+      (loop [s (seq r), v (seq xs)]
+        (cond
+          (and (nil? s) (nil? v)) true
+          (or (nil? s) (nil? v))  false
+          (not= (first s) (first v)) false
+          :else (recur (next s) (next v)))))))
+
+(defspec prop-rseq-walk-matches-vector 100
+  (prop/for-all [xs (gen/vector gen/small-integer 1 2000)]
+    (let [r (oc/rope xs)
+          v (vec xs)]
+      ;; Walk the RopeSeqReverse via .next chain
+      (loop [s (rseq r), v (rseq v)]
+        (cond
+          (and (nil? s) (nil? v)) true
+          (or (nil? s) (nil? v))  false
+          (not= (first s) (first v)) false
+          :else (recur (next s) (next v)))))))
 
 (defspec prop-conj-pop-round-trip 100
   (prop/for-all [xs (gen/vector gen/small-integer 0 300)]
@@ -586,7 +614,15 @@
            (ropetree/invariant-valid? (rope-root-of r))))))
 
 (defspec prop-concat-all-matches-into 50
-  (prop/for-all [chunks (gen/vector (gen/vector gen/small-integer 0 100) 1 20)]
+  ;; Mix of tiny (1-5), undersized (<min), valid (min-target), and
+  ;; target-sized chunks to exercise chunks->root-csi boundary merging
+  (prop/for-all [chunks (gen/vector
+                          (gen/one-of
+                            [(gen/vector gen/small-integer 1 5)      ;; tiny
+                             (gen/vector gen/small-integer 0 100)    ;; undersized
+                             (gen/vector gen/small-integer 128 256)  ;; valid
+                             (gen/vector gen/small-integer 256 256)]);; exactly target
+                          1 30)]
     (let [ropes  (mapv oc/rope chunks)
           result (apply oc/rope-concat-all ropes)
           expected (vec (apply concat chunks))]
@@ -596,8 +632,14 @@
 (defspec prop-fold-matches-reduce 50
   (prop/for-all [xs (gen/vector gen/small-integer 100 2000)]
     (let [r (oc/rope xs)]
-      (= (reduce + 0 r)
-         (clojure.core.reducers/fold + r)))))
+      (and
+        ;; Commutative: sum
+        (= (reduce + 0 r)
+           (clojure.core.reducers/fold + r))
+        ;; Non-commutative: ordered collection into vector
+        ;; fold with into must produce the same ordered result
+        (= (reduce conj [] r)
+           (clojure.core.reducers/fold into conj r))))))
 
 (defspec prop-metadata-preserved 100
   (prop/for-all [xs (gen/vector gen/small-integer 10 100)]
@@ -621,9 +663,9 @@
            (ordered-collections.kernel.tree/node-healthy? root))))
 
 (defspec prop-multi-chunk-edit-sequences 50
-  ;; Inputs large enough to span many chunks (target=512, so 2000+ elements)
+  ;; Inputs large enough to span many chunks; indices scale to full range
   (prop/for-all [xs  (gen/vector gen/small-integer 2000 4000)
-                 ops gen-full-rope-ops]
+                 ops (gen-rope-ops 120 4000)]
     (let [r (reduce apply-full-rope-op (oc/rope xs) ops)
           v (reduce apply-full-vector-op (vec xs) ops)]
       (and (= v (into [] r))
@@ -790,3 +832,138 @@
                    r (range (min 500 (count xs))))]
       (and (rope-tree-healthy? (rope-root-of r))
            (rope-tree-healthy? (rope-root-of popped))))))
+
+(defspec prop-adversarial-chunk-boundaries 50
+  ;; Build ropes at CSI boundary sizes — mostly multi-chunk (1K+)
+  ;; with a few small edge cases
+  (prop/for-all [size (gen/frequency
+                        [[1 (gen/return 1)]
+                         [1 (gen/return ropetree/+min-chunk-size+)]
+                         [1 (gen/return ropetree/+target-chunk-size+)]
+                         [2 (gen/return (inc ropetree/+target-chunk-size+))]
+                         [3 (gen/return (* 3 ropetree/+target-chunk-size+))]
+                         [3 (gen/return (* 5 ropetree/+target-chunk-size+))]
+                         [4 (gen/return (inc (* 4 ropetree/+target-chunk-size+)))]
+                         [5 (gen/return (* 10 ropetree/+target-chunk-size+))]])]
+    (let [r   (oc/rope (range size))
+          mid (quot size 2)
+          v   (vec (range size))]
+      (and
+        ;; Construction
+        (rope-tree-healthy? (rope-root-of r))
+        (= v (vec r))
+        ;; Split at midpoint
+        (let [[l rr] (oc/rope-split r mid)]
+          (and (= (subvec v 0 mid) (vec l))
+               (= (subvec v mid) (vec rr))
+               (rope-tree-healthy? (rope-root-of l))
+               (rope-tree-healthy? (rope-root-of rr))))
+        ;; Concat two boundary-sized ropes
+        (let [c (oc/rope-concat r (oc/rope (range size)))]
+          (and (= (into v (range size)) (vec c))
+               (rope-tree-healthy? (rope-root-of c))))
+        ;; Sub at boundary positions
+        (let [s (oc/rope-sub r (min 1 mid) (max mid (dec size)))]
+          (rope-tree-healthy? (rope-root-of s)))
+        ;; Splice at midpoint
+        (or (<= size 2)
+            (let [sp (oc/rope-splice r (min 1 mid) (max mid (dec size)) [:x])]
+              (rope-tree-healthy? (rope-root-of sp))))))))
+
+(defspec prop-large-adversarial-edits 30
+  ;; Large ropes (5K-50K) with many operations hitting the full index range.
+  ;; Verifies correctness AND structural health after a long edit sequence.
+  (prop/for-all [size (gen/frequency
+                        [[3 (gen/choose 5000 10000)]
+                         [4 (gen/choose 10000 25000)]
+                         [3 (gen/choose 25000 50000)]])
+                 ops  (gen/vector (gen-rope-op 50000) 100 200)]
+    (let [r (reduce apply-full-rope-op (oc/rope (range size)) ops)
+          v (reduce apply-full-vector-op (vec (range size)) ops)]
+      (and (= v (vec r))
+           (rope-tree-healthy? (rope-root-of r))))))
+
+(defspec prop-split-at-every-chunk-boundary 30
+  ;; Build a large rope, then split at positions that land exactly on
+  ;; chunk boundaries (multiples of target) and verify both halves.
+  (prop/for-all [nchunks (gen/choose 4 40)]
+    (let [size (* nchunks ropetree/+target-chunk-size+)
+          r    (oc/rope (range size))
+          v    (vec (range size))]
+      (every? identity
+        (for [i (range 1 nchunks)]
+          (let [pos (* i ropetree/+target-chunk-size+)
+                [l rr] (oc/rope-split r pos)]
+            (and (= (subvec v 0 pos) (vec l))
+                 (= (subvec v pos) (vec rr))
+                 (rope-tree-healthy? (rope-root-of l))
+                 (rope-tree-healthy? (rope-root-of rr)))))))))
+
+(defspec prop-repeated-split-concat-round-trip 50
+  ;; Split a large rope into many pieces, then concat them back.
+  ;; The result must equal the original.
+  (prop/for-all [size (gen/choose 2000 20000)
+                 nsplits (gen/choose 3 15)]
+    (let [r    (oc/rope (range size))
+          ;; Split into nsplits pieces at evenly spaced positions
+          positions (mapv #(long (* size (/ (double (inc %)) (inc nsplits))))
+                     (range nsplits))
+          pieces (loop [remaining r, positions positions, acc []]
+                   (if (empty? positions)
+                     (conj acc remaining)
+                     (let [[l rr] (oc/rope-split remaining (first positions))]
+                       (recur rr
+                         (mapv #(- % (first positions)) (rest positions))
+                         (conj acc l)))))
+          ;; Concat all pieces back together
+          reassembled (reduce oc/rope-concat pieces)]
+      (and (= (vec (range size)) (vec reassembled))
+           (rope-tree-healthy? (rope-root-of reassembled))))))
+
+(defspec prop-nested-sub-correctness 50
+  ;; Take a large rope, sub a window, sub a sub-window, verify at each step
+  (prop/for-all [size (gen/choose 5000 20000)]
+    (let [r  (oc/rope (range size))
+          v  (vec (range size))
+          q1 (quot size 4)
+          q3 (* 3 q1)
+          s1 (oc/rope-sub r q1 q3)
+          v1 (subvec v q1 q3)
+          inner-size (- q3 q1)
+          iq1 (quot inner-size 4)
+          iq3 (* 3 iq1)
+          s2 (oc/rope-sub s1 iq1 iq3)
+          v2 (subvec v1 iq1 iq3)]
+      (and (= v1 (vec s1))
+           (= v2 (vec s2))
+           (rope-tree-healthy? (rope-root-of s1))
+           (rope-tree-healthy? (rope-root-of s2))))))
+
+(defspec prop-interleaved-insert-remove 50
+  ;; Alternating inserts and removes at random positions on a large rope.
+  ;; This stresses CSI normalization under mixed growth/shrinkage.
+  (prop/for-all [size (gen/choose 3000 10000)
+                 ops  (gen/vector
+                        (gen/one-of
+                          [(gen/fmap (fn [[i x]] [:insert i [x]])
+                             (gen/tuple (gen/choose 0 10000) gen/small-integer))
+                           (gen/fmap (fn [[a b]] [:remove (min a b) (max a b)])
+                             (gen/tuple (gen/choose 0 10000) (gen/choose 0 10000)))])
+                        100 200)]
+    (let [apply-op (fn [[coll-r coll-v] [op a b]]
+                     (let [n (count coll-r)]
+                       (case op
+                         :insert
+                         (let [i (min a n)]
+                           [(oc/rope-insert coll-r i b)
+                            (vec (concat (subvec coll-v 0 i) b (subvec coll-v i)))])
+                         :remove
+                         (let [lo (min a n)
+                               hi (min b n)
+                               lo (min lo hi)
+                               hi (max lo hi)]
+                           [(oc/rope-remove coll-r lo hi)
+                            (vec (concat (subvec coll-v 0 lo) (subvec coll-v hi)))]))))
+          [r v] (reduce apply-op [(oc/rope (range size)) (vec (range size))] ops)]
+      (and (= v (vec r))
+           (rope-tree-healthy? (rope-root-of r))))))

@@ -340,24 +340,19 @@
   (rope-insert [this i coll]
     (let [n (ropetree/rope-size root)]
       (check-insert-index! n i)
-      (let [[l r] (proto/rope-split this (long i))
-            mid   (->rope coll)]
-        (proto/rope-cat (proto/rope-cat l mid) r))))
+      (let [mid (->rope coll)]
+        (Rope. (ropetree/rope-insert-root root (long i) (.-root ^Rope mid)) _meta))))
   (rope-remove [this start end]
     (check-range! start end (ropetree/rope-size root))
     (let [start (long start)
-          end   (long end)
-          [l r]  (proto/rope-split this start)
-          [_ rr] (proto/rope-split r (- end start))]
-      (proto/rope-cat l rr)))
+          end   (long end)]
+      (Rope. (ropetree/rope-remove-root root start end) _meta)))
   (rope-splice [this start end coll]
     (check-range! start end (ropetree/rope-size root))
     (let [start (long start)
           end   (long end)
-          [l r]  (proto/rope-split this start)
-          [_ rr] (proto/rope-split r (- end start))
-          mid    (->rope coll)]
-      (proto/rope-cat (proto/rope-cat l mid) rr)))
+          mid   (->rope coll)]
+      (Rope. (ropetree/rope-splice-root root start end (.-root ^Rope mid)) _meta)))
   (rope-chunks [_]
     (ropetree/rope-chunks-seq root))
   (rope-str [_]
