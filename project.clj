@@ -36,6 +36,7 @@
              "bench-simple"    ["run" "-m" "ordered-collections.simple-bench"]
              "bench-range-map" ["run" "-m" "ordered-collections.range-map-bench"]
              "bench-parallel"  ["run" "-m" "ordered-collections.parallel-threshold-bench"]
+             "bench-rope-fold" ["run" "-m" "ordered-collections.rope-fold-bench"]
              "bench-rope-tuning" ["run" "-m" "ordered-collections.rope-tuning-bench"]
              "stats"           ["shell" "bb" "etc/stats.bb"]
              "paper"           ["shell" "bb" "etc/paper.bb"]})
