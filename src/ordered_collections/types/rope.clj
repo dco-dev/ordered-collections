@@ -28,11 +28,15 @@
 
 (defn- valid-index?
   [^long n k]
-  (and (integer? k) (<= 0 (long k)) (< (long k) n)))
+  (and (integer? k)
+       (let [i (long k)]
+         (and (<= 0 i) (< i n)))))
 
 (defn- assoc-index?
   [^long n k]
-  (and (integer? k) (<= 0 (long k)) (<= (long k) n)))
+  (and (integer? k)
+       (let [i (long k)]
+         (and (<= 0 i) (<= i n)))))
 
 (defn- seq-compare
   "Lexicographic comparison of two sequential collections."
@@ -410,8 +414,10 @@
   (ropetree/rope-chunks-rseq (rope-root v)))
 
 (defn rope-chunk-count
+  "Number of internal chunks. O(1)."
   [v]
-  (count (ropetree/root->chunks (rope-root v))))
+  (let [root (rope-root v)]
+    (if (nil? root) 0 (ropetree/chunk-count root))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

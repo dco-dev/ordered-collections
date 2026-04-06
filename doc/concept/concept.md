@@ -281,9 +281,9 @@ that configures the extension points:
 | segment-tree | default | AggregateNode | cached op | range aggregate |
 | range-map | range cmp | SimpleNode | — | non-overlapping [lo,hi) |
 | fuzzy-set | default | SimpleNode | — | nearest-neighbor |
-| priority-queue | priority cmp | SimpleNode | — | [priority,seqnum,value] |
-| multiset | element cmp | SimpleNode | — | [element,seqnum] |
-| rope | *none* | rope-node-create | — | chunk vector, positional |
+| priority-queue | priority cmp | SimpleNode | — | [priority, value] |
+| multiset | element cmp | SimpleNode | — | [element, cardinality] |
+| rope | *none* | SimpleNode | — | chunk vector, positional |
 
 Adding a new collection type requires no kernel changes. When any part of
 the kernel is optimized, every collection type benefits automatically. This

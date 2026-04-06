@@ -41,8 +41,14 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn rope-size
+  "Total element count across all chunks."
   ^long [root]
   (if (leaf? root) 0 (long (-v root))))
+
+(defn chunk-count
+  "Number of chunk nodes in the tree."
+  ^long [root]
+  (tree/node-size root))
 
 (defn- rope-node-create
   "Create a rope node rooted at chunk. The node value stores subtree element
