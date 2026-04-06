@@ -33,8 +33,8 @@
             [ordered-collections.tree.tree :as tree]))
 
 
-(def ^:const +target-chunk-size+ 512)
-(def ^:const +min-chunk-size+    256)
+(def ^:const +target-chunk-size+ 256)
+(def ^:const +min-chunk-size+    128)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Rope Node Basics
@@ -352,40 +352,34 @@
 
 (defn rope-nth
   [root ^long i]
-  (letfn [(nth* [n ^long i]
-            (let [l  (-l n)
-                  ls (rope-size l)
-                  chunk (node-chunk n)
-                  cs (count chunk)]
-              (cond
-                (< i ls)
-                (nth* l i)
-
-                (< i (+ ls cs))
-                (nth chunk (- i ls))
-
-                :else
-                (nth* (-r n) (- i ls cs)))))]
-    (nth* root i)))
+  (loop [n root, i i]
+    (let [l  (-l n)
+          ls (if (leaf? l) 0 (long (-v l)))
+          ck (-k n)
+          cs (long (.count ^clojure.lang.Counted ck))]
+      (cond
+        (< i ls) (recur l i)
+        (< i (+ ls cs)) (.nth ^clojure.lang.Indexed ck (unchecked-int (- i ls)))
+        :else (recur (-r n) (- i ls cs))))))
 
 (defn rope-assoc
   [root ^long i x]
   (let [create rope-node-create]
     (letfn [(assoc* [n ^long i]
-              (let [chunk (node-chunk n)
-                    l     (-l n)
-                    r     (-r n)
-                    ls    (rope-size l)
-                    cs    (count chunk)]
+              (let [ck (-k n)
+                    l  (-l n)
+                    r  (-r n)
+                    ls (if (leaf? l) 0 (long (-v l)))
+                    cs (long (.count ^clojure.lang.Counted ck))]
                 (cond
                   (< i ls)
-                  (tree/node-stitch chunk nil (assoc* l i) r create)
+                  (tree/node-stitch ck nil (assoc* l i) r create)
 
                   (< i (+ ls cs))
-                  (create (assoc chunk (- i ls) x) nil l r)
+                  (create (assoc ck (- i ls) x) nil l r)
 
                   :else
-                  (tree/node-stitch chunk nil l
+                  (tree/node-stitch ck nil l
                     (assoc* r (- i ls cs))
                     create))))]
       (assoc* root i))))
@@ -406,11 +400,11 @@
       (>= i n) [root nil]
       :else
       (letfn [(split* [n ^long i]
-                (let [chunk (node-chunk n)
+                (let [chunk (-k n)
                       l     (-l n)
                       r     (-r n)
-                      ls    (rope-size l)
-                      cs    (count chunk)
+                      ls    (if (leaf? l) 0 (long (-v l)))
+                      cs    (long (.count ^clojure.lang.Counted chunk))
                       rs    (+ ls cs)]
                   (cond
                     (< i ls)
@@ -446,14 +440,14 @@
               (leaf? n) nil
               (>= start end) nil
               :else
-              (let [size  (rope-size n)]
+              (let [size (long (-v n))]
                 (if (and (<= start 0) (>= end size))
                   n
-                  (let [chunk (node-chunk n)
+                  (let [chunk (-k n)
                         l     (-l n)
                         r     (-r n)
-                        ls    (rope-size l)
-                        cs    (count chunk)
+                        ls    (if (leaf? l) 0 (long (-v l)))
+                        cs    (long (.count ^clojure.lang.Counted chunk))
                         rs    (+ ls cs)
                         left  (when (< start ls)
                                 (slice* l start (min end ls)))
@@ -490,14 +484,14 @@
     (throw (IllegalStateException. "Can't pop empty vector"))
     (let [create rope-node-create]
       (letfn [(pop* [n]
-                (let [chunk (node-chunk n)
-                      l     (-l n)
-                      r     (-r n)]
+                (let [ck (-k n)
+                      l  (-l n)
+                      r  (-r n)]
                   (if (leaf? r)
-                    (if (> (count chunk) 1)
-                      (create (pop chunk) nil l r)
+                    (if (> (.count ^clojure.lang.Counted ck) 1)
+                      (create (pop ck) nil l r)
                       l)
-                    (tree/node-stitch chunk nil l (pop* r) create))))]
+                    (tree/node-stitch ck nil l (pop* r) create))))]
         (pop* root)))))
 
 (defn rope-conj-right
@@ -506,14 +500,14 @@
     (chunk-node [x])
     (let [create rope-node-create]
       (letfn [(conj* [n]
-                (let [chunk (node-chunk n)
-                      l     (-l n)
-                      r     (-r n)]
+                (let [ck (-k n)
+                      l  (-l n)
+                      r  (-r n)]
                   (if (leaf? r)
-                    (if (< (count chunk) +target-chunk-size+)
-                      (create (conj chunk x) nil l r)
-                      (tree/node-stitch chunk nil l (chunk-node [x]) create))
-                    (tree/node-stitch chunk nil l (conj* r) create))))]
+                    (if (< (.count ^clojure.lang.Counted ck) +target-chunk-size+)
+                      (create (conj ck x) nil l r)
+                      (tree/node-stitch ck nil l (chunk-node [x]) create))
+                    (tree/node-stitch ck nil l (conj* r) create))))]
         (conj* root)))))
 
 

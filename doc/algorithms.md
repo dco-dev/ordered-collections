@@ -288,7 +288,7 @@ The root thresholds are operation-specific because one conservative value left
 too many practical wins on the table. Union and difference reconstruct more
 output than intersection; merge behaves differently again; comparator cost and
 tree shape also matter. The fold chunk floor prevents excessive O(log n) tree
-splits when `r/fold`'s default chunk size (512) would create too many chunks.
+splits when `r/fold`'s default chunk size (256) would create too many chunks.
 
 `parallel_threshold_bench.clj` is useful for local tuning, but it does not
 produce one stable crossover point across machines. In the April 2, 2026
@@ -579,7 +579,7 @@ by element count.
 Chunks are bounded by a formal invariant analogous to B-tree minimum fill:
 
 ```
-target = 256    min = 128
+target = 256    min = 256
 
 Every chunk has size in [min, target] except:
   - If the rope has ≤ 1 chunk, it may be any size in [1, target]
