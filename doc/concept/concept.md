@@ -1,4 +1,4 @@
-# One Tree, Many Collections: Representational Polymorphism in a Parallel Split/Join Tree Algebra
+# One Tree, Many Forests: Representational Polymorphism in a Parallel Split/Join Tree Algebra
 
 *A Weight-Balanced Kernel for Persistent Sets, Maps, Intervals, Segments, Ropes, and Beyond*
 
