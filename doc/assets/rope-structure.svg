@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="420" viewBox="0 0 960 420" role="img" aria-labelledby="title desc">
+  <title id="title">Chunked rope tree structure</title>
+  <desc id="desc">A balanced rope tree whose nodes store chunk vectors and subtree element counts.</desc>
+  <defs>
+    <style>
+      .bg { fill: #fcfbf7; }
+      .title { font: 700 28px Georgia, serif; fill: #1f2933; }
+      .label { font: 600 17px Georgia, serif; fill: #243b53; }
+      .text { font: 15px Georgia, serif; fill: #334e68; }
+      .small { font: 13px Georgia, serif; fill: #486581; }
+      .node { fill: #fff7e8; stroke: #7c5e10; stroke-width: 2; }
+      .chunk { fill: #e8f1f2; stroke: #20636d; stroke-width: 2; }
+      .accent { fill: #f0b429; }
+      .line { stroke: #52606d; stroke-width: 2.5; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="960" height="420"/>
+
+  <text class="title" x="40" y="48">Rope = balanced tree of chunks</text>
+  <text class="text" x="40" y="78">Each node carries a chunk plus subtree element count. Navigation is by position, not key comparison.</text>
+
+  <line class="line" x1="480" y1="130" x2="300" y2="205"/>
+  <line class="line" x1="480" y1="130" x2="660" y2="205"/>
+  <line class="line" x1="300" y1="255" x2="190" y2="322"/>
+  <line class="line" x1="300" y1="255" x2="410" y2="322"/>
+  <line class="line" x1="660" y1="255" x2="550" y2="322"/>
+  <line class="line" x1="660" y1="255" x2="770" y2="322"/>
+
+  <g transform="translate(390 92)">
+    <rect class="node" rx="14" ry="14" width="180" height="74"/>
+    <text class="label" x="90" y="28" text-anchor="middle">root node</text>
+    <text class="text" x="90" y="50" text-anchor="middle">chunk = [4 5]</text>
+    <text class="small" x="90" y="66" text-anchor="middle">subtree-size = 12</text>
+  </g>
+
+  <g transform="translate(210 217)">
+    <rect class="node" rx="14" ry="14" width="180" height="74"/>
+    <text class="label" x="90" y="28" text-anchor="middle">left subtree</text>
+    <text class="text" x="90" y="50" text-anchor="middle">chunk = [2 3]</text>
+    <text class="small" x="90" y="66" text-anchor="middle">subtree-size = 6</text>
+  </g>
+
+  <g transform="translate(570 217)">
+    <rect class="node" rx="14" ry="14" width="180" height="74"/>
+    <text class="label" x="90" y="28" text-anchor="middle">right subtree</text>
+    <text class="text" x="90" y="50" text-anchor="middle">chunk = [8 9]</text>
+    <text class="small" x="90" y="66" text-anchor="middle">subtree-size = 4</text>
+  </g>
+
+  <g transform="translate(110 330)">
+    <rect class="chunk" rx="12" ry="12" width="160" height="48"/>
+    <text class="text" x="80" y="30" text-anchor="middle">[0 1]</text>
+  </g>
+
+  <g transform="translate(330 330)">
+    <rect class="chunk" rx="12" ry="12" width="160" height="48"/>
+    <text class="text" x="80" y="30" text-anchor="middle">[6 7]</text>
+  </g>
+
+  <g transform="translate(470 330)">
+    <rect class="chunk" rx="12" ry="12" width="160" height="48"/>
+    <text class="text" x="80" y="30" text-anchor="middle">[10 11]</text>
+  </g>
+
+  <g transform="translate(690 330)">
+    <rect class="chunk" rx="12" ry="12" width="160" height="48"/>
+    <text class="text" x="80" y="30" text-anchor="middle">[12 13]</text>
+  </g>
+
+  <circle class="accent" cx="914" cy="122" r="9"/>
+  <text class="small" x="894" y="154" text-anchor="end">index 0 walks left</text>
+  <text class="small" x="894" y="174" text-anchor="end">later positions walk right</text>
+</svg>

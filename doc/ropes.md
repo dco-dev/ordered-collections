@@ -109,6 +109,16 @@ That is an important design point. The rope is **not** an `ordered-map` from
 integer index to value. It is its own collection type with its own low-level
 tree layer.
 
+![Chunked rope tree structure](assets/rope-structure.svg)
+
+The key visual idea is that indexing is a two-stage operation:
+
+- walk the tree by subtree sizes
+- then index within one chunk
+
+That is why the rope can support `nth`, `assoc`, split, and slicing without
+pretending that element positions are stored as explicit keys.
+
 
 ## Chunked Leaves
 
@@ -125,6 +135,18 @@ At a high level:
 
 This is also what distinguishes the rope from the earlier discarded
 "tree-vector" prototype.
+
+![Chunk size invariant and boundary repair](assets/rope-csi-boundary.svg)
+
+The subtle rule is the **Chunk Size Invariant (CSI)**:
+
+- every internal chunk must be in the valid size range
+- only the rightmost chunk, called the **runt**, is allowed to be undersized
+
+That right-edge exception keeps append efficient, but it also means structural
+operations must sometimes repair chunk boundaries. In particular, concat, split,
+slice, and splice can move a former right-edge runt into the interior, where it
+must be merged and rechunked back into a valid shape.
 
 
 ## API
@@ -308,6 +330,12 @@ Both `rope-split` and `rope-concat` are O(log n). The original `events` rope
 is unchanged — this is persistent. You now have three independent snapshots of
 the sequence (original, head, tail) without tripling memory usage.
 
+![Split once, share both halves, concat structurally](assets/rope-split-concat.svg)
+
+The important point is that split does not flatten the rope into two vectors.
+It cuts one path through the tree, reuses the untouched subtrees on each side,
+and then restores chunk validity at the new fringes.
+
 
 ### Scenario 3: Splicing Into the Middle
 
@@ -344,6 +372,12 @@ Or replace a range:
 
 (count patched)  ;; => 991  (removed 10, inserted 1)
 ```
+
+![Splice replaces one middle range and shares the rest](assets/rope-splice-sharing.svg)
+
+That picture is the essence of why ropes are attractive for persistent editing:
+the edit rebuilds the path near the change, but large left and right regions
+remain shared with the previous version.
 
 
 ### Scenario 4: Windowing and Slicing

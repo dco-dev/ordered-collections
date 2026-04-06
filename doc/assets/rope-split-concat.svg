@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="380" viewBox="0 0 960 380" role="img" aria-labelledby="title desc">
+  <title id="title">Rope split and concat</title>
+  <desc id="desc">A rope split at one point into two shared halves, then concatenated in reversed order.</desc>
+  <defs>
+    <style>
+      .bg { fill: #fbfcfe; }
+      .title { font: 700 28px Georgia, serif; fill: #102a43; }
+      .label { font: 600 18px Georgia, serif; fill: #243b53; }
+      .text { font: 15px Georgia, serif; fill: #486581; }
+      .chunk-a { fill: #d9f0ff; stroke: #1f6feb; stroke-width: 2; }
+      .chunk-b { fill: #ffe3c2; stroke: #b36a00; stroke-width: 2; }
+      .chunk-c { fill: #e3f9e5; stroke: #2f855a; stroke-width: 2; }
+      .arrow { stroke: #52606d; stroke-width: 3; marker-end: url(#arrow); }
+      .cut { stroke: #d64545; stroke-width: 4; stroke-dasharray: 8 6; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#52606d"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="960" height="380"/>
+  <text class="title" x="40" y="48">Split once, share both halves, concat structurally</text>
+
+  <text class="label" x="40" y="92">Original rope</text>
+  <g transform="translate(40 112)">
+    <rect class="chunk-a" rx="10" ry="10" width="160" height="52"/>
+    <rect class="chunk-a" rx="10" ry="10" x="170" width="160" height="52"/>
+    <rect class="chunk-b" rx="10" ry="10" x="340" width="160" height="52"/>
+    <rect class="chunk-b" rx="10" ry="10" x="510" width="160" height="52"/>
+    <rect class="chunk-c" rx="10" ry="10" x="680" width="160" height="52"/>
+    <text class="text" x="80" y="32" text-anchor="middle">[0 ... 19999]</text>
+    <text class="text" x="250" y="32" text-anchor="middle">[20000 ... 39999]</text>
+    <text class="text" x="420" y="32" text-anchor="middle">[40000 ... 59999]</text>
+    <text class="text" x="590" y="32" text-anchor="middle">[60000 ... 79999]</text>
+    <text class="text" x="760" y="32" text-anchor="middle">[80000 ... 99999]</text>
+    <line class="cut" x1="330" y1="-12" x2="330" y2="64"/>
+    <text class="label" x="330" y="-18" text-anchor="middle">split at 40000</text>
+  </g>
+
+  <line class="arrow" x1="330" y1="190" x2="220" y2="246"/>
+  <line class="arrow" x1="330" y1="190" x2="560" y2="246"/>
+
+  <text class="label" x="70" y="286">head</text>
+  <g transform="translate(40 300)">
+    <rect class="chunk-a" rx="10" ry="10" width="160" height="52"/>
+    <rect class="chunk-a" rx="10" ry="10" x="170" width="160" height="52"/>
+    <text class="text" x="80" y="32" text-anchor="middle">[0 ... 19999]</text>
+    <text class="text" x="250" y="32" text-anchor="middle">[20000 ... 39999]</text>
+  </g>
+
+  <text class="label" x="520" y="286">tail</text>
+  <g transform="translate(490 300)">
+    <rect class="chunk-b" rx="10" ry="10" width="160" height="52"/>
+    <rect class="chunk-b" rx="10" ry="10" x="170" width="160" height="52"/>
+    <rect class="chunk-c" rx="10" ry="10" x="340" width="160" height="52"/>
+    <text class="text" x="80" y="32" text-anchor="middle">[40000 ... 59999]</text>
+    <text class="text" x="250" y="32" text-anchor="middle">[60000 ... 79999]</text>
+    <text class="text" x="420" y="32" text-anchor="middle">[80000 ... 99999]</text>
+  </g>
+</svg>
