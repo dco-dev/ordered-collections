@@ -1,7 +1,7 @@
 (ns ordered-collections.types.ordered-set
   (:require [clojure.core.reducers       :as r :refer [coll-fold]]
             [clojure.set]
-            [ordered-collections.types.shared :refer [with-compare]]
+            [ordered-collections.types.shared :refer [with-compare with-tree-env]]
             [ordered-collections.kernel.node     :as node]
             [ordered-collections.kernel.order    :as order]
             [ordered-collections.protocol      :as proto]
@@ -46,7 +46,7 @@
   (getCmp [_]
     cmp)
   (isCompatible [_ o]
-    (and (instance? OrderedSet o) (= cmp (.getCmp ^OrderedSet o)) (= stitch (.getStitch ^OrderedSet o))))
+    (and (instance? OrderedSet o) (= cmp (.getCmp ^OrderedSet o))))
   (isSimilar [_ o]
     (set? o))
 
@@ -56,7 +56,7 @@
 
   PExtensibleSet
   (intersection [this that]
-    (with-compare this
+    (with-tree-env this
       (cond
         (identical? this that)    this
         (.isCompatible this that)
@@ -71,7 +71,7 @@
         (.isSimilar this that)    (clojure.set/intersection (into #{} this) that)
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
   (union [this that]
-    (with-compare this
+    (with-tree-env this
       (cond
         (identical? this that)    this
         (.isCompatible this that)
@@ -86,7 +86,7 @@
         (.isSimilar this that)    (clojure.set/union (into #{} this) that)
         true (throw (ex-info "unsupported set operands: " {:this this :that that})))))
   (difference [this that]
-    (with-compare this
+    (with-tree-env this
       (cond
         (identical? this that)    (.empty this)
         (.isCompatible this that)

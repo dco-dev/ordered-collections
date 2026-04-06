@@ -151,7 +151,7 @@
               (fn
                 ([]      (node/leaf))
                 ([n0 n1] (tree/node-set-union n0 n1))) tree/node-add coll)
-      compare-fn nil nil {})))
+      compare-fn tree/node-create-weight-balanced tree/node-create-weight-balanced {})))
 
 (defn- ordered-set-prim*
   "Variant of ordered-set* that uses primitive node types for numeric keys."
@@ -165,7 +165,7 @@
                 ([n0 n1] (tree/node-set-union n0 n1)))
               (fn [n k] (tree/node-add n k k compare-fn node-create))
               coll)
-      compare-fn nil node-create {})))
+      compare-fn node-create node-create {})))
 
 (defn ordered-set
   "Create a persistent sorted set backed by a weight-balanced binary tree.
@@ -257,7 +257,7 @@
                 ([n [k v]] (tree/node-add n k v))  ;; for seqs of pairs
                 ([n k v]   (tree/node-add n k v))) ;; for maps (kvreduce)
               coll)
-      compare-fn nil nil {})))
+      compare-fn tree/node-create-weight-balanced tree/node-create-weight-balanced {})))
 
 (defn- ordered-map-prim*
   "Variant of ordered-map* that uses primitive node types for numeric keys."
@@ -273,7 +273,7 @@
                 ([n [k v]] (tree/node-add n k v compare-fn node-create))
                 ([n k v]   (tree/node-add n k v compare-fn node-create)))
               coll)
-      compare-fn nil node-create {})))
+      compare-fn node-create node-create {})))
 
 (defn ordered-map
   "Create a persistent sorted map backed by a weight-balanced binary tree.

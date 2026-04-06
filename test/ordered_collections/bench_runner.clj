@@ -352,6 +352,118 @@
       {:data-avl    #(dotimes [i num-ops] (avl/split-key (aget ks i) data-avl))
        :ordered-set #(dotimes [i num-ops] (core/split-key (aget ks i) ordered-set))})))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Long-Specialized Set Benchmarks
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- make-long-sets
+  "Build test sets with Long elements for all four contenders."
+  [n]
+  (let [elems (vec (shuffle (range n)))]
+    {:hash-set     (into #{} elems)
+     :sorted-set   (into (sorted-set) elems)
+     :data-avl     (into (avl/sorted-set) elems)
+     :long-ordered (core/long-ordered-set elems)}))
+
+(defn- make-long-set-pair
+  "Build overlapping Long set pairs for set algebra benchmarks.
+  Matches the standard overlapping-set-elements workload: two sets of
+  size n with 50% overlap."
+  [n]
+  (let [elems1 (range 0 n)
+        elems2 (range (quot n 2) (+ n (quot n 2)))]
+    {:left  {:hash-set     (into #{} elems1)
+             :sorted-set   (into (sorted-set) elems1)
+             :data-avl     (into (avl/sorted-set) elems1)
+             :long-ordered (core/long-ordered-set elems1)}
+     :right {:hash-set     (into #{} elems2)
+             :sorted-set   (into (sorted-set) elems2)
+             :data-avl     (into (avl/sorted-set) elems2)
+             :long-ordered (core/long-ordered-set elems2)}}))
+
+(defn bench-long-construction [n]
+  (let [elems (vec (shuffle (range n)))]
+    (run-cases
+      {:hash-set     #(into #{} elems)
+       :sorted-set   #(into (sorted-set) elems)
+       :data-avl     #(into (avl/sorted-set) elems)
+       :long-ordered #(core/long-ordered-set elems)})))
+
+(defn bench-long-lookup [n & {:keys [num-lookups] :or {num-lookups 10000}}]
+  (let [{:keys [hash-set sorted-set data-avl long-ordered]} (make-long-sets n)
+        ^longs ks (long-array (repeatedly num-lookups #(rand-int n)))]
+    (run-cases
+      {:hash-set     #(dotimes [i num-lookups] (contains? hash-set (aget ks i)))
+       :sorted-set   #(dotimes [i num-lookups] (contains? sorted-set (aget ks i)))
+       :data-avl     #(dotimes [i num-lookups] (contains? data-avl (aget ks i)))
+       :long-ordered #(dotimes [i num-lookups] (contains? long-ordered (aget ks i)))})))
+
+(defn bench-long-insert [n]
+  (let [elems (vec (shuffle (range n)))]
+    (run-cases
+      {:sorted-set   #(reduce conj (sorted-set) elems)
+       :data-avl     #(reduce conj (avl/sorted-set) elems)
+       :long-ordered #(reduce conj (core/long-ordered-set) elems)})))
+
+(defn bench-long-delete [n]
+  (let [{:keys [sorted-set data-avl long-ordered]} (make-long-sets n)
+        to-del (vec (take (quot n 2) (shuffle (range n))))]
+    (run-cases
+      {:sorted-set   #(reduce disj sorted-set to-del)
+       :data-avl     #(reduce disj data-avl to-del)
+       :long-ordered #(reduce disj long-ordered to-del)})))
+
+(defn bench-long-iteration [n]
+  (let [{:keys [sorted-set data-avl long-ordered]} (make-long-sets n)]
+    (run-cases
+      {:sorted-set   #(reduce (fn [^long acc x] (+ acc (long x))) 0 sorted-set)
+       :data-avl     #(reduce (fn [^long acc x] (+ acc (long x))) 0 data-avl)
+       :long-ordered #(reduce (fn [^long acc x] (+ acc (long x))) 0 long-ordered)})))
+
+(defn bench-long-fold [n]
+  (let [{:keys [sorted-set data-avl long-ordered]} (make-long-sets n)
+        sum-fn (fn [^long acc x] (+ acc (long x)))]
+    (run-cases
+      {:sorted-set-fold   #(r/fold + sum-fn sorted-set)
+       :data-avl-fold     #(r/fold + sum-fn data-avl)
+       :long-ordered-fold #(r/fold + sum-fn long-ordered)})))
+
+(defn bench-long-union [n]
+  (let [{left :left right :right} (make-long-set-pair n)]
+    (run-cases
+      {:clojure-set  #(cset/union (:hash-set left) (:hash-set right))
+       :sorted-set   #(cset/union (:sorted-set left) (:sorted-set right))
+       :data-avl     #(cset/union (:data-avl left) (:data-avl right))
+       :long-ordered #(core/union (:long-ordered left) (:long-ordered right))})))
+
+(defn bench-long-intersection [n]
+  (let [{left :left right :right} (make-long-set-pair n)]
+    (run-cases
+      {:clojure-set  #(cset/intersection (:hash-set left) (:hash-set right))
+       :sorted-set   #(cset/intersection (:sorted-set left) (:sorted-set right))
+       :data-avl     #(cset/intersection (:data-avl left) (:data-avl right))
+       :long-ordered #(core/intersection (:long-ordered left) (:long-ordered right))})))
+
+(defn bench-long-difference [n]
+  (let [{left :left right :right} (make-long-set-pair n)]
+    (run-cases
+      {:clojure-set  #(cset/difference (:hash-set left) (:hash-set right))
+       :sorted-set   #(cset/difference (:sorted-set left) (:sorted-set right))
+       :data-avl     #(cset/difference (:data-avl left) (:data-avl right))
+       :long-ordered #(core/difference (:long-ordered left) (:long-ordered right))})))
+
+(defn bench-long-split [n & {:keys [num-ops] :or {num-ops 100}}]
+  (let [as (into (avl/sorted-set) (range n))
+        ls (core/long-ordered-set (range n))
+        ^longs ks (long-array (repeatedly num-ops #(rand-int n)))]
+    (run-cases
+      {:data-avl     #(dotimes [i num-ops] (avl/split-key (aget ks i) as))
+       :long-ordered #(dotimes [i num-ops] (core/split-key (aget ks i) ls))})))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; String Benchmarks
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (def ^:private string-cmp
   (order/compare-by #(neg? (compare (str %1) (str %2)))))
 
@@ -386,6 +498,62 @@
       {:sorted-map-by #(reduce (fn [^long acc [k _]] (+ acc (long (hash k)))) 0 sm)
        :data-avl      #(reduce (fn [^long acc [k _]] (+ acc (long (hash k)))) 0 am)
        :ordered-map   #(reduce (fn [^long acc [k _]] (+ acc (long (hash k)))) 0 om)})))
+
+(defn- make-string-set-pair
+  "Build overlapping string set pairs for set algebra benchmarks.
+  Two sets of size n with 50% overlap, matching the standard workload."
+  [n]
+  (let [ks1 (generate-string-keys n)
+        half (quot n 2)
+        ks2 (into (subvec ks1 half) (generate-string-keys half))
+        cmp #(compare (str %1) (str %2))]
+    {:left  {:sorted-set   (into (sorted-set-by cmp) ks1)
+             :data-avl     (into (avl/sorted-set-by cmp) ks1)
+             :string-ordered (core/string-ordered-set ks1)}
+     :right {:sorted-set   (into (sorted-set-by cmp) ks2)
+             :data-avl     (into (avl/sorted-set-by cmp) ks2)
+             :string-ordered (core/string-ordered-set ks2)}}))
+
+(defn bench-string-set-construction [n]
+  (let [ks  (generate-string-keys n)
+        cmp #(compare (str %1) (str %2))]
+    (run-cases
+      {:sorted-set-by   #(into (sorted-set-by cmp) ks)
+       :data-avl        #(into (avl/sorted-set-by cmp) ks)
+       :string-ordered  #(core/string-ordered-set ks)})))
+
+(defn bench-string-set-lookup [n & {:keys [num-lookups] :or {num-lookups 10000}}]
+  (let [ks   (generate-string-keys n)
+        cmp  #(compare (str %1) (str %2))
+        ss   (into (sorted-set-by cmp) ks)
+        as   (into (avl/sorted-set-by cmp) ks)
+        os   (core/string-ordered-set ks)
+        ^objects look (object-array (repeatedly num-lookups #(nth ks (rand-int n))))]
+    (run-cases
+      {:sorted-set-by   #(dotimes [i num-lookups] (contains? ss (aget look i)))
+       :data-avl        #(dotimes [i num-lookups] (contains? as (aget look i)))
+       :string-ordered  #(dotimes [i num-lookups] (contains? os (aget look i)))})))
+
+(defn bench-string-set-union [n]
+  (let [{left :left right :right} (make-string-set-pair n)]
+    (run-cases
+      {:sorted-set-by   #(cset/union (:sorted-set left) (:sorted-set right))
+       :data-avl        #(cset/union (:data-avl left) (:data-avl right))
+       :string-ordered  #(core/union (:string-ordered left) (:string-ordered right))})))
+
+(defn bench-string-set-intersection [n]
+  (let [{left :left right :right} (make-string-set-pair n)]
+    (run-cases
+      {:sorted-set-by   #(cset/intersection (:sorted-set left) (:sorted-set right))
+       :data-avl        #(cset/intersection (:data-avl left) (:data-avl right))
+       :string-ordered  #(core/intersection (:string-ordered left) (:string-ordered right))})))
+
+(defn bench-string-set-difference [n]
+  (let [{left :left right :right} (make-string-set-pair n)]
+    (run-cases
+      {:sorted-set-by   #(cset/difference (:sorted-set left) (:sorted-set right))
+       :data-avl        #(cset/difference (:data-avl left) (:data-avl right))
+       :string-ordered  #(core/difference (:string-ordered left) (:string-ordered right))})))
 
 (defn bench-interval-construction [n]
   (let [intervals (mapv (fn [i] [(* i 2) (inc (* i 2))]) (shuffle (range n)))]
@@ -481,7 +649,12 @@
    [:rank-access bench-rank-access]
    [:rope-concat bench-rope-concat]
    [:rope-splice bench-rope-splice]
-   [:rope-repeated-edits bench-rope-repeated-edits]])
+   [:rope-repeated-edits bench-rope-repeated-edits]
+   [:long-construction bench-long-construction]
+   [:long-lookup bench-long-lookup]
+   [:long-union bench-long-union]
+   [:long-intersection bench-long-intersection]
+   [:long-difference bench-long-difference]])
 
 (def ^:private readme-benchmark-specs
   [[:set-construction bench-set-construction]
@@ -526,7 +699,22 @@
    [:interval-fold bench-interval-fold]
    [:rope-concat bench-rope-concat]
    [:rope-splice bench-rope-splice]
-   [:rope-repeated-edits bench-rope-repeated-edits]])
+   [:rope-repeated-edits bench-rope-repeated-edits]
+   [:long-construction bench-long-construction]
+   [:long-lookup bench-long-lookup]
+   [:long-insert bench-long-insert]
+   [:long-delete bench-long-delete]
+   [:long-iteration bench-long-iteration]
+   [:long-fold bench-long-fold]
+   [:long-union bench-long-union]
+   [:long-intersection bench-long-intersection]
+   [:long-difference bench-long-difference]
+   [:long-split bench-long-split]
+   [:string-set-construction bench-string-set-construction]
+   [:string-set-lookup bench-string-set-lookup]
+   [:string-set-union bench-string-set-union]
+   [:string-set-intersection bench-string-set-intersection]
+   [:string-set-difference bench-string-set-difference]])
 
 (defn run-wins-benchmarks
   "Run benchmarks focused on where ordered-collections wins."
