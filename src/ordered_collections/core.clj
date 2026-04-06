@@ -1011,7 +1011,7 @@
    Examples:
      (rope-concat (rope [1 2 3]) (rope [4 5 6]))
      ;=> #ordered/rope [1 2 3 4 5 6]"
-  proto/rope-concat)
+  rope/rope-concat)
 
 (defalias rope-concat-all
   "Concatenate multiple ropes via bulk chunk collection. O(total chunks).
@@ -1082,4 +1082,3 @@
      (rope-str (rope (seq \"hello world\")))
      ;=> \"hello world\""
   proto/rope-str)
-

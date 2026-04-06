@@ -23,19 +23,34 @@
        (let [i (long k)]
          (and (<= 0 i) (< i n)))))
 
-(defn- assoc-index?
+(defn- insert-index?
   [^long n k]
   (and (integer? k)
        (let [i (long k)]
          (and (<= 0 i) (<= i n)))))
 
-(defn- check-range!
-  "Validate [start, end) against rope of size n."
-  [^long start ^long end ^long n]
-  (when (or (neg? start) (neg? end) (> start end) (> end n))
+(defn- check-index!
+  [n k]
+  (when-not (valid-index? n k)
     (throw (IndexOutOfBoundsException.))))
 
-(declare ->rope)
+(defn- check-insert-index!
+  [n k]
+  (when-not (insert-index? n k)
+    (throw (IndexOutOfBoundsException.))))
+
+(defn- check-range!
+  "Validate [start, end) against rope of size n."
+  [start end ^long n]
+  (when (or (not (integer? start))
+            (not (integer? end))
+            (neg? (long start))
+            (neg? (long end))
+            (> (long start) (long end))
+            (> (long end) n))
+    (throw (IndexOutOfBoundsException.))))
+
+(declare ->rope rope-root)
 
 (defn- rope-equiv
   "Vector-style equality. If both are IPersistentVector, compare by index.
@@ -187,7 +202,7 @@
   (assoc [this k v]
     (let [n (ropetree/rope-size root)]
       (cond
-        (not (assoc-index? n k))
+        (not (insert-index? n k))
         (throw (IndexOutOfBoundsException.))
 
         (= (long k) n)
@@ -311,37 +326,38 @@
     (proto/rope-sub this from to))
 
   proto/PRope
-  (rope-concat [this other]
-    (let [other-root (if (instance? Rope other)
-                       (.-root ^Rope other)
-                       (ropetree/coll->root other))]
-      (Rope. (ropetree/rope-concat root other-root) _meta)))
+  (rope-cat [this other]
+    (Rope. (ropetree/rope-concat root (.-root ^Rope other)) _meta))
   (rope-split [_ i]
+    (check-insert-index! (ropetree/rope-size root) i)
     (let [[l r] (ropetree/ensure-split-parts
                   (ropetree/rope-split-at root (long i)))]
       [(Rope. l _meta) (Rope. r _meta)]))
   (rope-sub [_ start end]
     (let [n (ropetree/rope-size root)]
       (check-range! start end n)
-      (Rope. (ropetree/rope-subvec-root root start end) _meta)))
+      (Rope. (ropetree/rope-subvec-root root (long start) (long end)) _meta)))
   (rope-insert [this i coll]
     (let [n (ropetree/rope-size root)]
-      (when (or (neg? i) (> i n))
-        (throw (IndexOutOfBoundsException.)))
-      (let [[l r] (proto/rope-split this i)
+      (check-insert-index! n i)
+      (let [[l r] (proto/rope-split this (long i))
             mid   (->rope coll)]
-        (proto/rope-concat (proto/rope-concat l mid) r))))
+        (proto/rope-cat (proto/rope-cat l mid) r))))
   (rope-remove [this start end]
     (check-range! start end (ropetree/rope-size root))
-    (let [[l r]  (proto/rope-split this start)
+    (let [start (long start)
+          end   (long end)
+          [l r]  (proto/rope-split this start)
           [_ rr] (proto/rope-split r (- end start))]
-      (proto/rope-concat l rr)))
+      (proto/rope-cat l rr)))
   (rope-splice [this start end coll]
     (check-range! start end (ropetree/rope-size root))
-    (let [[l r]  (proto/rope-split this start)
+    (let [start (long start)
+          end   (long end)
+          [l r]  (proto/rope-split this start)
           [_ rr] (proto/rope-split r (- end start))
           mid    (->rope coll)]
-      (proto/rope-concat (proto/rope-concat l mid) rr)))
+      (proto/rope-cat (proto/rope-cat l mid) rr)))
   (rope-chunks [_]
     (ropetree/rope-chunks-seq root))
   (rope-str [_]
@@ -366,6 +382,12 @@
   (if (instance? Rope x)
     x
     (Rope. (ropetree/coll->root x) {})))
+
+(defn rope-concat
+  "Concatenate two ropes or rope-coercible collections.
+   Preserves left operand metadata when the left operand is already a Rope."
+  [left right]
+  (proto/rope-cat (->rope left) (->rope right)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Transient Rope
@@ -443,7 +465,7 @@
   [& xs]
   (Rope. (ropetree/chunks->root-csi
            (into [] (mapcat (comp ropetree/root->chunks rope-root)) xs))
-    {}))
+    (or (meta (first xs)) {})))
 
 (defn rope-chunks-reverse
   "Reverse seq of internal chunk vectors."

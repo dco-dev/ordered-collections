@@ -172,8 +172,8 @@
 (defprotocol PRope
   "Protocol for persistent rope operations — structural editing of
   indexed sequences in O(log n)."
-  (rope-concat [r1 r2]
-    "Concatenate two ropes. O(log n).")
+  (rope-cat [r1 r2]
+    "Structural rope-to-rope concatenation. O(log n).")
   (rope-split [r i]
     "Split rope at index i, returning [left right]. O(log n).")
   (rope-sub [r start end]

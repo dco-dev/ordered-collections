@@ -108,8 +108,22 @@
           (vec (oc/rope-splice r 2 5 [:x :y]))))
     (is (= (range 10) (vec (oc/rope-remove r 3 3))))
     (is (thrown? IndexOutOfBoundsException (oc/rope-insert r 11 [:x])))
+    (is (thrown? IndexOutOfBoundsException (oc/rope-insert r 1.5 [:x])))
     (is (thrown? IndexOutOfBoundsException (oc/rope-remove r -1 2)))
-    (is (thrown? IndexOutOfBoundsException (oc/rope-splice r 4 2 [:x])))))
+    (is (thrown? IndexOutOfBoundsException (oc/rope-remove r 1.2 3)))
+    (is (thrown? IndexOutOfBoundsException (oc/rope-splice r 4 2 [:x])))
+    (is (thrown? IndexOutOfBoundsException (oc/rope-splice r 2 4.1 [:x])))
+    (is (thrown? IndexOutOfBoundsException (oc/rope-split r 2.2)))
+    (is (thrown? IndexOutOfBoundsException (oc/rope-sub r 1 3.5)))))
+
+(deftest rope-concat-coercion
+  (is (= [0 1 2 3]
+        (vec (oc/rope-concat [0 1] (oc/rope [2 3])))))
+  (is (= [0 1 2 3]
+        (vec (oc/rope-concat (oc/rope [0 1]) [2 3]))))
+  (let [left (with-meta (oc/rope [0 1]) {:tag :left})]
+    (is (= {:tag :left}
+          (meta (oc/rope-concat left [2 3]))))))
 
 (deftest rope-normalization-and-chunk-iteration
   (let [tiny (reduce oc/rope-concat (map #(oc/rope [%]) (range 130)))]
