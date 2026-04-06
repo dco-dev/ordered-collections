@@ -97,6 +97,7 @@
 (deftype Rope [root _meta]
 
   java.io.Serializable
+  java.util.RandomAccess
 
   IMeta
   (meta [_]
@@ -156,6 +157,12 @@
 
         :else
         (Rope. (ropetree/rope-assoc root (long k) v) _meta))))
+
+  clojure.lang.IPersistentVector
+  (assocN [this i v]
+    (.assoc this i v))
+  (length [_]
+    (ropetree/rope-size root))
 
   IPersistentCollection
   (cons [_ o]
@@ -324,7 +331,7 @@
   (equals [this o]
     (Util/equals this o))
   (toString [this]
-    (pr-str (vec this))))
+    (pr-str this)))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -426,4 +433,4 @@
 
 (defmethod print-method Rope [^Rope r ^java.io.Writer w]
   (.write w "#ordered/rope ")
-  (print-method (vec r) w))
+  (print-method (into [] r) w))

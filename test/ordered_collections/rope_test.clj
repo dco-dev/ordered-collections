@@ -10,9 +10,9 @@
 
 (deftest rope-basic-semantics
   (let [r (oc/rope [0 1 2 3 4])]
-    (is (not (vector? r)))
+    (is (vector? r))
     (is (= 5 (count r)))
-    (is (= [0 1 2 3 4] (vec r)))
+    (is (= [0 1 2 3 4] r))
     (is (= 0 (nth r 0)))
     (is (= 4 (nth r 4)))
     (is (= :nope (nth r 9 :nope)))
@@ -413,14 +413,16 @@
           (oc/rope-str (oc/rope-sub (oc/rope (seq "The quick brown")) 4 9))))))
 
 (deftest rope-to-vec-conversion
-  (let [r (oc/rope [1 2 3 4 5])
-        v (vec r)]
-    (is (= [1 2 3 4 5] v))
-    (is (instance? clojure.lang.PersistentVector v)))
+  (testing "vec on rope preserves content"
+    (let [r (oc/rope [1 2 3 4 5])]
+      (is (= [1 2 3 4 5] (vec r)))))
+  (testing "into [] materializes to PersistentVector"
+    (let [r (oc/rope [1 2 3 4 5])
+          v (into [] r)]
+      (is (= [1 2 3 4 5] v))
+      (is (instance? clojure.lang.PersistentVector v))))
   (testing "empty rope"
-    (is (= [] (vec (oc/rope)))))
-  (testing "vec produces a PersistentVector, not a Rope"
-    (is (instance? clojure.lang.PersistentVector (vec (oc/rope [1 2 3]))))))
+    (is (= [] (into [] (oc/rope))))))
 
 (deftest rope-sequence-interop
   (testing "rope from various seqable sources"
@@ -639,12 +641,12 @@
       (= (apply str xs)
          (oc/rope-str r)))))
 
-(defspec prop-vec-produces-persistent-vector 100
+(defspec prop-into-vec-materializes 100
   (prop/for-all [xs (gen/vector gen/small-integer 0 2000)]
     (let [r (oc/rope xs)
-          v (vec r)]
+          v (into [] r)]
       (and (instance? clojure.lang.PersistentVector v)
-           (= (vec xs) v)))))
+           (= xs v)))))
 
 (defspec prop-concat-mixed-sizes 50
   (prop/for-all [left  (gen/vector gen/small-integer 0 2000)
