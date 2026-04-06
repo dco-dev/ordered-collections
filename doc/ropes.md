@@ -133,9 +133,6 @@ At a high level:
 - splits and concatenations work by rearranging chunk-bearing tree nodes
 - indexing descends by subtree element counts, then indexes within the chunk
 
-This is also what distinguishes the rope from the earlier discarded
-"tree-vector" prototype.
-
 ![Chunk size invariant and boundary repair](assets/rope-csi-boundary.svg)
 
 The subtle rule is the **Chunk Size Invariant (CSI)**:

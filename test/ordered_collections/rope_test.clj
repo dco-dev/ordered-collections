@@ -1,5 +1,6 @@
 (ns ordered-collections.rope-test
   (:require [clojure.test :refer :all]
+            [clojure.core.reducers :as r]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
@@ -399,9 +400,44 @@
   (let [r (oc/rope (range 100000))
         expected (reduce + (range 100000))]
     (is (= expected
-          (clojure.core.reducers/fold + r)))
+          (r/fold + r)))
     (is (= expected
-          (clojure.core.reducers/fold 1024 + + r)))))
+          (r/fold 1024 + + r)))))
+
+(deftest rope-parallel-fold-edge-cases
+  (testing "empty rope"
+    (let [r (oc/rope)]
+      (is (= 0 (r/fold + r)))
+      (is (= [] (r/fold 1 into conj r)))
+      (is (= {} (r/fold 1
+                 (fn ([] {}) ([m1 m2] (merge-with + m1 m2)))
+                 (fn [m x] (update m x (fnil inc 0)))
+                 r)))))
+  (testing "singleton rope"
+    (let [r (oc/rope [42])]
+      (is (= 42 (r/fold + r)))
+      (is (= [42] (r/fold 1 into conj r)))
+      (is (= "x" (r/fold 1 str (fn [s ch] (str s ch)) (oc/rope "x"))))))
+  (testing "threshold boundaries preserve order"
+    (let [r (oc/rope (range 300))]
+      (doseq [threshold [1 2 3 7 31 63 64 65 127 128 129 255 256 257 1024]]
+        (is (= (vec (range 300))
+              (r/fold threshold into conj r)))
+        (is (= (reduce + (range 300))
+              (r/fold threshold + + r)))))))
+
+(deftest rope-parallel-fold-after-structural-edits
+  (let [r0 (oc/rope (range 1000))
+        r1 (oc/rope-insert r0 200 [:a :b :c])
+        r2 (oc/rope-remove r1 500 700)
+        r3 (oc/rope-splice r2 20 40 (range 10))
+        expected (vec r3)
+        freq-combine (fn ([] {}) ([m1 m2] (merge-with + m1 m2)))
+        freq-reduce  (fn [m x] (update m (class x) (fnil inc 0)))]
+    (doseq [threshold [1 8 64 256 1024]]
+      (is (= expected (r/fold threshold into conj r3)))
+      (is (= (reduce freq-reduce {} r3)
+            (r/fold threshold freq-combine freq-reduce r3))))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -630,16 +666,23 @@
            (ropetree/invariant-valid? (rope-root-of result))))))
 
 (defspec prop-fold-matches-reduce 50
-  (prop/for-all [xs (gen/vector gen/small-integer 100 2000)]
+  (prop/for-all [xs (gen/vector gen/small-integer 0 4000)
+                 threshold (gen/elements [1 2 3 4 8 16 31 32 63 64 65 127 128 129 255 256 257 511 512 1024 4096])]
     (let [r (oc/rope xs)]
       (and
         ;; Commutative: sum
         (= (reduce + 0 r)
-           (clojure.core.reducers/fold + r))
+           (r/fold threshold + + r))
         ;; Non-commutative: ordered collection into vector
         ;; fold with into must produce the same ordered result
         (= (reduce conj [] r)
-           (clojure.core.reducers/fold into conj r))))))
+           (r/fold threshold into conj r))
+        ;; Map-building workload with nontrivial combine/reduce
+        (= (reduce (fn [m x] (update m (mod (long x) 17) (fnil inc 0))) {} r)
+           (r/fold threshold
+             (fn ([] {}) ([m1 m2] (merge-with + m1 m2)))
+             (fn [m x] (update m (mod (long x) 17) (fnil inc 0)))
+             r))))))
 
 (defspec prop-metadata-preserved 100
   (prop/for-all [xs (gen/vector gen/small-integer 10 100)]
@@ -967,3 +1010,159 @@
           [r v] (reduce apply-op [(oc/rope (range size)) (vec (range size))] ops)]
       (and (= v (vec r))
            (rope-tree-healthy? (rope-root-of r))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Coverage Gap Tests
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; splice-root edge cases: empty mid, empty left, empty right
+(deftest rope-splice-root-edge-cases
+  (let [r (oc/rope (range 100))]
+    (testing "remove-only splice (empty mid)"
+      (is (= (vec (concat (range 10) (range 50 100)))
+            (vec (oc/rope-remove r 10 50)))))
+    (testing "splice at start (left is empty)"
+      (is (= (into [:x :y] (range 10 100))
+            (vec (oc/rope-splice r 0 10 [:x :y])))))
+    (testing "splice at end (right is empty)"
+      (is (= (into (vec (range 90)) [:x :y])
+            (vec (oc/rope-splice r 90 100 [:x :y])))))
+    (testing "remove everything"
+      (is (= [] (vec (oc/rope-remove r 0 100)))))
+    (testing "insert into empty"
+      (is (= [:a :b] (vec (oc/rope-insert (oc/rope) 0 [:a :b])))))
+    (testing "splice replacing everything"
+      (is (= [:z] (vec (oc/rope-splice r 0 100 [:z])))))))
+
+;; merge-boundary cascade: concatenating tiny ropes forces one-more-neighbor pull
+(deftest rope-merge-boundary-cascade
+  (testing "concatenating many single-element ropes"
+    (let [r (reduce oc/rope-concat (map #(oc/rope [%]) (range 50)))]
+      (is (= (range 50) (vec r)))
+      (is (ropetree/invariant-valid? (rope-root-of r)))))
+  (testing "concat two very small ropes"
+    (let [a (oc/rope [1 2])
+          b (oc/rope [3 4])
+          c (oc/rope-concat a b)]
+      (is (= [1 2 3 4] (vec c)))
+      (is (ropetree/invariant-valid? (rope-root-of c)))))
+  (testing "concat where boundary chunks are both undersized"
+    ;; Build a rope, split to get a runt, then concat with another runt
+    (let [r   (oc/rope (range 1000))
+          [l _] (oc/rope-split r 3)    ;; l has 3 elements (runt)
+          [_ rr] (oc/rope-split r 997) ;; rr has 3 elements (runt)
+          c   (oc/rope-concat l rr)]
+      (is (= (into (vec (range 3)) (range 997 1000)) (vec c)))
+      (is (ropetree/invariant-valid? (rope-root-of c))))))
+
+;; rope-concat-all with mixed Rope and non-Rope collections
+(deftest rope-concat-all-mixed-types
+  (is (= [1 2 3 4 5 6]
+        (vec (oc/rope-concat-all (oc/rope [1 2]) [3 4] (oc/rope [5 6])))))
+  (is (= (range 100)
+        (vec (apply oc/rope-concat-all
+               (map #(if (even? %)
+                       (oc/rope (range (* % 10) (* (inc %) 10)))
+                       (vec (range (* % 10) (* (inc %) 10))))
+                 (range 10)))))))
+
+;; rope-chunks-reverse property test
+(defspec prop-chunks-reverse-matches-forward 100
+  (prop/for-all [xs (gen/vector gen/small-integer 1 2000)]
+    (let [r (oc/rope xs)]
+      (= (reverse (map vec (oc/rope-chunks r)))
+         (map vec (oc/rope-chunks-reverse r))))))
+
+;; rope-chunk-count property test
+(defspec prop-chunk-count-matches-chunks 100
+  (prop/for-all [xs (gen/vector gen/small-integer 0 2000)]
+    (let [r (oc/rope xs)]
+      (= (oc/rope-chunk-count r)
+         (count (vec (oc/rope-chunks r)))))))
+
+;; normalize-root: full rechunk produces valid CSI
+(deftest rope-normalize-root
+  (testing "normalize-root on a well-formed rope is idempotent"
+    (let [root (rope-root-of (oc/rope (range 1000)))
+          normalized (ropetree/normalize-root root)]
+      (is (= (vec (range 1000))
+            (vec (oc/rope (range 1000)))))
+      (is (ropetree/invariant-valid? normalized))))
+  (testing "normalize-root on an artificially degraded root restores CSI"
+    ;; Build a root with many tiny chunks by raw construction
+    (let [tiny-chunks (mapv vector (range 50))
+          bad-root    (ropetree/chunks->root tiny-chunks)
+          fixed       (ropetree/normalize-root bad-root)]
+      (is (= (range 50) (vec (map first (ropetree/root->chunks bad-root)))))
+      (is (ropetree/invariant-valid? fixed))
+      (is (= (range 50)
+            (reduce into [] (ropetree/root->chunks fixed))))))
+  (testing "normalize-root on nil returns nil"
+    (is (nil? (ropetree/normalize-root nil)))))
+
+;; RopeSeqReverse count fallback (cnt is nil after .next chains)
+(deftest rope-seq-reverse-count-after-next
+  (let [r  (oc/rope (range 20))
+        rs (rseq r)
+        rs2 (next rs)
+        rs5 (nth (iterate next rs) 5)]
+    (is (= 20 (count rs)))
+    (is (= 19 (count rs2)))
+    (is (= 15 (count rs5)))))
+
+;; RopeSeq count after .next chains
+(deftest rope-seq-count-after-next
+  (let [r (oc/rope (range 100))
+        s (seq r)
+        s5 (nth (iterate next s) 5)
+        s50 (nth (iterate next s) 50)]
+    (is (= 100 (count s)))
+    (is (= 95 (count s5)))
+    (is (= 50 (count s50)))))
+
+;; RopeSeq reduce via .next-obtained seq
+(deftest rope-seq-reduce-from-mid
+  (let [r (oc/rope (range 100))
+        s (nth (iterate next (seq r)) 10)]
+    (is (= (reduce + (range 10 100))
+          (reduce + s)))))
+
+;; ensure-right-fringe actually fires
+(deftest rope-fringe-repair
+  (testing "split inside a chunk creates undersized fringe that gets repaired"
+    (let [r (oc/rope (range 1000))
+          ;; Split at a position inside a chunk, not at a chunk boundary
+          [l rr] (oc/rope-split r 5)]
+      (is (= (range 5) (vec l)))
+      (is (= (range 5 1000) (vec rr)))
+      (is (ropetree/invariant-valid? (rope-root-of l)))
+      (is (ropetree/invariant-valid? (rope-root-of rr)))))
+  (testing "subrope creating small fringes on both sides"
+    (let [r (oc/rope (range 2000))
+          s (oc/rope-sub r 3 1997)]
+      (is (= (vec (range 3 1997)) (vec s)))
+      (is (ropetree/invariant-valid? (rope-root-of s))))))
+
+;; rope-peek-right and rope-pop-right coverage
+(deftest rope-peek-pop-coverage
+  (let [r (oc/rope (range 500))]
+    (is (= 499 (peek r)))
+    (is (= 498 (peek (pop r))))
+    (is (= 499 (count (pop r))))
+    ;; Pop down to a single element
+    (let [single (reduce (fn [r _] (pop r)) (oc/rope [1 2 3]) (range 2))]
+      (is (= [1] (vec single)))
+      (is (= 1 (peek single))))))
+
+;; rope-remove-root is just splice-root with nil mid
+(deftest rope-remove-root-delegation
+  (let [r (oc/rope (range 100))]
+    (is (= (vec (oc/rope-remove r 10 20))
+          (vec (concat (range 10) (range 20 100)))))))
+
+;; rope-fold kernel function directly
+(deftest rope-fold-kernel
+  (let [root (rope-root-of (oc/rope (range 10000)))]
+    (is (= (reduce + (range 10000))
+          (ropetree/rope-fold root 512 + +)))))
