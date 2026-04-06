@@ -197,6 +197,32 @@
             "Per-element memory should be consistent across sizes")))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Rope Memory
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest rope-memory
+  (testing "Rope memory vs PersistentVector"
+    (doseq [n [1000 10000 100000]]
+      (let [data     (range n)
+            r        (oc/rope data)
+            v        (vec data)
+            rope-bpe (bytes-per-element r n)
+            vec-bpe  (bytes-per-element v n)
+            ratio    (/ rope-bpe vec-bpe)]
+
+        (println)
+        (println (format "=== Rope Memory at N=%,d ===" n))
+        (println (format "  rope:   %5.1f bytes/elem  (total: %s)"
+                         rope-bpe (format-bytes (measure-bytes r))))
+        (println (format "  vector: %5.1f bytes/elem  (total: %s)"
+                         vec-bpe (format-bytes (measure-bytes v))))
+        (println (format "  ratio:  %.2fx" ratio))
+
+        ;; Rope should be within 10% of vector memory
+        (is (< ratio 1.10) (format "Rope overhead should be < 10%% at N=%d (was %.1f%%)"
+                                   n (* 100 (- ratio 1.0))))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Summary Report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

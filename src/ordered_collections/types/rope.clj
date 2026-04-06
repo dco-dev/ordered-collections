@@ -5,7 +5,7 @@
             [clojure.core.reducers :as r]
             [ordered-collections.parallel :as par]
             [ordered-collections.tree.rope :as ropetree])
-  (:import  [clojure.lang RT Murmur3 MapEntry IPersistentVector ILookup
+  (:import  [clojure.lang RT Murmur3 MapEntry ILookup
                            Associative Indexed Seqable Reversible Sequential
                            IPersistentCollection IPersistentStack IObj IMeta
                            IEditableCollection ITransientCollection
@@ -60,15 +60,15 @@
     (if (< (long result) n) (long result) -1)))
 
 (defn- linear-last-index-of
-  "Linear scan for last index of x, or -1."
+  "Forward linear scan tracking the last matching index. O(n)."
   [root x]
-  (let [n (ropetree/rope-size root)]
-    (loop [i (unchecked-dec n) found (long -1)]
-      (if (neg? i)
-        found
-        (if (Util/equiv (ropetree/rope-nth root i) x)
-          i
-          (recur (unchecked-dec i) found))))))
+  (let [result (ropetree/rope-reduce
+                 (fn [[^long i ^long found] elem]
+                   [(unchecked-inc i)
+                    (if (Util/equiv elem x) i found)])
+                 [(long 0) (long -1)]
+                 root)]
+    (long (second result))))
 
 (defn- rope-to-array
   ^objects [root]
@@ -83,7 +83,6 @@
     arr))
 
 (declare ->Rope)
-(declare ->RopeSlice)
 (declare ->TransientRope)
 (declare rope-sub)
 (declare rope-split)
@@ -169,8 +168,6 @@
     (ropetree/rope-peek-right root))
   (pop [_]
     (Rope. (ropetree/rope-pop-right root) _meta))
-
-  IPersistentVector
 
   Seqable
   (seq [_]
@@ -283,7 +280,7 @@
   (equals [this o]
     (Util/equals this o))
   (toString [this]
-    (pr-str (into [] this))))
+    (pr-str (vec this))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -341,151 +338,6 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Rope Slice
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(deftype RopeSlice [root _meta]
-
-  java.io.Serializable
-
-  IMeta
-  (meta [_]
-    _meta)
-
-  IObj
-  (withMeta [_ m]
-    (RopeSlice. root m))
-
-  clojure.lang.Counted
-  (count [_]
-    (ropetree/rope-size root))
-
-  Indexed
-  (nth [_ i]
-    (let [n (ropetree/rope-size root)]
-      (if (valid-index? n i)
-        (ropetree/rope-nth root (long i))
-        (throw (IndexOutOfBoundsException.)))))
-  (nth [_ i not-found]
-    (let [n (ropetree/rope-size root)]
-      (if (valid-index? n i)
-        (ropetree/rope-nth root (long i))
-        not-found)))
-
-  ILookup
-  (valAt [this k]
-    (.nth this k nil))
-  (valAt [this k not-found]
-    (.nth this k not-found))
-
-  clojure.lang.IFn
-  (invoke [this k]
-    (.valAt this k))
-  (invoke [this k not-found]
-    (.valAt this k not-found))
-  (applyTo [this args]
-    (let [n (RT/boundedLength args 2)]
-      (case n
-        0 (throw (clojure.lang.ArityException. n (.. this getClass getSimpleName)))
-        1 (.invoke this (first args))
-        2 (.invoke this (first args) (second args))
-        (throw (clojure.lang.ArityException. n (.. this getClass getSimpleName))))))
-
-  Seqable
-  (seq [_]
-    (ropetree/rope-seq root))
-
-  Reversible
-  (rseq [_]
-    (ropetree/rope-rseq root))
-
-  Sequential
-
-  java.lang.Comparable
-  (compareTo [this o]
-    (if (identical? this o)
-      0
-      (seq-compare this o)))
-
-  java.lang.Iterable
-  (iterator [this]
-    (SeqIterator. (seq this)))
-
-  IReduceInit
-  (reduce [_ f init]
-    (ropetree/rope-reduce f init root))
-
-  IReduce
-  (reduce [_ f]
-    (ropetree/rope-reduce f root))
-
-  cp/CollReduce
-  (coll-reduce [this f]
-    (.reduce ^IReduce this f))
-  (coll-reduce [this f init]
-    (.reduce ^IReduceInit this f init))
-
-  clojure.lang.IHashEq
-  (hasheq [this]
-    (Murmur3/hashOrdered this))
-
-  IPersistentCollection
-  (cons [_ o]
-    (Rope. (ropetree/rope-concat root (ropetree/coll->root [o]))
-      _meta))
-  (empty [_]
-    (RopeSlice. nil _meta))
-  (equiv [this o]
-    (seq-equiv this o))
-
-  java.util.Collection
-  (toArray [this]
-    (rope-to-array root))
-  (isEmpty [_]
-    (nil? root))
-  (^boolean contains [_ x]
-    (not (neg? (linear-index-of root x))))
-  (containsAll [this c]
-    (every? #(.contains this %) c))
-  (size [_]
-    (ropetree/rope-size root))
-  (add [_ _]
-    (throw (UnsupportedOperationException.)))
-  (addAll [_ _]
-    (throw (UnsupportedOperationException.)))
-  (^boolean remove [_ _]
-    (throw (UnsupportedOperationException.)))
-  (removeAll [_ _]
-    (throw (UnsupportedOperationException.)))
-  (retainAll [_ _]
-    (throw (UnsupportedOperationException.)))
-  (clear [_]
-    (throw (UnsupportedOperationException.)))
-
-  java.util.List
-  (get [_ i]
-    (if (valid-index? (ropetree/rope-size root) i)
-      (ropetree/rope-nth root (long i))
-      (throw (IndexOutOfBoundsException.))))
-  (indexOf [_ x]
-    (linear-index-of root x))
-  (lastIndexOf [_ x]
-    (linear-last-index-of root x))
-  (set [_ _ _]
-    (throw (UnsupportedOperationException.)))
-  (subList [this from to]
-    (rope-sub this from to))
-
-  Object
-  (hashCode [this]
-    (Util/hash this))
-  (equals [this o]
-    (Util/equals this o))
-  (toString [this]
-    (pr-str (into [] this))))
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Constructors
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -500,10 +352,9 @@
 
 (defn- rope-root
   [x]
-  (cond
-    (instance? Rope x)      (.-root ^Rope x)
-    (instance? RopeSlice x) (.-root ^RopeSlice x)
-    :else                   (ropetree/coll->root x)))
+  (if (instance? Rope x)
+    (.-root ^Rope x)
+    (ropetree/coll->root x)))
 
 (defn rope-concat-all
   "Bulk concatenation of rope values or rope-coercible collections.
@@ -543,7 +394,7 @@
   (let [n (count v)]
     (when (or (neg? start) (neg? end) (> start end) (> end n))
       (throw (IndexOutOfBoundsException.)))
-    (RopeSlice. (ropetree/rope-subvec-root (rope-root v) start end) (meta v))))
+    (Rope. (ropetree/rope-subvec-root (rope-root v) start end) (meta v))))
 
 (defn rope-insert
   [v i inserted]
@@ -574,15 +425,17 @@
       (rope-concat (rope-concat l mid) rr))))
 
 
+(defn rope-str
+  "Efficiently convert a rope of characters/strings to a String via
+  StringBuilder. Much faster than (apply str r) for large ropes."
+  ^String [v]
+  (ropetree/rope->str (rope-root v)))
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Print Methods
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmethod print-method Rope [^Rope r ^java.io.Writer w]
   (.write w "#ordered/rope ")
-  (print-method (into [] r) w))
-
-(defmethod print-method RopeSlice [^RopeSlice r ^java.io.Writer w]
-  ;; Slices materialize to a rope on print so they round-trip via the same reader.
-  (.write w "#ordered/rope ")
-  (print-method (into [] r) w))
+  (print-method (vec r) w))

@@ -10,7 +10,7 @@
 
 (deftest rope-basic-semantics
   (let [r (oc/rope [0 1 2 3 4])]
-    (is (vector? r))
+    (is (not (vector? r)))
     (is (= 5 (count r)))
     (is (= [0 1 2 3 4] (vec r)))
     (is (= 0 (nth r 0)))
@@ -79,22 +79,22 @@
     (is (= (range 49990 50010) (vec (oc/rope-sub r 49990 50010))))))
 
 (deftest rope-chunk-boundary-behavior
-  (let [r (oc/rope (range 130))]
-    (is (= 130 (count r)))
-    (is (= (range 130) (vec r)))
-    (is (= [(vec (range 130))]
-          (vec (oc/rope-chunks r))))
+  (let [n    (+ ropetree/+min-chunk-size+ 2)
+        r    (oc/rope (range n))
+        mid  (quot n 2)]
+    (is (= n (count r)))
+    (is (= (range n) (vec r)))
     (is (= 1 (oc/rope-chunk-count r)))
-    (is (= (range 60 70) (vec (oc/rope-sub r 60 70))))
-    (let [split ropetree/+min-chunk-size+]
+    (is (= (range mid (+ mid 10)) (vec (oc/rope-sub r mid (+ mid 10)))))
+    (let [split mid]
       (let [[l rr] (oc/rope-split r split)]
         (is (= (range split) (vec l)))
-        (is (= (range split 130) (vec rr))))
+        (is (= (range split n) (vec rr))))
       (let [[l rr] (oc/rope-split r (inc split))]
         (is (= (range (inc split)) (vec l)))
-        (is (= (range (inc split) 130) (vec rr)))))
-    (is (= (range 140)
-          (vec (reduce conj r (range 130 140)))))))
+        (is (= (range (inc split) n) (vec rr)))))
+    (is (= (range (+ n 10))
+          (vec (reduce conj r (range n (+ n 10))))))))
 
 (deftest rope-editing-operations
   (let [r (oc/rope (range 10))]
@@ -117,7 +117,7 @@
     (is (= [130] (mapv count (oc/rope-chunks tiny))))
     (is (= [130] (mapv count (oc/rope-chunks-reverse tiny))))))
 
-(deftest rope-slice-view
+(deftest rope-sub-view
   (let [r  (oc/rope (range 20))
         sv (oc/rope-sub r 5 15)]
     (is (= 10 (count sv)))
@@ -215,11 +215,54 @@
           hi (clamp-index n b)]
       (subvec v lo hi))))
 
+(def gen-full-rope-op
+  "Extended rope operation generator including conj, pop, and assoc
+  alongside the structural editing operations."
+  (gen/one-of
+    [;; Structural ops from test-utils
+     (gen/fmap (fn [[i x]] [:insert i [x] nil])
+       (gen/tuple (gen/choose 0 40) gen/small-integer))
+     (gen/fmap (fn [[i xs]] [:insert-many i xs nil])
+       (gen/tuple (gen/choose 0 40) (gen/vector gen/small-integer 0 8)))
+     (gen/fmap (fn [[a b]] [:remove (min a b) (max a b) nil])
+       (gen/tuple (gen/choose 0 40) (gen/choose 0 40)))
+     (gen/fmap (fn [[a b xs]] [:splice (min a b) (max a b) xs])
+       (gen/tuple (gen/choose 0 40) (gen/choose 0 40)
+         (gen/vector gen/small-integer 0 8)))
+     (gen/fmap (fn [[a b]] [:subrope (min a b) (max a b) nil])
+       (gen/tuple (gen/choose 0 40) (gen/choose 0 40)))
+     ;; Vector-like ops
+     (gen/fmap (fn [x] [:conj x nil nil]) gen/small-integer)
+     (gen/return [:pop nil nil nil])
+     (gen/fmap (fn [[i x]] [:assoc i x nil])
+       (gen/tuple (gen/choose 0 40) gen/small-integer))]))
+
+(def gen-full-rope-ops
+  (gen/vector gen-full-rope-op 0 60))
+
+(defn- apply-full-rope-op
+  [r [op a b c]]
+  (case op
+    :conj    (conj r a)
+    :pop     (if (pos? (count r)) (pop r) r)
+    :assoc   (let [n (count r)]
+               (if (and (pos? n) (< a n)) (assoc r (rem a n) b) r))
+    (apply-rope-op r [op a b c])))
+
+(defn- apply-full-vector-op
+  [v [op a b c]]
+  (case op
+    :conj    (conj v a)
+    :pop     (if (pos? (count v)) (pop v) v)
+    :assoc   (let [n (count v)]
+               (if (and (pos? n) (< a n)) (assoc v (rem a n) b) v))
+    (apply-vector-op v [op a b c])))
+
 (defspec prop-rope-random-edit-sequences 100
   (prop/for-all [xs  (gen/vector gen/small-integer 0 40)
-                 ops tu/gen-rope-ops]
-    (= (reduce apply-vector-op (vec xs) ops)
-       (vec (reduce apply-rope-op (oc/rope xs) ops)))))
+                 ops gen-full-rope-ops]
+    (= (reduce apply-full-vector-op (vec xs) ops)
+       (vec (reduce apply-full-rope-op (oc/rope xs) ops)))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -322,7 +365,7 @@
   (testing "empty rope hash matches empty vector"
     (is (= (hash (oc/rope)) (hash [])))))
 
-(deftest rope-slice-hash-equality
+(deftest rope-sub-hash-equality
   (let [r  (oc/rope (range 20))
         sv (oc/rope-sub r 5 10)
         v  [5 6 7 8 9]]
@@ -356,6 +399,41 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Interop: String, Vector, Sequence
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest rope-str-conversion
+  (is (= "hello" (oc/rope-str (oc/rope (seq "hello")))))
+  (is (= "" (oc/rope-str (oc/rope))))
+  (is (= "The quick brown fox"
+        (oc/rope-str (oc/rope-concat (oc/rope (seq "The quick "))
+                                     (oc/rope (seq "brown fox"))))))
+  (testing "rope-str on slice"
+    (is (= "quick"
+          (oc/rope-str (oc/rope-sub (oc/rope (seq "The quick brown")) 4 9))))))
+
+(deftest rope-to-vec-conversion
+  (let [r (oc/rope [1 2 3 4 5])
+        v (vec r)]
+    (is (= [1 2 3 4 5] v))
+    (is (instance? clojure.lang.PersistentVector v)))
+  (testing "empty rope"
+    (is (= [] (vec (oc/rope)))))
+  (testing "vec produces a PersistentVector, not a Rope"
+    (is (instance? clojure.lang.PersistentVector (vec (oc/rope [1 2 3]))))))
+
+(deftest rope-sequence-interop
+  (testing "rope from various seqable sources"
+    (is (= [1 2 3] (vec (oc/rope [1 2 3]))))
+    (is (= [0 1 2] (vec (oc/rope (range 3)))))
+    (is (= [\h \e \l \l \o] (vec (oc/rope "hello"))))
+    (is (= [1 2 3] (vec (oc/rope '(1 2 3))))))
+  (testing "rope operations accept non-rope collections"
+    (is (= [1 2 3] (vec (oc/rope-concat (oc/rope [1 2]) [3]))))
+    (is (= [1 2 :x 3] (vec (oc/rope-insert (oc/rope [1 2 3]) 2 [:x]))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Bounds Checking
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -366,10 +444,6 @@
     (is (= :nope (nth r 3 :nope)))
     (is (= :nope (nth r -1 :nope)))))
 
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Chunk Shape After Long Edit Sequences
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Transient
@@ -415,12 +489,8 @@
     (is (= :nope (nth t 500 :nope)))))
 
 
-(defn- rope-root-of [r]
-  (cond
-    (instance? ordered_collections.types.rope.Rope r)
-    (.-root ^ordered_collections.types.rope.Rope r)
-    (instance? ordered_collections.types.rope.RopeSlice r)
-    (.-root ^ordered_collections.types.rope.RopeSlice r)))
+(defn- rope-root-of [^ordered_collections.types.rope.Rope r]
+  (.-root r))
 
 (defspec prop-chunk-shape-after-edits 50
   (prop/for-all [xs  (gen/vector gen/small-integer 0 200)
@@ -460,9 +530,9 @@
 
 (defspec prop-large-edit-sequences 50
   (prop/for-all [xs  (gen/vector gen/small-integer 200 600)
-                 ops tu/gen-rope-ops]
-    (let [r (reduce apply-rope-op (oc/rope xs) ops)
-          v (reduce apply-vector-op (vec xs) ops)]
+                 ops gen-full-rope-ops]
+    (let [r (reduce apply-full-rope-op (oc/rope xs) ops)
+          v (reduce apply-full-vector-op (vec xs) ops)]
       (and (= v (into [] r))
            (ropetree/invariant-valid? (rope-root-of r))))))
 
@@ -521,3 +591,186 @@
            (= m (meta (oc/rope-concat r (oc/rope [99]))))
            (= m (meta (first (oc/rope-split r 5))))
            (= m (meta (oc/rope-sub r 2 8)))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Multi-Chunk Scale and Structural Integrity
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- rope-tree-healthy?
+  "Check that the rope root satisfies both CSI and WBT balance."
+  [root]
+  (and (ropetree/invariant-valid? root)
+       (or (nil? root)
+           (ordered-collections.tree.tree/node-healthy? root))))
+
+(defspec prop-multi-chunk-edit-sequences 50
+  ;; Inputs large enough to span many chunks (target=512, so 2000+ elements)
+  (prop/for-all [xs  (gen/vector gen/small-integer 2000 4000)
+                 ops gen-full-rope-ops]
+    (let [r (reduce apply-full-rope-op (oc/rope xs) ops)
+          v (reduce apply-full-vector-op (vec xs) ops)]
+      (and (= v (into [] r))
+           (rope-tree-healthy? (rope-root-of r))))))
+
+(defspec prop-nth-matches-vector 100
+  (prop/for-all [xs (gen/vector gen/small-integer 1 2000)]
+    (let [r (oc/rope xs)
+          v (vec xs)
+          n (count xs)
+          ;; Check every 50th index plus first and last
+          idxs (distinct (concat [0 (dec n)]
+                           (range 0 n (max 1 (quot n 20)))))]
+      (every? #(= (nth r %) (nth v %)) idxs))))
+
+(defspec prop-assoc-matches-vector 100
+  (prop/for-all [xs (gen/vector gen/small-integer 1 500)
+                 i  (gen/choose 0 499)
+                 v  gen/small-integer]
+    (let [n (count xs)]
+      (if (< i n)
+        (= (assoc (vec xs) i v)
+           (vec (assoc (oc/rope xs) i v)))
+        true))))
+
+(defspec prop-rope-str-matches-apply-str 100
+  (prop/for-all [xs (gen/vector (gen/elements (seq "abcdefghij ")) 0 500)]
+    (let [r (oc/rope xs)]
+      (= (apply str xs)
+         (oc/rope-str r)))))
+
+(defspec prop-vec-produces-persistent-vector 100
+  (prop/for-all [xs (gen/vector gen/small-integer 0 2000)]
+    (let [r (oc/rope xs)
+          v (vec r)]
+      (and (instance? clojure.lang.PersistentVector v)
+           (= (vec xs) v)))))
+
+(defspec prop-concat-mixed-sizes 50
+  (prop/for-all [left  (gen/vector gen/small-integer 0 2000)
+                 right (gen/vector gen/small-integer 0 2000)]
+    (let [result (oc/rope-concat (oc/rope left) (oc/rope right))
+          root   (rope-root-of result)]
+      (and (= (into (vec left) right) (into [] result))
+           (rope-tree-healthy? root)))))
+
+(defspec prop-transient-many-flushes 50
+  ;; Large enough to exercise many chunk flushes
+  (prop/for-all [xs (gen/vector gen/small-integer 5000 10000)]
+    (let [r (persistent! (reduce conj! (transient (oc/rope)) xs))]
+      (and (= (vec xs) (into [] r))
+           (rope-tree-healthy? (rope-root-of r))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; IFn Invocation
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest rope-ifn-invocation
+  (let [r (oc/rope [10 20 30 40 50])]
+    (is (= 10 (r 0)))
+    (is (= 30 (r 2)))
+    (is (= 50 (r 4)))
+    (is (= :nope (r 5 :nope)))
+    (is (nil? (r 99)))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Persistent Sharing
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest rope-persistent-sharing
+  (testing "split halves are independent"
+    (let [r (oc/rope (range 100))
+          [left right] (oc/rope-split r 50)
+          left'  (oc/rope-splice left 10 20 [:x])
+          right' (oc/rope-insert right 0 [:y])]
+      ;; Originals unchanged
+      (is (= (vec (range 100)) (vec r)))
+      (is (= (vec (range 50)) (vec left)))
+      (is (= (vec (range 50 100)) (vec right)))
+      ;; Edits only affect their target
+      (is (= 41 (count left')))
+      (is (= 51 (count right')))))
+  (testing "sub shares structure but edits are independent"
+    (let [r   (oc/rope (range 1000))
+          sub (oc/rope-sub r 100 200)
+          sub' (assoc sub 50 :replaced)]
+      (is (= 500 (nth r 500)))
+      (is (= :replaced (nth sub' 50)))
+      (is (= 150 (nth sub 50))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Empty Edge Cases
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest rope-empty-operations
+  (let [e (oc/rope)]
+    (testing "concat with empty"
+      (is (= [1 2 3] (vec (oc/rope-concat e (oc/rope [1 2 3])))))
+      (is (= [1 2 3] (vec (oc/rope-concat (oc/rope [1 2 3]) e)))))
+    (testing "split empty"
+      (let [[l r] (oc/rope-split e 0)]
+        (is (= [] (vec l)))
+        (is (= [] (vec r)))))
+    (testing "sub of empty"
+      (is (= [] (vec (oc/rope-sub e 0 0)))))
+    (testing "insert into empty"
+      (is (= [:a] (vec (oc/rope-insert e 0 [:a])))))
+    (testing "empty from empty"
+      (is (= [] (vec (empty e)))))
+    (testing "conj to empty"
+      (is (= [42] (vec (conj e 42)))))))
+
+(deftest rope-single-element
+  (let [r (oc/rope [42])]
+    (is (= 1 (count r)))
+    (is (= 42 (nth r 0)))
+    (is (= 42 (peek r)))
+    (is (= [] (vec (pop r))))
+    (let [[l rr] (oc/rope-split r 0)]
+      (is (= [] (vec l)))
+      (is (= [42] (vec rr))))
+    (let [[l rr] (oc/rope-split r 1)]
+      (is (= [42] (vec l)))
+      (is (= [] (vec rr))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Mixed Element Types
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defspec prop-mixed-element-types 100
+  (prop/for-all [xs (gen/vector gen/any-printable-equatable 0 200)]
+    (let [r (oc/rope xs)]
+      (and (= (count xs) (count r))
+           (= (vec xs) (vec r))
+           (= (hash (vec xs)) (hash r))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; EDN Round-Trip Property
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defspec prop-edn-round-trip 100
+  (prop/for-all [xs (gen/vector gen/small-integer 0 500)]
+    (let [r  (oc/rope xs)
+          rt (clojure.edn/read-string
+               {:readers {'ordered/rope oc/rope}}
+               (pr-str r))]
+      (and (= (vec r) (vec rt))
+           (= (count r) (count rt))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Conj/Pop CSI and WBT Health
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defspec prop-conj-pop-preserves-health 50
+  (prop/for-all [xs (gen/vector gen/small-integer 0 2000)]
+    (let [r (reduce conj (oc/rope) xs)
+          popped (reduce (fn [r _] (if (pos? (count r)) (pop r) r))
+                   r (range (min 500 (count xs))))]
+      (and (rope-tree-healthy? (rope-root-of r))
+           (rope-tree-healthy? (rope-root-of popped))))))

@@ -33,8 +33,8 @@
             [ordered-collections.tree.tree :as tree]))
 
 
-(def ^:const +target-chunk-size+ 256)
-(def ^:const +min-chunk-size+    128)
+(def ^:const +target-chunk-size+ 512)
+(def ^:const +min-chunk-size+    256)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Rope Node Basics
@@ -640,6 +640,27 @@
                    result    (walk acc0 rest-root)]
                (if (reduced? result) @result result)))))))))
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Materialization
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn rope->str
+  "Efficient rope-to-string via StringBuilder. Appends each chunk's
+  elements directly, avoiding lazy seq overhead."
+  ^String [root]
+  (if (leaf? root)
+    ""
+    (let [sb (StringBuilder. (int (rope-size root)))]
+      (letfn [(walk [n]
+                (when-not (leaf? n)
+                  (walk (-l n))
+                  (let [chunk (-k n)]
+                    (dotimes [i (count chunk)]
+                      (.append sb (nth chunk i))))
+                  (walk (-r n))))]
+        (walk root))
+      (.toString sb))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Invariant Checking

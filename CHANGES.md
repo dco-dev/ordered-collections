@@ -8,8 +8,8 @@
   (concat, split, splice, insert, remove). Backed by a weight-balanced tree of
   chunk vectors with a formal Chunk Size Invariant. Up to 1968x faster than
   `PersistentVector` on repeated random edits at 500K elements; 3-10x faster
-  on concatenation; 1.3-1.7x faster on reduce at scale. Includes `RopeSlice` for
-  structure-sharing subrange views, transient support for batch construction,
+  on concatenation; 1.3-1.7x faster on reduce at scale. Includes
+  structure-sharing subrange views via `rope-sub`, transient support for batch construction,
   parallel `r/fold`, `java.util.List` interop, and lexicographic `Comparable`.
 - **Range Map** (`range-map`) — non-overlapping `[lo, hi)` ranges with automatic carve-out on insert
 - **Segment Tree** (`segment-tree`, `sum-tree`, `min-tree`, `max-tree`) — O(log n) range aggregation with any associative operation
@@ -28,7 +28,7 @@
 - **Priority queue**: `push`, `push-all`, `peek-min`, `peek-min-val`, `pop-min`, `peek-max`, `peek-max-val`, `pop-max`
 - **Multiset**: `multiplicity`, `disj-one`, `disj-all`, `distinct-elements`, `element-frequencies`
 - **Fuzzy**: `fuzzy-nearest`, `fuzzy-exact-contains?`, `fuzzy-exact-get`
-- **Rope**: `rope-concat`, `rope-concat-all`, `rope-split`, `rope-sub`, `rope-insert`, `rope-remove`, `rope-splice`, `rope-chunks`, `rope-chunks-reverse`, `rope-chunk-count`
+- **Rope**: `rope-concat`, `rope-concat-all`, `rope-split`, `rope-sub`, `rope-insert`, `rope-remove`, `rope-splice`, `rope-chunks`, `rope-chunks-reverse`, `rope-chunk-count`, `rope-str`
 - **Map**: `assoc-new`, `ordered-merge-with`
 - **Comparator**: `general-compare` — opt-in total order over all values including non-Comparable types (Namespace, Var, etc.). ~20% slower lookups on Comparable types vs default.
 

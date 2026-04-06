@@ -1030,8 +1030,8 @@
   rope/rope-split)
 
 (defalias rope-sub
-  "Extract a subrange [start, end) as a RopeSlice. O(log n).
-   The slice shares structure with the original.
+  "Extract a subrange [start, end) as a Rope. O(log n).
+   The result shares structure with the original.
 
    Examples:
      (rope-sub (rope (range 100)) 20 30)
@@ -1073,3 +1073,13 @@
 (defalias rope-chunk-count
   "Return the number of chunks in the rope."
   rope/rope-chunk-count)
+
+(defalias rope-str
+  "Efficiently convert a rope of characters/strings to a String via
+  StringBuilder. Much faster than (apply str r) for large ropes.
+
+   Examples:
+     (rope-str (rope (seq \"hello world\")))
+     ;=> \"hello world\""
+  rope/rope-str)
+

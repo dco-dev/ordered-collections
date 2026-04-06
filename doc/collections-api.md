@@ -546,7 +546,7 @@ returns the value for the nearest key.
 
 Persistent chunked sequence optimized for structural editing: O(log n) concat,
 split, splice, insert, and remove. Backed by a weight-balanced tree of chunk
-vectors. Implements `IPersistentVector`, `java.util.List`,
+vectors. Implements `java.util.List`,
 `java.util.Collection`, `Comparable`, and `clojure.core.reducers/CollFold`.
 
 ### Constructors
@@ -562,13 +562,15 @@ vectors. Implements `IPersistentVector`, `java.util.List`,
 | `rope-concat` | `[left right]` | Structural concatenation. O(log n). |
 | `rope-concat-all` | `[& xs]` | Bulk concatenation of multiple ropes. |
 | `rope-split` | `[rope i]` | Split at index, returns `[left right]`. O(log n). |
-| `rope-sub` | `[rope start end]` | Subrange view (RopeSlice). O(log n). |
+| `rope-sub` | `[rope start end]` | Subrange rope. O(log n). |
 | `rope-insert` | `[rope i coll]` | Insert elements at index. O(log n). |
 | `rope-remove` | `[rope start end]` | Remove range `[start, end)`. O(log n). |
 | `rope-splice` | `[rope start end coll]` | Replace range with new content. O(log n). |
 | `rope-chunks` | `[rope]` | Seq of internal chunk vectors. |
 | `rope-chunks-reverse` | `[rope]` | Reverse seq of internal chunk vectors. |
 | `rope-chunk-count` | `[rope]` | Number of chunks. |
+| `rope-str` | `[rope]` | Rope of chars/strings to String via StringBuilder. |
+| `vec` | `[rope]` | Materialize to PersistentVector. |
 
 ### Standard collection operations
 
@@ -589,10 +591,5 @@ vectors. Implements `IPersistentVector`, `java.util.List`,
 Also supports `java.util.List` methods: `.get`, `.indexOf`, `.lastIndexOf`,
 `.contains`, `.containsAll`, `.subList`, `.size`, `.toArray`.
 
-### RopeSlice
-
-`rope-sub` returns a `RopeSlice` — a lightweight read-only view that shares
-structure with the original rope. A `RopeSlice` supports all read operations
-(`nth`, `get`, `seq`, `rseq`, `reduce`, `r/fold`, `count`, `compare`,
-`java.util.List`) but not `assoc`, `peek`, or `pop`. Use `(rope (vec slice))`
-to materialize a slice into a full rope if mutation is needed.
+`rope-sub` returns a `Rope` that shares structure with the original rope,
+supporting all rope operations including `assoc`, `conj`, `peek`, and `pop`.

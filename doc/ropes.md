@@ -12,7 +12,7 @@ The rope is a **public** collection type in `ordered-collections.core`.
 
 Implementation namespaces:
 
-- `ordered-collections.types.rope` — `Rope` and `RopeSlice` deftypes
+- `ordered-collections.types.rope` — `Rope` deftype
 - `ordered-collections.tree.rope` — low-level chunked tree operations
 
 
@@ -140,6 +140,9 @@ From `ordered-collections.core`:
 - `rope-splice`
 - `rope-chunks`
 - `rope-chunk-count`
+- `rope-str`
+- `rope-concat-all`
+- `rope-chunks-reverse`
 
 And the `Rope` type itself supports:
 
@@ -357,11 +360,8 @@ Extract a subrange without copying the entire sequence:
 (nth window 0)  ;; => 499000
 ```
 
-The resulting `RopeSlice` supports all the same read operations: `nth`, `get`,
-`reduce`, `seq`, `rseq`, iteration.
-
-Slicing is particularly useful when you want to pass a "view" of a large dataset
-to a function without materializing a copy.
+The resulting rope shares structure with the original and supports all rope
+operations including `assoc`, `conj`, `peek`, `pop`, and further slicing.
 
 
 ### Scenario 5: Version History / Undo
@@ -431,7 +431,68 @@ reflect the rope's internal balancing, not necessarily the original assembly
 boundaries. But for large pieces, the original structure is typically preserved.
 
 
-### Scenario 8: Java Interop
+### Scenario 8: Converting Between Ropes, Strings, and Vectors
+
+Ropes interoperate naturally with other Clojure and Java sequence types.
+
+**Building ropes from anything seqable:**
+
+```clojure
+(oc/rope [1 2 3])           ;; from a vector
+(oc/rope (range 1000))      ;; from a range
+(oc/rope '(:a :b :c))       ;; from a list
+(oc/rope "hello")           ;; from a string (rope of Characters)
+```
+
+**Rope to String** — `rope-str` uses a chunk-aware StringBuilder, much faster
+than `(apply str r)` for large ropes:
+
+```clojure
+(def doc (oc/rope (seq "The quick brown fox")))
+
+(oc/rope-str doc)
+;; => "The quick brown fox"
+
+;; After editing:
+(oc/rope-str (oc/rope-splice doc 4 9 (seq "slow")))
+;; => "The slow brown fox"
+```
+
+**Rope to PersistentVector** — use `vec`:
+
+```clojure
+(type (vec (oc/rope [1 2 3])))
+;; => clojure.lang.PersistentVector
+```
+
+Note that `(vector? (oc/rope [1 2 3]))` returns `false` — ropes are sequential
+but not vectors.
+
+**Rope operations accept non-rope collections** — concat, insert, and splice
+coerce their arguments automatically:
+
+```clojure
+(oc/rope-concat (oc/rope [1 2]) [3 4])
+;; => #ordered/rope [1 2 3 4]
+
+(oc/rope-insert (oc/rope [1 2 3]) 1 [:a :b])
+;; => #ordered/rope [1 :a :b 2 3]
+```
+
+**Interop summary:**
+
+| From | To | How |
+|---|---|---|
+| Any seqable | Rope | `(oc/rope coll)` |
+| String | Rope of chars | `(oc/rope "hello")` |
+| Rope | String | `(oc/rope-str r)` |
+| Rope | PersistentVector | `(vec r)` |
+| Rope | lazy seq | `(seq r)` |
+| Rope | Java array | `(.toArray r)` |
+| Rope | EDN round-trip | `#ordered/rope` tagged literal |
+
+
+### Scenario 9: Java Interop
 
 The rope implements `java.util.List` and `java.util.Collection`, so it works
 with Java APIs that expect these interfaces:
@@ -578,7 +639,7 @@ workloads:
 
 Useful reference points:
 
-- `Rope`, `RopeSlice`, and `RopeBuilder`
+- `Rope` and `RopeBuilder`
 - explicit editing operations
 - text-oriented slice semantics
 
@@ -611,12 +672,11 @@ a Lisp ecosystem next to weight-balanced tree structures.
 The rope now provides:
 
 - full Clojure collection interfaces: `Indexed`, `Associative`,
-  `IPersistentVector`, `IPersistentStack`, `Seqable`, `Reversible`,
+  `IPersistentStack`, `Seqable`, `Reversible`,
   `IReduceInit`, `IReduce`, `Counted`, `IHashEq`, `IMeta`, `IObj`,
   `Sequential`, `Comparable`
 - `java.util.List` and `java.util.Collection` for Java interop
 - `clojure.core.reducers/CollFold` for parallel fold
-- `RopeSlice` type for subrange views
 - chunk-level iteration in both directions
 - structural editing: `rope-insert`, `rope-remove`, `rope-splice`
 - correct `reduced` early-termination in all reduce paths

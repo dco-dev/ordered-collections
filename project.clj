@@ -1,6 +1,6 @@
 (defproject com.dean/ordered-collections "0.2.0-SNAPSHOT"
   :description "Fast collections that do more than sort."
-  :author       "Dan Lentz"
+  :author       "Dan Lentz <danlentz@gmail.com>"
   :url "http://github.com/dco-dev/ordered-collections"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
