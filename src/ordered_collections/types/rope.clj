@@ -373,6 +373,34 @@
 ;; Transient Rope
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; A TransientRope is a narrow construction-oriented companion to the
+;; persistent Rope type. Its purpose is not to provide a fully mutable rope
+;; editor, but to make append-heavy assembly cheaper by buffering a mutable
+;; tail chunk and only flushing that chunk into the tree when it fills or when
+;; `persistent!` is called.
+;;
+;; This design exists because bulk building and structural editing have
+;; different needs:
+;;
+;; - persistent Rope operations optimize sharing, split/join, and snapshots
+;; - transient construction wants cheap repeated `conj` without rebuilding
+;;   tree structure for every appended element
+;;
+;; So the transient keeps the implementation deliberately small:
+;;
+;; - immutable tree prefix in `root`
+;; - mutable append buffer in `tail`
+;; - no attempt to support arbitrary in-place splice/update semantics
+;;
+;; That makes it useful for workloads like:
+;;
+;; - building a large rope from a stream of values
+;; - accumulating output incrementally before freezing a persistent result
+;; - amortizing append cost without weakening the persistent rope model
+;;
+;; In other words, TransientRope is a builder, not a mutable general-purpose
+;; rope API.
+
 (deftype TransientRope [^:unsynchronized-mutable root
                         ^ArrayList tail
                         ^:unsynchronized-mutable edit
