@@ -28,6 +28,11 @@ persistent rope (no comparator at all). Benchmark evidence confirms the
 approach yields strong performance (28-57x on parallel set algebra, up to
 1968x on rope structural editing) without sacrificing generality.
 
+We use the term *representational polymorphism* to mean polymorphism over
+concrete collection representation within a shared kernel. This usage is
+unrelated to GHC's representation polymorphism over runtime value
+representation.
+
 ---
 
 ## 1. Introduction
