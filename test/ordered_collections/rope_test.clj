@@ -391,6 +391,19 @@
     (is (= v sv))
     (is (= (hash sv) (hash v)))))
 
+(deftest rope-sequential-equality-and-ordering-contract
+  (let [r (oc/rope [1 2 3])
+        v [1 2 3]
+        l '(1 2 3)
+        a (oc/rope [1 2 3])
+        b (oc/rope [1 2 4])]
+    (is (= r v))
+    (is (= r l))
+    (is (zero? (compare r v)))
+    (is (zero? (compare r l)))
+    (is (neg? (compare a b)))
+    (is (pos? (compare b a)))))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Parallel Fold

@@ -53,8 +53,9 @@
 (declare ->rope rope-root)
 
 (defn- rope-equiv
-  "Vector-style equality. If both are IPersistentVector, compare by index.
-   Otherwise fall back to sequential element-wise comparison."
+  "Sequential equality with an indexed fast path for vectors.
+   If both sides are IPersistentVector, compare by index. Otherwise fall back
+   to element-wise sequential equivalence."
   [^IPersistentVector this o]
   (cond
     (identical? this o) true
@@ -85,7 +86,9 @@
     :else false))
 
 (defn- seq-compare
-  "Lexicographic comparison of two sequential collections."
+  "Lexicographic comparison of two sequential collections.
+   This is ordering, not equality: it uses `compare` element-by-element rather
+   than `Util/equiv`."
   [s1 s2]
   (loop [s1 (seq s1) s2 (seq s2)]
     (cond
