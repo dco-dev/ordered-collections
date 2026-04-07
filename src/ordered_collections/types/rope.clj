@@ -4,6 +4,7 @@
   (:require [clojure.core.protocols :as cp]
             [clojure.core.reducers :as r]
             [ordered-collections.protocol :as proto]
+            [ordered-collections.kernel.node :as node]
             [ordered-collections.kernel.rope :as ropetree])
   (:import  [clojure.lang RT Murmur3 MapEntry Indexed Util
                            IPersistentCollection IPersistentStack IPersistentVector
@@ -345,7 +346,7 @@
 
   IEditableCollection
   (asTransient [_]
-    (->TransientRope root (ArrayList.) true _meta))
+    (->TransientRope root (ArrayList.) (ArrayList.) 0 true _meta))
 
   Object
   (hashCode [this]
@@ -368,6 +369,56 @@
    Preserves left operand metadata when the left operand is already a Rope."
   [left right]
   (proto/rope-cat (->rope left) (->rope right)))
+
+(defn- transient-appended-root
+  [^ArrayList chunks ^ArrayList tail]
+  (let [chunk-count (.size chunks)
+        tail-empty? (.isEmpty tail)]
+    (cond
+      (and (zero? chunk-count) tail-empty?)
+      nil
+
+      (zero? chunk-count)
+      (ropetree/chunks->root [(vec tail)])
+
+      tail-empty?
+      (ropetree/chunks->root (vec chunks))
+
+      :else
+      (ropetree/chunks->root-csi
+        (conj (vec chunks) (vec tail))))))
+
+(def ^:const +transient-rebuild-threshold+
+  4)
+
+(defn- transient-final-root
+  [root ^ArrayList chunks ^ArrayList tail]
+  (cond
+    ;; Fast path: nothing appended — return original root unchanged
+    (and (zero? (.size chunks)) (.isEmpty tail))
+    root
+
+    ;; Fast path: small tail only, no flushed chunks — append elements
+    ;; directly via rope-conj-right, avoiding subtree construction + concat
+    (and (zero? (.size chunks)) (<= (.size tail) 32))
+    (reduce ropetree/rope-conj-right (or root (node/leaf)) tail)
+
+    ;; Normal path: build appended content and merge
+    :else
+    (let [appended-root (transient-appended-root chunks tail)
+          appended-chunks (+ (.size chunks) (if (.isEmpty tail) 0 1))]
+      (cond
+        (nil? root)
+        appended-root
+
+        (<= appended-chunks +transient-rebuild-threshold+)
+        (ropetree/rope-concat root appended-root)
+
+        :else
+        (ropetree/chunks->root-csi
+          (cond-> (vec (ropetree/root->chunks root))
+            (pos? (.size chunks)) (into (vec chunks))
+            (not (.isEmpty tail)) (conj (vec tail))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Transient Rope
@@ -402,7 +453,9 @@
 ;; rope API.
 
 (deftype TransientRope [^:unsynchronized-mutable root
+                        ^ArrayList chunks
                         ^ArrayList tail
+                        ^:unsynchronized-mutable chunk-elems
                         ^:unsynchronized-mutable edit
                         _meta]
   ITransientCollection
@@ -410,42 +463,38 @@
     (when-not edit (throw (IllegalAccessError. "Transient used after persistent! call")))
     (.add tail x)
     (when (>= (.size tail) ropetree/+target-chunk-size+)
-      (let [chunk (vec tail)
-            cnode (ropetree/chunks->root [chunk])]
-        (.clear tail)
-        (set! root (if (nil? root)
-                     cnode
-                     (ropetree/rope-concat root cnode)))))
+      (.add chunks (vec tail))
+      (set! chunk-elems (+ chunk-elems ropetree/+target-chunk-size+))
+      (.clear tail))
     this)
 
   (persistent [_]
     (when-not edit (throw (IllegalAccessError. "Transient used after persistent! call")))
     (set! edit false)
-    (let [final-root (if (.isEmpty tail)
-                       root
-                       (let [cnode (ropetree/chunks->root [(vec tail)])]
-                         (.clear tail)
-                         (if (nil? root)
-                           cnode
-                           (ropetree/rope-concat root cnode))))]
-      (Rope. final-root _meta)))
+    (Rope. (transient-final-root root chunks tail) _meta))
 
   clojure.lang.Counted
   (count [_]
-    (+ (ropetree/rope-size root) (.size tail)))
+    (+ (ropetree/rope-size root) chunk-elems (.size tail)))
 
   Indexed
   (nth [this i]
     (let [rs (ropetree/rope-size root)
-          ts (.size tail)]
+          ts (.size tail)
+          j  (- i rs)]
       (cond
         (and (>= i 0) (< i rs))   (ropetree/rope-nth root i)
-        (< (- i rs) ts)            (.get tail (- i rs))
+        (and (>= j 0) (< j chunk-elems))
+        (let [chunk-idx (quot j ropetree/+target-chunk-size+)
+              offset    (rem j ropetree/+target-chunk-size+)
+              chunk     (.get chunks chunk-idx)]
+          (.nth ^clojure.lang.Indexed chunk offset))
+
+        (< (- j chunk-elems) ts)   (.get tail (- j chunk-elems))
         :else                      (throw (IndexOutOfBoundsException.)))))
   (nth [this i not-found]
     (let [rs (ropetree/rope-size root)
-          ts (.size tail)
-          n  (+ rs ts)]
+          n  (+ rs chunk-elems (.size tail))]
       (if (and (>= i 0) (< i n))
         (.nth this i)
         not-found))))

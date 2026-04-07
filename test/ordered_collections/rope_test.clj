@@ -543,6 +543,23 @@
     (is (= 499 (nth t 499)))
     (is (= :nope (nth t 500 :nope)))))
 
+(deftest rope-transient-live-boundaries
+  (let [target ropetree/+target-chunk-size+
+        base   (oc/rope (range 100))
+        t      (transient base)]
+    (doseq [x (range 100 (+ 100 (* 2 target) 17))]
+      (conj! t x))
+    (is (= (+ 100 (* 2 target) 17) (count t)))
+    (is (= 0 (nth t 0)))
+    (is (= 99 (nth t 99)))
+    (is (= 100 (nth t 100)))
+    (is (= (+ 100 target -1) (nth t (+ 100 target -1))))
+    (is (= (+ 100 target) (nth t (+ 100 target))))
+    (is (= (+ 100 (* 2 target) -1) (nth t (+ 100 (* 2 target) -1))))
+    (is (= (+ 100 (* 2 target)) (nth t (+ 100 (* 2 target)))))
+    (is (= (+ 100 (* 2 target) 16) (nth t (+ 100 (* 2 target) 16))))
+    (is (= :nope (nth t (+ 100 (* 2 target) 17) :nope)))))
+
 
 (defn- rope-root-of [^ordered_collections.types.rope.Rope r]
   (.-root r))
@@ -648,6 +665,20 @@
       (and (= (vec xs) (into [] r))
            (= (count xs) (count r))
            (ropetree/invariant-valid? (rope-root-of r))))))
+
+(defspec prop-transient-live-nth-matches-vector 50
+  (prop/for-all [base  (gen/vector gen/small-integer 0 300)
+                 extra (gen/vector gen/small-integer 0 2000)]
+    (let [t    (reduce conj! (transient (oc/rope base)) extra)
+          v    (vec (concat base extra))
+          n    (count v)
+          idxs (if (zero? n)
+                 []
+                 (distinct (concat [0 (dec n)]
+                             (range 0 n (max 1 (quot n 25))))))]
+      (and (= n (count t))
+           (every? #(= (nth t %) (nth v %)) idxs)
+           (= :nope (nth t n :nope))))))
 
 (defspec prop-concat-all-matches-into 50
   ;; Mix of tiny (1-5), undersized (<min), valid (min-target), and
