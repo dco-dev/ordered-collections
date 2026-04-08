@@ -59,6 +59,8 @@ Single right:                Double right:
 
 Hirai & Yamamoto (2011) proved using Coq that (δ=3, γ=2) is the unique integer parameter pair guaranteeing O(log n) height and correct rebalancing for all insert/delete sequences. Height bound: ≤ log₃/₂ n ≈ 1.71 log₂ n.
 
+![Rotations and Stitch](assets/rotation-stitch.svg)
+
 ## Split and Join
 
 Everything reduces to these two primitives.
@@ -137,6 +139,8 @@ for enumerator-style traversal as the fundamental collection-walking primitive.
 The tree code applies that idea at the node level and then builds the public
 seq/reduce interfaces on top of it.
 
+![Enumerator: Left-Spine Decomposition](assets/enumerator-spine.svg)
+
 Conceptually, the layering is:
 
 ```
@@ -151,6 +155,20 @@ collection seq/reduce interfaces
 This is why the tree code treats enumerators as fundamental rather than as a
 small helper for `seq`. They are the shared low-level traversal interface from
 which both eager reduction and Clojure-facing sequence behavior are derived.
+
+## The Reduction Stack
+
+The enumerator feeds into a layered reduction architecture. Unary reducers
+(nodes, keys, entries) share a single factory (`make-unary-reducer`) that
+combines an enumerator direction with a projection function. The kv reducer
+is hand-written separately because its 3-arity `(f acc k v)` shape doesn't
+fit the unary projection model — forcing it through a projection would require
+packing k and v into a MapEntry just to unpack them. Direct seq types
+(`KeySeq`, `EntrySeq`) walk the enumerator without lazy-seq allocation.
+Parallel fold splits the tree into chunks (via positional split) and reduces
+each chunk independently.
+
+![The Reduction Stack](assets/reduction-stack.svg)
 
 ## The Join-Based Paradigm
 

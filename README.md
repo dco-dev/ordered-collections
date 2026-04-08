@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="resources/pando.png" alt="One Tree, Many Forests" width="220"/>
+</p>
+
 # ordered-collections
 
 **Fast collections that do more than sort.**

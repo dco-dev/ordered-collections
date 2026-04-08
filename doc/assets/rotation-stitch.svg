@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 310" font-family="Georgia, serif" font-size="11">
+
+  <text x="400" y="22" text-anchor="middle" font-size="15" font-weight="bold" fill="#222">Rotations &amp; Stitch: The Balancing Constructor</text>
+  <text x="400" y="40" text-anchor="middle" font-size="10" fill="#888">node-stitch(k, v, l, r, create) — the ONLY place balance decisions happen</text>
+
+  <!-- Balance check -->
+  <g transform="translate(30,55)">
+    <rect x="0" y="0" width="740" height="40" rx="6" fill="#f8f9fa" stroke="#2c3e50"/>
+    <text x="370" y="16" text-anchor="middle" font-size="11" font-weight="bold" fill="#2c3e50">Weight check: delta=3, gamma=2</text>
+    <text x="370" y="32" text-anchor="middle" font-size="10" fill="#555" font-family="monospace">if rw > 3*lw → rotate left  |  if lw > 3*rw → rotate right  |  else → create(k,v,l,r)</text>
+  </g>
+
+  <!-- Single rotation -->
+  <g transform="translate(30,115)">
+    <rect x="0" y="0" width="360" height="175" rx="8" fill="#eaf2f8" stroke="#2980b9" stroke-width="1.5"/>
+    <text x="180" y="22" text-anchor="middle" font-size="13" font-weight="bold" fill="#2471a3">Single Right Rotation</text>
+    <text x="180" y="38" text-anchor="middle" font-size="9" fill="#888">outer subtree dominates</text>
+
+    <!-- Before -->
+    <text x="90" y="60" text-anchor="middle" font-size="10" fill="#555" font-weight="bold">Before</text>
+
+    <rect x="70" y="70" width="44" height="26" rx="5" fill="#e74c3c"/>
+    <text x="92" y="88" text-anchor="middle" fill="white" font-size="11" font-weight="bold">C</text>
+
+    <rect x="30" y="110" width="44" height="26" rx="5" fill="#2c3e50"/>
+    <text x="52" y="128" text-anchor="middle" fill="white" font-size="11" font-weight="bold">A</text>
+
+    <circle cx="126" cy="122" r="10" fill="#bdc3c7"/>
+    <circle cx="18" cy="152" r="8" fill="#bdc3c7"/>
+    <circle cx="66" cy="152" r="8" fill="#95a5a6"/>
+
+    <line x1="80" y1="96" x2="60" y2="110" stroke="#555" stroke-width="1.2"/>
+    <line x1="104" y1="96" x2="122" y2="112" stroke="#555" stroke-width="1.2"/>
+    <line x1="42" y1="136" x2="22" y2="144" stroke="#555" stroke-width="1.2"/>
+    <line x1="62" y1="136" x2="62" y2="144" stroke="#555" stroke-width="1.2"/>
+
+    <!-- Arrow -->
+    <text x="180" y="125" text-anchor="middle" font-size="26" fill="#2980b9">→</text>
+
+    <!-- After -->
+    <text x="285" y="60" text-anchor="middle" font-size="10" fill="#555" font-weight="bold">After</text>
+
+    <rect x="263" y="70" width="44" height="26" rx="5" fill="#2c3e50"/>
+    <text x="285" y="88" text-anchor="middle" fill="white" font-size="11" font-weight="bold">A</text>
+
+    <circle cx="242" cy="118" r="8" fill="#bdc3c7"/>
+
+    <rect x="296" y="106" width="44" height="26" rx="5" fill="#27ae60"/>
+    <text x="318" y="124" text-anchor="middle" fill="white" font-size="11" font-weight="bold">C</text>
+
+    <circle cx="300" cy="148" r="8" fill="#95a5a6"/>
+    <circle cx="340" cy="148" r="8" fill="#bdc3c7"/>
+
+    <line x1="275" y1="96" x2="246" y2="110" stroke="#555" stroke-width="1.2"/>
+    <line x1="295" y1="96" x2="310" y2="106" stroke="#555" stroke-width="1.2"/>
+    <line x1="308" y1="132" x2="304" y2="140" stroke="#555" stroke-width="1.2"/>
+    <line x1="328" y1="132" x2="336" y2="140" stroke="#555" stroke-width="1.2"/>
+  </g>
+
+  <!-- Double rotation -->
+  <g transform="translate(410,115)">
+    <rect x="0" y="0" width="370" height="180" rx="8" fill="#fef9e7" stroke="#e67e22" stroke-width="1.5"/>
+    <text x="185" y="22" text-anchor="middle" font-size="13" font-weight="bold" fill="#d35400">Double Right Rotation</text>
+    <text x="185" y="38" text-anchor="middle" font-size="9" fill="#888">inner subtree dominates</text>
+
+    <!-- Before -->
+    <text x="80" y="58" text-anchor="middle" font-size="10" fill="#555" font-weight="bold">Before</text>
+
+    <rect x="60" y="66" width="42" height="24" rx="5" fill="#e74c3c"/>
+    <text x="81" y="83" text-anchor="middle" fill="white" font-size="11" font-weight="bold">C</text>
+
+    <rect x="24" y="102" width="42" height="24" rx="5" fill="#2c3e50"/>
+    <text x="45" y="119" text-anchor="middle" fill="white" font-size="11" font-weight="bold">A</text>
+
+    <circle cx="118" cy="114" r="7" fill="#bdc3c7"/>
+    <circle cx="16" cy="140" r="6" fill="#bdc3c7"/>
+
+    <rect x="42" y="134" width="36" height="20" rx="4" fill="#e67e22"/>
+    <text x="60" y="148" text-anchor="middle" fill="white" font-size="10" font-weight="bold">B</text>
+
+    <circle cx="44" cy="166" r="5" fill="#95a5a6"/>
+    <circle cx="70" cy="166" r="5" fill="#95a5a6"/>
+
+    <line x1="71" y1="90" x2="53" y2="102" stroke="#555" stroke-width="1.2"/>
+    <line x1="91" y1="90" x2="114" y2="107" stroke="#555" stroke-width="1.2"/>
+    <line x1="35" y1="126" x2="20" y2="134" stroke="#555" stroke-width="1.2"/>
+    <line x1="55" y1="126" x2="55" y2="134" stroke="#555" stroke-width="1.2"/>
+    <line x1="50" y1="154" x2="48" y2="161" stroke="#555" stroke-width="1.2"/>
+    <line x1="70" y1="154" x2="66" y2="161" stroke="#555" stroke-width="1.2"/>
+
+    <!-- Arrow -->
+    <text x="185" y="122" text-anchor="middle" font-size="26" fill="#e67e22">→</text>
+
+    <!-- After -->
+    <text x="300" y="58" text-anchor="middle" font-size="10" fill="#555" font-weight="bold">After</text>
+
+    <rect x="281" y="66" width="38" height="24" rx="5" fill="#e67e22"/>
+    <text x="300" y="83" text-anchor="middle" fill="white" font-size="11" font-weight="bold">B</text>
+
+    <rect x="242" y="102" width="38" height="24" rx="5" fill="#2c3e50"/>
+    <text x="261" y="119" text-anchor="middle" fill="white" font-size="11" font-weight="bold">A</text>
+
+    <rect x="322" y="102" width="38" height="24" rx="5" fill="#27ae60"/>
+    <text x="341" y="119" text-anchor="middle" fill="white" font-size="11" font-weight="bold">C</text>
+
+    <circle cx="236" cy="140" r="6" fill="#bdc3c7"/>
+    <circle cx="270" cy="140" r="5" fill="#95a5a6"/>
+    <circle cx="324" cy="140" r="5" fill="#95a5a6"/>
+    <circle cx="354" cy="140" r="6" fill="#bdc3c7"/>
+
+    <line x1="292" y1="90" x2="270" y2="102" stroke="#555" stroke-width="1.2"/>
+    <line x1="308" y1="90" x2="332" y2="102" stroke="#555" stroke-width="1.2"/>
+    <line x1="252" y1="126" x2="240" y2="134" stroke="#555" stroke-width="1.2"/>
+    <line x1="270" y1="126" x2="266" y2="135" stroke="#555" stroke-width="1.2"/>
+    <line x1="332" y1="126" x2="328" y2="135" stroke="#555" stroke-width="1.2"/>
+    <line x1="350" y1="126" x2="350" y2="134" stroke="#555" stroke-width="1.2"/>
+  </g>
+</svg>

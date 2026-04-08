@@ -1,0 +1,154 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 560" font-family="'SF Mono', 'Menlo', monospace" font-size="12">
+  <defs>
+    <marker id="a" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#555"/></marker>
+    <marker id="ag" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#27ae60"/></marker>
+    <marker id="ab" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#2980b9"/></marker>
+  </defs>
+
+  <text x="400" y="24" text-anchor="middle" font-size="15" font-weight="bold" fill="#222" font-family="Georgia">Enumerator: Left-Spine Decomposition</text>
+  <text x="400" y="42" text-anchor="middle" font-size="11" fill="#888" font-family="Georgia">The fundamental traversal primitive — everything else is built on this</text>
+
+  <!-- The tree -->
+  <g transform="translate(100,60)">
+    <text x="120" y="0" text-anchor="middle" font-size="11" fill="#888" font-family="Georgia">Binary Tree</text>
+
+    <!-- Node 4 (root) -->
+    <rect x="95" y="15" width="50" height="28" rx="6" fill="#2c3e50"/>
+    <text x="120" y="34" text-anchor="middle" fill="white" font-weight="bold">4</text>
+
+    <!-- Node 2 -->
+    <rect x="35" y="75" width="50" height="28" rx="6" fill="#2c3e50"/>
+    <text x="60" y="94" text-anchor="middle" fill="white" font-weight="bold">2</text>
+
+    <!-- Node 6 -->
+    <rect x="155" y="75" width="50" height="28" rx="6" fill="#95a5a6"/>
+    <text x="180" y="94" text-anchor="middle" fill="white">6</text>
+
+    <!-- Node 1 -->
+    <rect x="5" y="135" width="50" height="28" rx="6" fill="#2c3e50"/>
+    <text x="30" y="154" text-anchor="middle" fill="white" font-weight="bold">1</text>
+
+    <!-- Node 3 -->
+    <rect x="65" y="135" width="50" height="28" rx="6" fill="#95a5a6"/>
+    <text x="90" y="154" text-anchor="middle" fill="white">3</text>
+
+    <!-- Node 5 -->
+    <rect x="125" y="135" width="50" height="28" rx="6" fill="#95a5a6"/>
+    <text x="150" y="154" text-anchor="middle" fill="white">5</text>
+
+    <!-- Node 7 -->
+    <rect x="185" y="135" width="50" height="28" rx="6" fill="#95a5a6"/>
+    <text x="210" y="154" text-anchor="middle" fill="white">7</text>
+
+    <!-- Edges -->
+    <line x1="110" y1="43" x2="70" y2="75" stroke="#555" stroke-width="1.5"/>
+    <line x1="130" y1="43" x2="170" y2="75" stroke="#555" stroke-width="1.5"/>
+    <line x1="50" y1="103" x2="35" y2="135" stroke="#555" stroke-width="1.5"/>
+    <line x1="70" y1="103" x2="85" y2="135" stroke="#555" stroke-width="1.5"/>
+    <line x1="170" y1="103" x2="155" y2="135" stroke="#555" stroke-width="1.5"/>
+    <line x1="190" y1="103" x2="205" y2="135" stroke="#555" stroke-width="1.5"/>
+
+    <!-- Left spine highlight -->
+    <path d="M120,30 L60,89 L30,149" stroke="#e74c3c" stroke-width="3" fill="none" stroke-dasharray="6,3"/>
+    <text x="-15" y="100" fill="#e74c3c" font-size="10" font-family="Georgia" font-style="italic">left spine</text>
+  </g>
+
+  <!-- Arrow from tree to enum chain -->
+  <line x1="330" y1="140" x2="380" y2="140" stroke="#27ae60" stroke-width="2" marker-end="url(#ag)"/>
+  <text x="355" y="132" text-anchor="middle" font-size="9" fill="#27ae60" font-family="Georgia">enumerate</text>
+
+  <!-- EnumFrame chain -->
+  <g transform="translate(400,70)">
+    <text x="170" y="0" text-anchor="middle" font-size="11" fill="#888" font-family="Georgia">EnumFrame Chain (the enumerator state)</text>
+
+    <!-- Frame 1 (current) -->
+    <rect x="0" y="20" width="100" height="60" rx="6" fill="#27ae60" stroke="#1e8c4c" stroke-width="2"/>
+    <text x="50" y="38" text-anchor="middle" fill="white" font-weight="bold" font-size="13">node: 1</text>
+    <text x="50" y="53" text-anchor="middle" fill="#d5f5e3" font-size="10">subtree: nil</text>
+    <text x="50" y="68" text-anchor="middle" fill="#d5f5e3" font-size="10">next: →</text>
+    <text x="50" y="95" text-anchor="middle" fill="#27ae60" font-size="10" font-weight="bold" font-family="Georgia">▲ current</text>
+
+    <!-- Arrow -->
+    <line x1="100" y1="50" x2="125" y2="50" stroke="#27ae60" stroke-width="2" marker-end="url(#ag)"/>
+
+    <!-- Frame 2 -->
+    <rect x="127" y="20" width="100" height="60" rx="6" fill="#2ecc71" opacity="0.8"/>
+    <text x="177" y="38" text-anchor="middle" fill="white" font-weight="bold" font-size="13">node: 2</text>
+    <text x="177" y="53" text-anchor="middle" fill="#d5f5e3" font-size="10">subtree: ⟨3⟩</text>
+    <text x="177" y="68" text-anchor="middle" fill="#d5f5e3" font-size="10">next: →</text>
+
+    <!-- Arrow -->
+    <line x1="227" y1="50" x2="252" y2="50" stroke="#27ae60" stroke-width="2" marker-end="url(#ag)"/>
+
+    <!-- Frame 4 -->
+    <rect x="254" y="20" width="100" height="60" rx="6" fill="#2ecc71" opacity="0.6"/>
+    <text x="304" y="38" text-anchor="middle" fill="white" font-weight="bold" font-size="13">node: 4</text>
+    <text x="304" y="53" text-anchor="middle" fill="#d5f5e3" font-size="10">subtree: ⟨6⟩</text>
+    <text x="304" y="68" text-anchor="middle" fill="#d5f5e3" font-size="10">next: nil</text>
+  </g>
+
+  <!-- Advance illustration -->
+  <g transform="translate(40,250)">
+    <text x="380" y="0" text-anchor="middle" font-size="13" font-weight="bold" fill="#222" font-family="Georgia">Advance: visit 1, then visit 2, then enumerate subtree ⟨3⟩</text>
+
+    <!-- Step 1 -->
+    <text x="80" y="30" text-anchor="middle" font-size="10" fill="#e74c3c" font-weight="bold">After visiting 1:</text>
+    <rect x="10" y="40" width="140" height="45" rx="5" fill="#f9f9f9" stroke="#ccc"/>
+    <text x="80" y="58" text-anchor="middle" font-size="10">subtree = nil → skip</text>
+    <text x="80" y="73" text-anchor="middle" font-size="10">advance to next frame →</text>
+
+    <!-- Step 2 -->
+    <text x="310" y="30" text-anchor="middle" font-size="10" fill="#e74c3c" font-weight="bold">After visiting 2:</text>
+    <rect x="200" y="40" width="220" height="45" rx="5" fill="#f9f9f9" stroke="#ccc"/>
+    <text x="310" y="58" text-anchor="middle" font-size="10">subtree = ⟨3⟩ → enumerate left spine</text>
+    <text x="310" y="73" text-anchor="middle" font-size="10">produces: [3 | nil | Frame(4,⟨6⟩)]</text>
+
+    <!-- Step 3 -->
+    <text x="580" y="30" text-anchor="middle" font-size="10" fill="#e74c3c" font-weight="bold">After visiting 3:</text>
+    <rect x="470" y="40" width="220" height="45" rx="5" fill="#f9f9f9" stroke="#ccc"/>
+    <text x="580" y="58" text-anchor="middle" font-size="10">subtree = nil → skip</text>
+    <text x="580" y="73" text-anchor="middle" font-size="10">advance to Frame(4,⟨6⟩) →  ...</text>
+
+    <!-- Result sequence -->
+    <text x="380" y="115" text-anchor="middle" font-size="11" fill="#555" font-family="Georgia">Produced sequence: 1, 2, 3, 4, 5, 6, 7</text>
+  </g>
+
+  <!-- What's built on enumerators -->
+  <g transform="translate(40,400)">
+    <rect x="0" y="0" width="720" height="140" rx="8" fill="#f0f7ff" stroke="#2980b9" stroke-width="1.5"/>
+    <text x="360" y="22" text-anchor="middle" font-size="13" font-weight="bold" fill="#2980b9" font-family="Georgia">Everything Built on Enumerators</text>
+
+    <!-- Reduction -->
+    <rect x="20" y="38" width="145" height="85" rx="5" fill="white" stroke="#2980b9"/>
+    <text x="92" y="55" text-anchor="middle" font-size="10" font-weight="bold" fill="#2c3e50">Reduction</text>
+    <text x="92" y="70" text-anchor="middle" font-size="9" fill="#555">node-reduce</text>
+    <text x="92" y="82" text-anchor="middle" font-size="9" fill="#555">node-reduce-keys</text>
+    <text x="92" y="94" text-anchor="middle" font-size="9" fill="#555">node-reduce-entries</text>
+    <text x="92" y="106" text-anchor="middle" font-size="9" fill="#555">node-reduce-kv</text>
+    <text x="92" y="118" text-anchor="middle" font-size="9" fill="#555">+ reverse variants</text>
+
+    <!-- Seq Types -->
+    <rect x="185" y="38" width="145" height="85" rx="5" fill="white" stroke="#2980b9"/>
+    <text x="257" y="55" text-anchor="middle" font-size="10" font-weight="bold" fill="#2c3e50">Seq Types</text>
+    <text x="257" y="70" text-anchor="middle" font-size="9" fill="#555">KeySeq / KeySeqReverse</text>
+    <text x="257" y="82" text-anchor="middle" font-size="9" fill="#555">EntrySeq / EntrySeqReverse</text>
+    <text x="257" y="94" text-anchor="middle" font-size="9" fill="#555">RopeSeq / RopeSeqReverse</text>
+    <text x="257" y="106" text-anchor="middle" font-size="9" fill="#555">node-seq / node-seq-reverse</text>
+
+    <!-- Fold -->
+    <rect x="350" y="38" width="145" height="85" rx="5" fill="white" stroke="#2980b9"/>
+    <text x="422" y="55" text-anchor="middle" font-size="10" font-weight="bold" fill="#2c3e50">Parallel Fold</text>
+    <text x="422" y="70" text-anchor="middle" font-size="9" fill="#555">node-chunks (split tree)</text>
+    <text x="422" y="82" text-anchor="middle" font-size="9" fill="#555">node-fold (fork-join)</text>
+    <text x="422" y="94" text-anchor="middle" font-size="9" fill="#555">r/fold on each chunk</text>
+    <text x="422" y="106" text-anchor="middle" font-size="9" fill="#555">via node-reduce per chunk</text>
+
+    <!-- Comparison -->
+    <rect x="515" y="38" width="185" height="85" rx="5" fill="white" stroke="#2980b9"/>
+    <text x="607" y="55" text-anchor="middle" font-size="10" font-weight="bold" fill="#2c3e50">Comparison &amp; Equality</text>
+    <text x="607" y="70" text-anchor="middle" font-size="9" fill="#555">node-compare (paired walk)</text>
+    <text x="607" y="82" text-anchor="middle" font-size="9" fill="#555">node-set-compare</text>
+    <text x="607" y="94" text-anchor="middle" font-size="9" fill="#555">node-map-compare</text>
+    <text x="607" y="106" text-anchor="middle" font-size="9" fill="#555">hasheq (ordered hash)</text>
+  </g>
+</svg>
