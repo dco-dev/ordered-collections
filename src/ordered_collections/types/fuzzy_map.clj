@@ -278,7 +278,7 @@
         (not (instance? clojure.lang.Counted o)) false
         (not= (tree/node-size root) (.count ^clojure.lang.Counted o)) false
         (.isCompatible this o) (zero? (tree/node-map-compare root (.getRoot ^FuzzyMap o)))
-        (.isSimilar this o) (.equiv ^clojure.lang.IPersistentCollection (into (empty o) this) o)
+        (.isSimilar this o) (every? (fn [e] (= (val e) (get o (key e) ::not-found))) this)
         :else false)))
 
   clojure.lang.IPersistentMap

@@ -160,9 +160,10 @@
     (with-compare this
       (cond
         (identical? this o) true
-        (.isCompatible this o) (and (= (.count this) (.count ^clojure.lang.Counted o))
-                                    (zero? (tree/node-map-compare root (.getRoot ^INodeCollection o))))
-        (map? o) (.equiv ^clojure.lang.IPersistentCollection (into (empty o) (tree/node-vec root :accessor :kv)) o)
+        (not (instance? clojure.lang.Counted o)) false
+        (not= (tree/node-size root) (.count ^clojure.lang.Counted o)) false
+        (.isCompatible this o) (zero? (tree/node-map-compare root (.getRoot ^INodeCollection o)))
+        (map? o) (every? (fn [e] (= (val e) (get o (key e) ::not-found))) this)
         :else false)))
 
   (cons [this o]

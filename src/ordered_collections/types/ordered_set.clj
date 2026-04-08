@@ -294,7 +294,7 @@
         (not (instance? clojure.lang.Counted o)) false
         (not= (tree/node-size root) (.count ^clojure.lang.Counted o)) false
         (.isCompatible this o) (zero? (tree/node-set-compare root (.getRoot ^OrderedSet o)))
-        (.isSimilar    this o) (.equiv ^clojure.lang.IPersistentSet (into (empty o) this) o)
+        (.isSimilar    this o) (every? #(contains? o %) this)
         :else false)))
   (count [_]
     (tree/node-size root))
