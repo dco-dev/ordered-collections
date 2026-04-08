@@ -7,7 +7,12 @@
 Fast, versatile, ordered collections. Drop-in replacements for
 `sorted-set` and `sorted-map` — with O(log n) positional access,
 parallel fold, and specialized collections for problems you didn't know
-you could solve efficiently:
+you could solve efficiently.
+
+All built from a modular, extensible, weight-balanced tree platform with shared
+foundation for splitting, joining, and parallel operations.
+
+<br clear="left"/>
 
 - **Sets and Maps** work exactly as you're used to, but do more, faster
 - **Ropes** for O(log n) concat, split, splice, and insert on large sequences
@@ -16,11 +21,6 @@ you could solve efficiently:
 - **Segment trees** for range aggregation ("total sales from day 10 to 50?")
 - **Fuzzy collections** for nearest-neighbor lookup ("snap 9.3 to the closest valid size")
 - **Priority queues**, **multisets**, and more
-
-All built from a modular, extensible, weight-balanced tree platform with shared
-foundation for splitting, joining, and parallel operations.
-
-<br clear="left"/>
 
 ![tests](https://github.com/dco-dev/ordered-collections/actions/workflows/clojure.yml/badge.svg)
 [![Clojars Project](https://img.shields.io/clojars/v/com.dean/ordered-collections.svg)](https://clojars.org/com.dean/ordered-collections)
