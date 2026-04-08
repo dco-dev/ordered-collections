@@ -1,4 +1,4 @@
-(ns oc-scripts.bench.analyze
+(ns oc-scripts-bench-analyze
   "Benchmark analysis: ranking, scorecard, regressions, category classification."
   (:require [clojure.string :as str]))
 
@@ -94,22 +94,22 @@
                     winner    (first ranked)
                     runner-up (second ranked)
                     ranked*   (mapv (fn [row]
-                                     (assoc row
-                                            :vs-winner-ratio
-                                            (/ (double (:mean-ns row))
-                                               (double (:mean-ns winner)))))
-                                   ranked)]
-                {:size            size
-                 :group           group
-                 :category        (classify-group group)
-                 :winner          (:variant winner)
-                 :winner-mean-ns  (:mean-ns winner)
-                 :runner-up       (:variant runner-up)
+                                      (assoc row
+                                             :vs-winner-ratio
+                                             (/ (double (:mean-ns row))
+                                                (double (:mean-ns winner)))))
+                                    ranked)]
+                {:size              size
+                 :group             group
+                 :category          (classify-group group)
+                 :winner            (:variant winner)
+                 :winner-mean-ns    (:mean-ns winner)
+                 :runner-up         (:variant runner-up)
                  :runner-up-mean-ns (:mean-ns runner-up)
-                 :winner-speedup  (when runner-up
-                                    (/ (double (:mean-ns runner-up))
-                                       (double (:mean-ns winner))))
-                 :ranked          ranked*})))
+                 :winner-speedup    (when runner-up
+                                      (/ (double (:mean-ns runner-up))
+                                         (double (:mean-ns winner))))
+                 :ranked            ranked*})))
        (sort-by (juxt :size :group))
        vec))
 
@@ -270,19 +270,19 @@
                      (let [ratio (/ (double (:mean-ns row))
                                     (double (:mean-ns old)))
                            pct   (* 100.0 (dec ratio))]
-                       {:size       (:size row)
-                        :group      (:group row)
-                        :variant    (:variant row)
+                       {:size        (:size row)
+                        :group       (:group row)
+                        :variant     (:variant row)
                         :old-mean-ns (:mean-ns old)
                         :new-mean-ns (:mean-ns row)
-                        :ratio      ratio
-                        :delta-pct  pct
-                        :status     (cond
-                                      (>= ratio 1.25) :major-regression
-                                      (>= ratio 1.10) :regression
-                                      (<= ratio 0.80) :major-improvement
-                                      (<= ratio 0.90) :improvement
-                                      :else :unchanged)}))))
+                        :ratio       ratio
+                        :delta-pct   pct
+                        :status      (cond
+                                       (>= ratio 1.25) :major-regression
+                                       (>= ratio 1.10) :regression
+                                       (<= ratio 0.80) :major-improvement
+                                       (<= ratio 0.90) :improvement
+                                       :else :unchanged)}))))
            vec))))
 
 (defn noisy-rows

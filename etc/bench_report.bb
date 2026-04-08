@@ -1,10 +1,10 @@
 #!/usr/bin/env bb
 
 (require '[clojure.string :as str]
-         '[oc-scripts.bench.analyze :as analyze]
-         '[oc-scripts.bench.files :as files]
-         '[oc-scripts.bench.parse :as parse]
-         '[oc-scripts.bench.render :as render])
+         '[oc-scripts-bench-analyze :as analyze]
+         '[oc-scripts-bench-files :as files]
+         '[oc-scripts-bench-parse :as parse]
+         '[oc-scripts-bench-render :as render])
 
 (defn -main [& args]
   (let [opts (files/parse-args args)]
@@ -31,33 +31,18 @@
                                  (filter #(#{:improvement :major-improvement} (:status %)))
                                  (sort-by :ratio))
             summary         (analyze/executive-summary target-rows baseline-rows)]
-
-        ;; 1. Header
         (render/render-header opts target-summary baseline-summary)
-
-        ;; 2. Executive summary
         (render/render-executive-summary summary)
-
-        ;; 3. Headline wins — scaling table grouped by section
         (render/render-headline-wins headlines sizes)
-
-        ;; 4. At parity
         (render/render-parity parity opts)
-
-        ;; 5. Significant losses
         (render/render-significant-losses losses opts)
-
-        ;; 6. Full scorecard (sorted by category then speedup descending)
         (render/render-scorecard
           (sort-by (juxt (comp #(.indexOf analyze/category-order %) :category)
                          #(- (:speedup %)))
                    scorecard)
           opts)
-
-        ;; 7. Regressions / Improvements (baseline only)
         (render/render-regressions "Regressions" regressions opts)
         (render/render-regressions "Improvements" improvements opts)
-
         (println)))))
 
 (apply -main *command-line-args*)

@@ -1,8 +1,8 @@
-(ns oc-scripts.bench.files
+(ns oc-scripts-bench-files
   "Benchmark result file discovery and argument parsing."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
-            [oc-scripts.common :as common]))
+            [oc-scripts-common :as common]))
 
 (defn bench-results-dir
   []
@@ -34,7 +34,7 @@
       (= "--all" arg)        (recur more (assoc opts :all true))
       (= "--file" arg)       (recur (rest more) (assoc opts :file (first more)))
       (= "--baseline" arg)   (recur (rest more) (assoc opts :baseline (first more)))
-      (= "--top" arg)        (recur (rest more) (assoc opts :top (parse-long (first more))))
+      (= "--top" arg)        (recur (rest more) (assoc opts :top (Long/parseLong (first more))))
       :else
       (throw (ex-info "Unknown argument." {:arg arg :args args})))))
 

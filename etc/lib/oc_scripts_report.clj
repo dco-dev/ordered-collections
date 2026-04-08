@@ -1,4 +1,4 @@
-(ns oc-scripts.report
+(ns oc-scripts-report
   "Table-style reporting helpers built on clj-format."
   (:require [clj-format.core :refer [clj-format]]
             [clojure.string :as str]))

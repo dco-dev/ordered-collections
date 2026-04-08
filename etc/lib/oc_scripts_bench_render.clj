@@ -1,8 +1,8 @@
-(ns oc-scripts.bench.render
+(ns oc-scripts-bench-render
   "Terminal rendering for benchmark reports."
   (:require [clojure.string :as str]
-            [oc-scripts.common :as common]
-            [oc-scripts.report :as report]))
+            [oc-scripts-common :as common]
+            [oc-scripts-report :as report]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -72,11 +72,11 @@
   (common/section "Platform")
   (report/row-text "Host" (:hostname target-summary))
   (report/row-text "OS" (str (:os-name target-summary) " "
-                              (:os-version target-summary) " "
-                              (:os-arch target-summary)))
+                             (:os-version target-summary) " "
+                             (:os-arch target-summary)))
   (report/row "Processors" (:processors target-summary))
   (report/row-text "Java" (str (:java-version target-summary)
-                                " (" (:java-vendor target-summary) ")"))
+                               " (" (:java-vendor target-summary) ")"))
   (report/row-text "VM" (:java-vm target-summary))
   (report/row "Max memory (MB)" (:max-memory-mb target-summary))
   (report/row "Heap max (MB)" (:heap-max-mb target-summary))

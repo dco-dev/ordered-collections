@@ -1,4 +1,4 @@
-(ns oc-scripts.common
+(ns oc-scripts-common
   "Shared support for babashka scripts under etc/."
   (:require [babashka.fs :as fs]
             [clj-figlet.core :as fig]
@@ -17,7 +17,7 @@
   (find-root (fs/parent (fs/absolutize *file*))))
 
 (def run-id
-  (str (random-uuid)))
+  (str (java.util.UUID/randomUUID)))
 
 (defn path
   [& parts]
