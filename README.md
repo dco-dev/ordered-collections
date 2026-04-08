@@ -398,11 +398,18 @@ Ran 454 tests containing 466,000+ assertions.
 The test suite includes generative tests via `test.check` and equivalence
 tests against `sorted-set`, `sorted-map`, and `clojure.data.avl`.
 
+### Tooling
+
+```
+$ lein codox                 # Generate API docs in doc/api
+$ lein stats                 # Print project statistics
+```
+
 ### Benchmarks
 
 ```
 $ lein bench                  # Criterium, N=100K (~5 min)
-$ lein bench --full           # Criterium, N=10K,100K,500K (~30 min)
+$ lein bench --full           # Criterium, N=10K,100K,500K (~40 min)
 $ lein bench --readme --full  # README tables only (~10 min)
 $ lein bench --sizes 50000    # Custom sizes
 
@@ -415,6 +422,7 @@ $ lein bench-report           # Analyze latest benchmark results
 
 [Criterium](https://github.com/hugoduncan/criterium) results are written to
 `bench-results/<timestamp>.edn`.
+
 
 ---
 
@@ -513,16 +521,6 @@ structure library was inspired by the following:
 ## License
 
 The use and distribution terms for this software are covered by the [Eclipse Public License 1.0](http://opensource.org/licenses/eclipse-1.0.php), which can be found in the file LICENSE.txt at the root of this distribution. By using this software in any fashion, you are agreeing to be bound by the terms of this license. You must not remove this notice, or any other, from this software.
-
----
-
-## Documentation & Tooling
-
-Useful local commands:
-
-- `lein codox` — generate API documentation in `doc/api`
-- `lein stats` — print a project statistics report
-- `lein test` — run the full test suite
 
 ---
 
