@@ -566,7 +566,7 @@ vectors. Implements `IPersistentVector` (`(vector? rope)` is true),
 
 | Function | Signature(s) | Notes |
 |---|---|---|
-| `rope-concat` | `[a b]` `[a b & more]` | Two args: O(log n) tree join. Three+: O(total chunks) bulk. |
+| `rope-concat` | `[x]` `[a b]` `[a b & more]` | One arg: coerce to rope. Two: O(log n) join. Three+: O(total chunks) bulk. |
 | `rope-split` | `[rope i]` | Split at index, returns `[left right]`. O(log n). |
 | `rope-sub` | `[rope start end]` | Subrange rope. O(log n). |
 | `rope-insert` | `[rope i coll]` | Insert elements at index. O(log n). |

@@ -369,8 +369,11 @@
 
 (defn rope-concat
   "Concatenate ropes or rope-coercible collections.
+   One argument: returns it as a rope.
    Two arguments: O(log n) binary tree join.
    Three or more: O(total chunks) bulk construction."
+  ([x]
+   (->rope x))
   ([left right]
    (proto/rope-cat (->rope left) (->rope right)))
   ([left right & more]
