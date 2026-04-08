@@ -1,6 +1,6 @@
 <img src="resources/pando.png" alt="One Tree, Many Forests" width="180" align="left" style="margin-right: 20px; margin-bottom: 10px;"/>
 
-<h1 style="border-bottom: 1px solid #d0d7de; padding-bottom: .3em;">ordered-collections</h1>
+## ordered-collections
 
 **Fast collections that do more than sort.**
 
