@@ -630,6 +630,30 @@
                         (inc i)))
                     v))})))
 
+(defn bench-rope-reduce [n]
+  (let [r (core/rope (range n))
+        v (vec (range n))]
+    (run-cases
+      {:rope   #(reduce + 0 r)
+       :vector #(reduce + 0 v)})))
+
+(defn bench-rope-nth [n & {:keys [num-ops] :or {num-ops 1000}}]
+  (let [r    (core/rope (range n))
+        v    (vec (range n))
+        rng  (java.util.Random. 42)
+        idxs (int-array (repeatedly num-ops #(.nextInt rng (max 1 n))))]
+    (run-cases
+      {:rope   #(areduce idxs i acc nil (nth r (aget idxs i)))
+       :vector #(areduce idxs i acc nil (nth v (aget idxs i)))})))
+
+(defn bench-rope-chunk-iteration [n]
+  (let [r (core/rope (range n))
+        v (vec (range n))]
+    (run-cases
+      {:rope   #(reduce (fn [_ chunk] (reduce (fn [acc x] x) nil chunk))
+                         nil (core/rope-chunks r))
+       :vector #(reduce (fn [acc x] x) nil v)})))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Suite Runners
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -650,6 +674,9 @@
    [:rope-concat bench-rope-concat]
    [:rope-splice bench-rope-splice]
    [:rope-repeated-edits bench-rope-repeated-edits]
+   [:rope-reduce bench-rope-reduce]
+   {:key :rope-nth :fn bench-rope-nth :when #(<= % 500000)}
+   [:rope-chunk-iteration bench-rope-chunk-iteration]
    [:long-construction bench-long-construction]
    [:long-lookup bench-long-lookup]
    [:long-union bench-long-union]
@@ -700,6 +727,9 @@
    [:rope-concat bench-rope-concat]
    [:rope-splice bench-rope-splice]
    [:rope-repeated-edits bench-rope-repeated-edits]
+   [:rope-reduce bench-rope-reduce]
+   {:key :rope-nth :fn bench-rope-nth :when #(<= % 500000)}
+   [:rope-chunk-iteration bench-rope-chunk-iteration]
    [:long-construction bench-long-construction]
    [:long-lookup bench-long-lookup]
    [:long-insert bench-long-insert]

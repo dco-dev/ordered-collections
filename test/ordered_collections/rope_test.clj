@@ -469,14 +469,14 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftest rope-str-conversion
-  (is (= "hello" (oc/rope-str (oc/rope (seq "hello")))))
+  (is (= "hello" (oc/rope-str (oc/rope "hello"))))
   (is (= "" (oc/rope-str (oc/rope))))
   (is (= "The quick brown fox"
-        (oc/rope-str (oc/rope-concat (oc/rope (seq "The quick "))
-                                     (oc/rope (seq "brown fox"))))))
+        (oc/rope-str (oc/rope-concat (oc/rope "The quick ")
+                                     (oc/rope "brown fox")))))
   (testing "rope-str on slice"
     (is (= "quick"
-          (oc/rope-str (oc/rope-sub (oc/rope (seq "The quick brown")) 4 9))))))
+          (oc/rope-str (oc/rope-sub (oc/rope "The quick brown") 4 9))))))
 
 (deftest rope-to-vec-conversion
   (testing "vec on rope preserves content"
