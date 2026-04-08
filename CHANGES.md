@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.2.0-SNAPSHOT] - 2025-02-11
+## [0.2.0] - 2026-04-08
 
 ### New Collection Types
 
