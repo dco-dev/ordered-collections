@@ -14,7 +14,7 @@ you could solve efficiently:
 </td></tr></table>
 
 - **Sets and Maps** work exactly as you're used to, but do more, faster
-- **Ropes** for O(log n) concat, split, splice, and insert on large sequences
+- **Ropes** — concat, split, splice, insert: **10–5000x** faster than Clojure vector at scale
 - **Interval maps** for overlap queries ("what's scheduled at 3pm?")
 - **Range maps** for non-overlapping regions ("which subnet owns this IP?")
 - **Segment trees** for range aggregation ("total sales from day 10 to 50?")
@@ -50,12 +50,18 @@ hood — and in the new things you can do.
 
 
 ```clojure
-
 (require '[ordered-collections.core :as oc])
+
+;; Ropes — split, splice, concat in microseconds
+
+(def r (oc/rope [:a :b :c :d :e]))     ;=> #ordered/rope [:a :b :c :d :e]
+(apply oc/rope-concat (reverse (oc/rope-split r 2)))
+                                         ;=> #ordered/rope [:c :d :e :a :b]
+(oc/rope-splice r 1 3 [:x :y])           ;=> #ordered/rope [:a :x :y :d :e]
 
 ;; Sets
 
-(def s (oc/ordered-set [3 1 4 1 5 9 2 6]))
+(def s (oc/ordered-set [3 1 4 1 5 9 2 6]))  ;=> #ordered/set [1 2 3 4 5 6 9]
 
 (s 4)           ;=> 4
 (s 7)           ;=> nil
@@ -63,7 +69,7 @@ hood — and in the new things you can do.
 
 ;; Maps
 
-(def m (oc/ordered-map {:b 2 :a 1 :c 3}))
+(def m (oc/ordered-map {:b 2 :a 1 :c 3}))  ;=> #ordered/map [[:a 1] [:b 2] [:c 3]]
 
 (m :b)                  ;=> 2
 (assoc m :d 4)          ;=> {:a 1, :b 2, :c 3, :d 4}
@@ -87,10 +93,11 @@ roughly 4-19x wins.
 | Single splice | **6x** | **116x** | **584x** |
 | Concat many pieces | **3.4x** | **5.4x** | **9.5x** |
 | Chunk iteration | **58x** | **83x** | **117x** |
+| Fold (sum) | **5.6x** | **1.5x** | **1.3x** |
 | Reduce (sum) | 0.4x | **1.7x** | **1.3x** |
 | Random nth (1000) | 0.7x | 0.5x | 0.4x |
 
-The rope wins on 5 of 6 workloads at scale and the advantage grows with
+The rope wins on 6 of 7 workloads at scale and the advantage grows with
 collection size. Concat improves with N because the rope collects chunks in
 O(k) while the vector copies O(n) elements. Reduce beats vectors at N ≥ 100K
 thanks to 256-element chunk locality. Random access is slower (O(log n) vs
