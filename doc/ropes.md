@@ -219,10 +219,10 @@ And the `Rope` type itself supports:
 (def a (oc/rope [0 1 2]))
 (def b (oc/rope [3 4 5]))
 
-(oc/rope-concat a b)
-;; => #ordered/rope [0 1 2 3 4 5]
+(oc/rope-concat a b)  ;; => #ordered/rope [0 1 2 3 4 5]
 
 ;; Variadic — bulk concatenation in O(total chunks)
+
 (oc/rope-concat (oc/rope [1 2]) (oc/rope [3 4]) (oc/rope [5 6]))
 ;; => #ordered/rope [1 2 3 4 5 6]
 ```
