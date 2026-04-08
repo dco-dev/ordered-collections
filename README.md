@@ -56,20 +56,18 @@ hood — and in the new things you can do.
 ;; Sets
 
 (def s (oc/ordered-set [3 1 4 1 5 9 2 6]))
+
 (s 4)           ;=> 4
 (s 7)           ;=> nil
 (conj s 0)      ;=> #{0 1 2 3 4 5 6 9}
-(disj s 4)      ;=> #{1 2 3 5 6 9}
-(first s)       ;=> 1
-(last s)        ;=> 9
-(subseq s > 3)  ;=> (4 5 6 9)
 
 ;; Maps
 
 (def m (oc/ordered-map {:b 2 :a 1 :c 3}))
+
 (m :b)                  ;=> 2
 (assoc m :d 4)          ;=> {:a 1, :b 2, :c 3, :d 4}
-(subseq m >= :b <= :c)  ;=> ([:b 2] [:c 3])
+
 ```
 ---
 
