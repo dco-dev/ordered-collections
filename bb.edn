@@ -1,0 +1,10 @@
+{:paths ["etc/lib"]
+ :deps {com.github.danlentz/clj-figlet {:mvn/version "0.1.4"}
+        com.github.danlentz/clj-format {:mvn/version "0.1.1"}}
+ :tasks
+ {stats {:doc "Project stats report"
+         :task (load-file "etc/reports/stats.bb")}
+  bench-report {:doc "Benchmark report from bench-results EDN"
+                :task (load-file "etc/bench_report.bb")}
+  paper {:doc "Build the concept paper PDF"
+         :task (load-file "etc/docs/paper.bb")}}}

@@ -39,5 +39,6 @@
              "bench-rope-fold" ["run" "-m" "ordered-collections.rope-fold-bench"]
              "bench-transient-rope" ["run" "-m" "ordered-collections.transient-rope-bench"]
              "bench-rope-tuning" ["run" "-m" "ordered-collections.rope-tuning-bench"]
-             "stats"           ["shell" "bb" "etc/stats.bb"]
-             "paper"           ["shell" "bb" "etc/paper.bb"]})
+             "stats"           ["shell" "bb" "stats"]
+             "bench-report"    ["shell" "bb" "bench-report"]
+             "paper"           ["shell" "bb" "paper"]})

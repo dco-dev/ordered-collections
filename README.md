@@ -410,6 +410,7 @@ $ lein bench-simple           # Quick iteration bench (100 to 100K)
 $ lein bench-simple --full    # Full suite (100 to 1M)
 $ lein bench-range-map        # Range-map vs Guava TreeRangeMap
 $ lein bench-parallel         # Parallel threshold crossover analysis
+$ lein bench-report           # Analyze latest benchmark results
 ```
 
 [Criterium](https://github.com/hugoduncan/criterium) results are written to
@@ -512,6 +513,16 @@ structure library was inspired by the following:
 ## License
 
 The use and distribution terms for this software are covered by the [Eclipse Public License 1.0](http://opensource.org/licenses/eclipse-1.0.php), which can be found in the file LICENSE.txt at the root of this distribution. By using this software in any fashion, you are agreeing to be bound by the terms of this license. You must not remove this notice, or any other, from this software.
+
+---
+
+## Documentation & Tooling
+
+Useful local commands:
+
+- `lein codox` — generate API documentation in `doc/api`
+- `lein stats` — print a project statistics report
+- `lein test` — run the full test suite
 
 ---
 
