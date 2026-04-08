@@ -419,3 +419,30 @@
     (is (= #{3} (difference os (ordered-set [1 2]))))
     (is (subset? os (ordered-set [1 2 3 4 5])))
     (is (superset? (ordered-set [1 2 3 4 5]) os))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; README Quick Start examples
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest readme-quickstart-rope
+  (let [r (rope [:a :b :c :d :e])]
+    (is (= [:a :b :c :d :e] (vec r)))
+    ;; split and reverse-concat
+    (is (= [:c :d :e :a :b]
+           (vec (apply rope-concat (reverse (rope-split r 2))))))
+    ;; insert
+    (is (= [:a :b :x :y :c :d :e]
+           (vec (rope-insert r 2 [:x :y]))))))
+
+(deftest readme-quickstart-sets
+  (let [s (ordered-set [3 1 4 1 5 9 2 6])]
+    (is (= [1 2 3 4 5 6 9] (vec s)))
+    (is (= 4 (s 4)))
+    (is (nil? (s 7)))
+    (is (= [0 1 2 3 4 5 6 9] (vec (conj s 0))))))
+
+(deftest readme-quickstart-maps
+  (let [m (ordered-map {:b 2 :a 1 :c 3})]
+    (is (= [[:a 1] [:b 2] [:c 3]] (vec m)))
+    (is (= 2 (m :b)))
+    (is (= [[:a 1] [:b 2] [:c 3] [:d 4]] (vec (assoc m :d 4))))))

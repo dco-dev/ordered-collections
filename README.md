@@ -52,14 +52,14 @@ hood — and in the new things you can do.
 ```clojure
 (require '[ordered-collections.core :as oc])
 
-;; Ropes — split, splice, concat in microseconds
+;; Ropes — O(log n) split, splice, concat
 
 (def r (oc/rope [:a :b :c :d :e]))     ;=> #ordered/rope [:a :b :c :d:e]
 
 (apply oc/rope-concat
    (reverse (oc/rope-split r 2)))      ;=> #ordered/rope [:c :d :e :a :b]
 
-(oc/rope-splice r 1 3 [:x :y])         ;=> #ordered/rope [:a :x :y :d :e]
+(oc/rope-insert r 2 [:x :y])           ;=> #ordered/rope [:a :b :x :y :c :d :e]
 
 ;; Sets
 
