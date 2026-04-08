@@ -654,6 +654,22 @@
                          nil (core/rope-chunks r))
        :vector #(reduce (fn [acc x] x) nil v)})))
 
+(defn bench-rope-fold-sum [n]
+  (let [r (core/rope (range n))
+        v (vec (range n))]
+    (run-cases
+      {:rope   #(r/fold + r)
+       :vector #(r/fold + v)})))
+
+(defn bench-rope-fold-freq [n]
+  (let [r         (core/rope (range n))
+        v         (vec (range n))
+        combinef  (fn ([] {}) ([m1 m2] (merge-with + m1 m2)))
+        reducef   (fn [m x] (update m (rem (long x) 100) (fnil inc 0)))]
+    (run-cases
+      {:rope   #(r/fold combinef reducef r)
+       :vector #(r/fold combinef reducef v)})))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Suite Runners
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -677,6 +693,8 @@
    [:rope-reduce bench-rope-reduce]
    {:key :rope-nth :fn bench-rope-nth :when #(<= % 500000)}
    [:rope-chunk-iteration bench-rope-chunk-iteration]
+   [:rope-fold-sum bench-rope-fold-sum]
+   [:rope-fold-freq bench-rope-fold-freq]
    [:long-construction bench-long-construction]
    [:long-lookup bench-long-lookup]
    [:long-union bench-long-union]
@@ -730,6 +748,8 @@
    [:rope-reduce bench-rope-reduce]
    {:key :rope-nth :fn bench-rope-nth :when #(<= % 500000)}
    [:rope-chunk-iteration bench-rope-chunk-iteration]
+   [:rope-fold-sum bench-rope-fold-sum]
+   [:rope-fold-freq bench-rope-fold-freq]
    [:long-construction bench-long-construction]
    [:long-lookup bench-long-lookup]
    [:long-insert bench-long-insert]
