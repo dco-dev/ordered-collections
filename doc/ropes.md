@@ -13,7 +13,7 @@ The rope is a **public** collection type in `ordered-collections.core`.
 Implementation namespaces:
 
 - `ordered-collections.types.rope` — `Rope` deftype
-- `ordered-collections.tree.rope` — low-level chunked tree operations
+- `ordered-collections.kernel.rope` — low-level chunked tree operations
 
 
 ## What a Rope Is
@@ -84,6 +84,21 @@ So the right question is not:
 The better question is:
 
 - "Can a rope offer a compelling structural-editing sequence type?"
+
+### Benchmark Summary
+
+| Workload | N=10K | N=100K | N=500K |
+|---|---:|---:|---:|
+| 200 random edits | **43x** | **498x** | **1968x** |
+| Single splice | **6x** | **116x** | **584x** |
+| Concat many pieces | **3.4x** | **5.4x** | **9.5x** |
+| Chunk iteration | **58x** | **83x** | **117x** |
+| Reduce (sum) | 0.4x | **1.7x** | **1.3x** |
+| Random nth (1000) | 0.7x | 0.5x | 0.4x |
+
+The rope wins on 5 of 6 workloads at scale. The advantage grows with collection
+size because structural editing is O(log n) vs O(n). Random nth is slower
+(O(log n) vs O(1)) — an inherent tradeoff of tree-backed indexing.
 
 
 ## Rope Design in This Library
@@ -479,13 +494,13 @@ Ropes interoperate naturally with other Clojure and Java sequence types.
 than `(apply str r)` for large ropes:
 
 ```clojure
-(def doc (oc/rope (seq "The quick brown fox")))
+(def doc (oc/rope "The quick brown fox"))
 
 (oc/rope-str doc)
 ;; => "The quick brown fox"
 
 ;; After editing:
-(oc/rope-str (oc/rope-splice doc 4 9 (seq "slow")))
+(oc/rope-str (oc/rope-splice doc 4 9 "slow"))
 ;; => "The slow brown fox"
 ```
 
