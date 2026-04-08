@@ -1006,20 +1006,16 @@
   rope/rope)
 
 (defalias rope-concat
-  "Concatenate two ropes (or rope-coercible collections). O(log n).
+  "Concatenate ropes or rope-coercible collections.
+   Two arguments: O(log n) binary tree join.
+   Three or more: O(total chunks) bulk construction.
 
    Examples:
      (rope-concat (rope [1 2 3]) (rope [4 5 6]))
+     ;=> #ordered/rope [1 2 3 4 5 6]
+     (rope-concat (rope [1 2]) (rope [3 4]) (rope [5 6]))
      ;=> #ordered/rope [1 2 3 4 5 6]"
   rope/rope-concat)
-
-(defalias rope-concat-all
-  "Concatenate multiple ropes via bulk chunk collection. O(total chunks).
-
-   Examples:
-     (rope-concat-all (rope [1 2]) (rope [3 4]) (rope [5 6]))
-     ;=> #ordered/rope [1 2 3 4 5 6]"
-  rope/rope-concat-all)
 
 (defalias rope-split
   "Split a rope at element index i, returning [left right]. O(log n).

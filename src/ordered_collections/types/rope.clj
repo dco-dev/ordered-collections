@@ -368,10 +368,16 @@
     (Rope. (ropetree/coll->root x) {})))
 
 (defn rope-concat
-  "Concatenate two ropes or rope-coercible collections.
-   Preserves left operand metadata when the left operand is already a Rope."
-  [left right]
-  (proto/rope-cat (->rope left) (->rope right)))
+  "Concatenate ropes or rope-coercible collections.
+   Two arguments: O(log n) binary tree join.
+   Three or more: O(total chunks) bulk construction."
+  ([left right]
+   (proto/rope-cat (->rope left) (->rope right)))
+  ([left right & more]
+   (Rope. (ropetree/chunks->root-csi
+            (into [] (mapcat (comp ropetree/root->chunks rope-root))
+                  (list* left right more)))
+     (or (meta left) {}))))
 
 (defn- transient-appended-root
   [^ArrayList chunks ^ArrayList tail]

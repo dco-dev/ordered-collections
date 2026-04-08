@@ -420,7 +420,10 @@ Persistent sorted bag that allows duplicate elements.
   - `(ordered-multiset)`
   - `(ordered-multiset coll)`
 - `ordered-multiset-by`
-  - `(ordered-multiset-by comparator coll)`
+  - `(ordered-multiset-by pred coll)`
+- `ordered-multiset-with`
+  - `(ordered-multiset-with comparator)`
+  - `(ordered-multiset-with comparator coll)`
 
 ### Collection-specific operations
 
@@ -468,6 +471,10 @@ Options:
 |---|---|---|
 | `fuzzy-nearest` | `[fs query]` | Returns `[element distance]`. |
 | `fuzzy-exact-contains?` | `[fs x]` | Exact membership only. |
+| `nearest` | `[fs test k]` | Nearest element satisfying `:<`, `:<=`, `:>=`, `:>`. |
+| `subrange` | `[fs test k]` `[fs t1 k1 t2 k2]` | Structure-sharing subcollection. |
+| `split-key` | `[k fs]` | Returns `[left hit right]`. |
+| `split-at` | `[i fs]` | Returns `[left right]`. |
 | `rank` | `[fs x]` | Rank of exact key, or `nil`. |
 | `slice` | `[fs start end]` | Elements in index range `[start,end)`. |
 | `median` | `[fs]` | Median element. |
@@ -546,8 +553,8 @@ returns the value for the nearest key.
 
 Persistent chunked sequence optimized for structural editing: O(log n) concat,
 split, splice, insert, and remove. Backed by a weight-balanced tree of chunk
-vectors. Implements `java.util.List`,
-`java.util.Collection`, `Comparable`, and `clojure.core.reducers/CollFold`.
+vectors. Implements `IPersistentVector` (`(vector? rope)` is true),
+`java.util.List`, `java.util.RandomAccess`, `Comparable`, and `r/fold`.
 
 ### Constructors
 
@@ -559,8 +566,7 @@ vectors. Implements `java.util.List`,
 
 | Function | Signature(s) | Notes |
 |---|---|---|
-| `rope-concat` | `[left right]` | Structural concatenation. O(log n). |
-| `rope-concat-all` | `[& xs]` | Bulk concatenation of multiple ropes. |
+| `rope-concat` | `[a b]` `[a b & more]` | Two args: O(log n) tree join. Three+: O(total chunks) bulk. |
 | `rope-split` | `[rope i]` | Split at index, returns `[left right]`. O(log n). |
 | `rope-sub` | `[rope start end]` | Subrange rope. O(log n). |
 | `rope-insert` | `[rope i coll]` | Insert elements at index. O(log n). |
@@ -570,7 +576,6 @@ vectors. Implements `java.util.List`,
 | `rope-chunks-reverse` | `[rope]` | Reverse seq of internal chunk vectors. |
 | `rope-chunk-count` | `[rope]` | Number of chunks. |
 | `rope-str` | `[rope]` | Rope of chars/strings to String via StringBuilder. |
-| `vec` | `[rope]` | Materialize to PersistentVector. |
 
 ### Standard collection operations
 
@@ -593,3 +598,6 @@ Also supports `java.util.List` methods: `.get`, `.indexOf`, `.lastIndexOf`,
 
 `rope-sub` returns a `Rope` that shares structure with the original rope,
 supporting all rope operations including `assoc`, `conj`, `peek`, and `pop`.
+
+Since `Rope` implements `IPersistentVector`, `(vec rope)` returns the rope
+itself. Use `(into [] rope)` to materialize a `PersistentVector`.

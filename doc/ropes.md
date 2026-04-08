@@ -168,17 +168,16 @@ must be merged and rechunked back into a valid shape.
 From `ordered-collections.core`:
 
 - `rope`
-- `rope-concat`
+- `rope-concat` — two args: O(log n) tree join; three or more: O(total chunks) bulk
 - `rope-split`
 - `rope-sub`
 - `rope-insert`
 - `rope-remove`
 - `rope-splice`
 - `rope-chunks`
+- `rope-chunks-reverse`
 - `rope-chunk-count`
 - `rope-str`
-- `rope-concat-all`
-- `rope-chunks-reverse`
 
 And the `Rope` type itself supports:
 
@@ -220,8 +219,12 @@ And the `Rope` type itself supports:
 (def a (oc/rope [0 1 2]))
 (def b (oc/rope [3 4 5]))
 
-(vec (oc/rope-concat a b))
-;; => [0 1 2 3 4 5]
+(oc/rope-concat a b)
+;; => #ordered/rope [0 1 2 3 4 5]
+
+;; Variadic — bulk concatenation in O(total chunks)
+(oc/rope-concat (oc/rope [1 2]) (oc/rope [3 4]) (oc/rope [5 6]))
+;; => #ordered/rope [1 2 3 4 5 6]
 ```
 
 ### Split and Slice
@@ -309,7 +312,7 @@ just records that the pieces sit next to each other in a tree:
             (oc/rope sensor-readings-batch-2)
             (oc/rope sensor-readings-batch-3)])
 
-(def combined (reduce oc/rope-concat (oc/rope) parts))
+(def combined (apply oc/rope-concat parts))
 
 ;; The full sequence is available for indexed access or reduce,
 ;; but no flattening happened:
@@ -465,7 +468,7 @@ over the chunks directly, which is useful when the data was assembled from
 meaningful pieces:
 
 ```clojure
-(def assembled (reduce oc/rope-concat
+(def assembled (apply oc/rope-concat
                  (map oc/rope [[1 2 3] [4 5 6] [7 8 9]])))
 
 ;; Iterate over the internal chunks

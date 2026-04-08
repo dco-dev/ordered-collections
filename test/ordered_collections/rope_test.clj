@@ -704,7 +704,7 @@
                              (gen/vector gen/small-integer 256 256)]);; exactly target
                           1 30)]
     (let [ropes  (mapv oc/rope chunks)
-          result (apply oc/rope-concat-all ropes)
+          result (apply oc/rope-concat ropes)
           expected (vec (apply concat chunks))]
       (and (= expected (into [] result))
            (ropetree/invariant-valid? (rope-root-of result))))))
@@ -1100,12 +1100,12 @@
       (is (= (into (vec (range 3)) (range 997 1000)) (vec c)))
       (is (ropetree/invariant-valid? (rope-root-of c))))))
 
-;; rope-concat-all with mixed Rope and non-Rope collections
-(deftest rope-concat-all-mixed-types
+;; rope-concat with mixed Rope and non-Rope collections
+(deftest rope-concat-mixed-types
   (is (= [1 2 3 4 5 6]
-        (vec (oc/rope-concat-all (oc/rope [1 2]) [3 4] (oc/rope [5 6])))))
+        (vec (oc/rope-concat (oc/rope [1 2]) [3 4] (oc/rope [5 6])))))
   (is (= (range 100)
-        (vec (apply oc/rope-concat-all
+        (vec (apply oc/rope-concat
                (map #(if (even? %)
                        (oc/rope (range (* % 10) (* (inc %) 10)))
                        (vec (range (* % 10) (* (inc %) 10))))

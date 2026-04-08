@@ -662,7 +662,7 @@ nearly free because edits share structure with previous versions.
 ```clojure
 ;; Build a document from paragraphs
 (def doc
-  (apply oc/rope-concat-all
+  (apply oc/rope-concat
     (map oc/rope
       [["T" "h" "e" " " "q" "u" "i" "c" "k" " "]
        ["b" "r" "o" "w" "n" " " "f" "o" "x" " "]

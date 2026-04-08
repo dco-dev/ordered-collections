@@ -595,7 +595,7 @@
         rope-parts (mapv core/rope pieces)
         vec-parts  pieces]
     (run-cases
-      {:rope   #(apply core/rope-concat-all rope-parts)
+      {:rope   #(apply core/rope-concat rope-parts)
        :vector #(reduce into [] vec-parts)})))
 
 (defn bench-rope-splice [n]
