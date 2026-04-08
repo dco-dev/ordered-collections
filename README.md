@@ -1,6 +1,8 @@
-<img src="resources/pando.png" alt="One Tree, Many Forests" width="180" align="left" style="margin-right: 20px; margin-bottom: 10px;"/>
+<table><tr><td width="180" valign="top">
+<img src="resources/pando.png" alt="One Tree, Many Forests" width="180"/>
+</td><td valign="top">
 
-## ordered-collections
+# ordered-collections
 
 **Fast collections that do more than sort.**
 
@@ -9,7 +11,7 @@ Fast, versatile, ordered collections. Drop-in replacements for
 parallel fold, and specialized collections for problems you didn't know
 you could solve efficiently:
 
-<br clear="left"/>
+</td></tr></table>
 
 - **Sets and Maps** work exactly as you're used to, but do more, faster
 - **Ropes** for O(log n) concat, split, splice, and insert on large sequences
