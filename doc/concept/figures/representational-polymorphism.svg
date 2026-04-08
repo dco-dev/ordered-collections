@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 380" font-family="Georgia, serif">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="#555"/>
+    </marker>
+    <marker id="arrRed" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="#c0392b"/>
+    </marker>
+    <marker id="arrGreen" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="#27ae60"/>
+    </marker>
+  </defs>
+
+  <text x="350" y="25" text-anchor="middle" font-size="15" font-weight="bold" fill="#222">Representational Polymorphism: Capture Once, Thread Explicitly</text>
+
+  <!-- User call -->
+  <rect x="20" y="50" width="200" height="40" rx="6" fill="#f0f0f0" stroke="#888"/>
+  <text x="120" y="75" text-anchor="middle" font-size="11" fill="#333">(union set-a set-b)</text>
+
+  <line x1="220" y1="70" x2="260" y2="70" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- with-compare binding -->
+  <rect x="262" y="45" width="200" height="50" rx="6" fill="#ffeaa7" stroke="#d4ac0d"/>
+  <text x="362" y="65" text-anchor="middle" font-size="10" font-weight="bold" fill="#7d6608">with-compare</text>
+  <text x="362" y="82" text-anchor="middle" font-size="9" fill="#7d6608">binds *compare* from set-a</text>
+
+  <line x1="462" y1="70" x2="500" y2="70" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Public entry -->
+  <rect x="502" y="45" width="180" height="50" rx="6" fill="#dfe6e9" stroke="#636e72"/>
+  <text x="592" y="65" text-anchor="middle" font-size="10" font-weight="bold" fill="#2d3436">node-set-union</text>
+  <text x="592" y="82" text-anchor="middle" font-size="9" fill="#636e72">reads *compare*, *t-join*</text>
+
+  <!-- CAPTURE moment -->
+  <line x1="592" y1="95" x2="592" y2="130" stroke="#c0392b" stroke-width="2" stroke-dasharray="4,3" marker-end="url(#arrRed)"/>
+  <text x="592" y="123" text-anchor="middle" font-size="10" font-weight="bold" fill="#c0392b">CAPTURE</text>
+
+  <!-- Private hot path -->
+  <rect x="250" y="140" width="430" height="50" rx="6" fill="#2c3e50" stroke="#1a252f"/>
+  <text x="465" y="160" text-anchor="middle" font-size="11" font-weight="bold" fill="#ecf0f1">node-set-union* [n1 n2 cmp create]</text>
+  <text x="465" y="177" text-anchor="middle" font-size="9" fill="#95a5a6">explicit arguments — no dynamic var reads</text>
+
+  <!-- Recursive calls -->
+  <line x1="350" y1="190" x2="280" y2="220" stroke="#27ae60" stroke-width="1.5" marker-end="url(#arrGreen)"/>
+  <line x1="580" y1="190" x2="650" y2="220" stroke="#27ae60" stroke-width="1.5" marker-end="url(#arrGreen)"/>
+
+  <rect x="180" y="222" width="200" height="40" rx="6" fill="#2c3e50" stroke="#1a252f"/>
+  <text x="280" y="247" text-anchor="middle" font-size="9" fill="#95a5a6">union*(L₁, left(B), cmp, create)</text>
+
+  <rect x="550" y="222" width="140" height="40" rx="6" fill="#2c3e50" stroke="#1a252f"/>
+  <text x="620" y="247" text-anchor="middle" font-size="9" fill="#95a5a6">union*(R₁, right(B), cmp, create)</text>
+
+  <!-- Fork-join annotation -->
+  <rect x="180" y="280" width="510" height="55" rx="6" fill="#fff5f5" stroke="#e74c3c" stroke-dasharray="4,3"/>
+  <text x="435" y="298" text-anchor="middle" font-size="10" font-weight="bold" fill="#c0392b">Inside ForkJoinPool — different threads</text>
+  <text x="435" y="315" text-anchor="middle" font-size="9" fill="#c0392b">Dynamic bindings do NOT propagate here.</text>
+  <text x="435" y="330" text-anchor="middle" font-size="9" fill="#c0392b">But cmp and create are ordinary arguments — they work in any thread.</text>
+
+  <!-- Key insight callout -->
+  <rect x="20" y="350" width="660" height="25" rx="4" fill="#27ae60" opacity="0.1"/>
+  <text x="350" y="367" text-anchor="middle" font-size="10" font-style="italic" fill="#1e8c4c">The pattern designed for performance (eliminating per-node var overhead) also solves the correctness problem of parallel execution.</text>
+</svg>

@@ -1,282 +1,535 @@
-# com.dean.interval-tree
+<table border="0" cellspacing="0" cellpadding="0" style="border: none;"><tr style="border: none;"><td width="180" valign="top" style="border: none; border-color: white;">
+<img src="resources/pando.png" alt="One Tree, Many Forests" width="180"/>
+</td><td valign="top" style="border: none; border-color: white;">
 
-This library provides a collection of data structures implemented using a
-modular, extensible, foldable, weight balanced persistent binary tree:
-ordered-sets, ordered-maps, interval-sets, and interval-maps.
+# ordered-collections
 
-![tests](https://github.com/dco-dev/interval-tree/actions/workflows/clojure.yml/badge.svg)
-[![Clojars Project](https://img.shields.io/clojars/v/com.dean/interval-tree.svg)](https://clojars.org/com.dean/interval-tree)
+**Fast, modern, _ropes_ and ordered collections that do more than
+sort.**
 
-### Usage
+Drop-in replacements for `sorted-set` and `sorted-map.` With
+inherent parallelism, work-optimal set algebra, positional access,
+parallel fold, and specialized collections for problems you didn't know
+you could solve efficiently:
 
-To install, add the following dependency to your project or build file:
+</td></tr></table>
 
-```
-[com.dean/interval-tree "0.1.2"]
-```
+- **Ropes** — concat, split, splice, insert: **10–5000x** faster than Clojure vector at scale
+- **Sets and Maps** work exactly as you're used to, but do more, up to **50x** faster
+- **Interval maps** for overlap queries ("what's scheduled at 3pm?")
+- **Range maps** for non-overlapping regions ("which subnet owns this IP?")
+- **Segment trees** for range aggregation ("total sales from day 10 to 50?")
+- **Fuzzy collections** for nearest-neighbor lookup ("snap 9.3 to the closest valid size")
+- **Priority queues**, **multisets**, and more
 
-#### Public API
+All built from a modular, extensible, weight-balanced tree platform with shared
+foundation for splitting, joining, and parallel operations.
 
-The public api resides in the top-level `com.dean.interval-tree.core` namespace:
+![tests](https://github.com/dco-dev/ordered-collections/actions/workflows/clojure.yml/badge.svg)
+[![Clojars Project](https://img.shields.io/clojars/v/com.dean/ordered-collections.svg)](https://clojars.org/com.dean/ordered-collections)
 
-```clj
-(require '[com.dean.interval-tree.core :as dean])
-```
+### Documentation
 
-The basic operation of this library is as a drop-in replacement for
-`clojure.core/sorted-set` and `clojure.core/sorted-map`.
+- [Zorp's Sneaker Emporium](doc/zorp-example.md) — Narrative guide with extended examples
+- [Cookbook](doc/cookbook.md) — Practical patterns: leaderboards, time-series, scheduling, queues, multisets, and more
+- [Collections API](doc/collections-api.md) — Collection-by-collection constructor and operation reference
+- [Ropes](doc/ropes.md) — Rope tutorial, use cases, and design
+- [Benchmarks](doc/benchmarks.md) — Detailed performance measurements
+- [Competitive Analysis](doc/competitive-analysis.md) — Comparison with other libraries
+- [vs clojure.data.avl](doc/vs-clojure-data-avl.md) — For data.avl users considering a switch
+- [Algorithms](doc/algorithms.md) — Tree structure, rotations, split/join, interval augmentation
+- [Why Weight-Balanced Trees?](doc/why-weight-balanced-trees.md) — Comparison with red-black and AVL trees
+- [One Tree, Many Forests](doc/concept/concept.md) — Conceptual architecture and design rationale
 
-#### Constructors
+---
 
-* `(dean/ordered-set   coll)`
-* `(dean/ordered-set-by   pred coll)`
-* `(dean/ordered-map   coll)`
-* `(dean/ordered-map-by   pred coll)`
-* `(dean/interval-set  coll)`
-* `(dean/interval-map  coll)`
+## Quick Start
 
-### Topics
+Use `ordered-set` and `ordered-map` exactly like
+`clojure.core/sorted-set` and `clojure.core/sorted-map`. All the functions you know work the same way. The difference is under the
+hood — and in the new things you can do.
 
-#### What is an Interval Map?
 
-Imagine you'd like to associate values with members of a set of
-intervals over some continuous domain such as time or real numbers.
-An example of this is shown below. An interval map answers the question,
-which intervals overlap at some point on the domain. At 3.14159, in this
-case, would be `x4` and `x7`.  The interval map is sparse itself, of
-course, and would only need to contain the 8 constituent intervals.
+```clojure
+(require '[ordered-collections.core :as oc])
 
-```
- x8:                         +-----+
- x7:                   +-----------------------------------+
- x6:                                                       +
- x5:                                     +-----------+
- x4: +-----------------------------+
- x3:                                                 +-----+
- x2:                         +-----------------+
- x1:       +-----------+
+;; Ropes — O(log n) split, splice, concat
 
-     0=====1=====2=====3=====4=====5=====6=====7=====8=====9
-```
+(def r (oc/rope [:a :b :c :d :e]))     ;=> #ordered/rope [:a :b :c :d:e]
 
-This corresponds to the following example code:
+(apply oc/rope-concat
+   (reverse (oc/rope-split r 2)))      ;=> #ordered/rope [:c :d :e :a :b]
 
-```clj
+(oc/rope-insert r 2 [:x :y])           ;=> #ordered/rope [:a :b :x :y :c :d :e]
 
-(def x (dean/interval-map {[1 3] :x1
-                           [4 7] :x2
-                           [8 9] :x3
-                           [0 5] :x4
-                           [6 8] :x5
-                           [9 9] :x6
-                           [3 9] :x7
-                           [4 5] :x8}))
+;; Sets
 
-(x 3.141592654) ;; =>  [:x4 :x7]
-(x [5 5])       ;; =>  [:x4 :x7 :x8 :x2]
+(def s (oc/ordered-set [3 1 4 1 5 9 2 6]))  ;=> #ordered/set [1 2 3 4 5 6 9]
 
-(get x 9)       ;; =>  [:x7 :x3 :x6]
-(get x 9.00001) ;; =>  nil
-(get x [1 4])   ;; =>  [:x4 :x1 :x7 :x8 :x2]
+(s 4)           ;=> 4
+(s 7)           ;=> nil
+(conj s 0)      ;=> #{0 1 2 3 4 5 6 9}
+
+;; Maps
+
+(def m (oc/ordered-map {:b 2 :a 1 :c 3}))  ;=> #ordered/map [[:a 1] [:b 2] [:c 3]]
+
+(m :b)                  ;=> 2
+(assoc m :d 4)          ;=> {:a 1, :b 2, :c 3, :d 4}
 
 ```
+---
 
-#### Efficient Set Operations
+## Performance
 
-This library implements a diverse collection of efficent set operations
-on foldably parallel ordered sets:
+Across the measured workloads, `ordered-collections` is faster than
+both `clojure.core/sorted-set` and `clojure.data.avl` at every
+cardinality  Set algebra is the standout, with 28-57x wins at 500K.
+Even against unordered `clojure.core/set`the benchmarks still show
+roughly 4-19x wins.
+
+### Rope vs PersistentVector
+
+| Workload | N=10K | N=100K | N=500K |
+|---|---:|---:|---:|
+| 200 random edits | **43x** | **498x** | **1968x** |
+| Single splice | **6x** | **116x** | **584x** |
+| Concat many pieces | **3.4x** | **5.4x** | **9.5x** |
+| Chunk iteration | **58x** | **83x** | **117x** |
+| Fold (sum) | **5.6x** | **1.5x** | **1.3x** |
+| Reduce (sum) | 0.4x | **1.7x** | **1.3x** |
+| Random nth (1000) | 0.7x | 0.5x | 0.4x |
+
+The rope wins on 6 of 7 workloads at scale and the advantage grows with
+collection size. Concat improves with N because the rope collects chunks in
+O(k) while the vector copies O(n) elements. Reduce beats vectors at N ≥ 100K
+thanks to 256-element chunk locality. Random access is slower (O(log n) vs
+O(1)) but bounded. See [Ropes](doc/ropes.md) for the full tutorial.
+
+### Set algebra
+
+#### vs clojure.core/sorted-set
+
+| Operation | N=10K | N=100K | N=500K |
+|-----------|------:|-------:|-------:|
+| Union | **15.4x** | **26.4x** | **56.6x** |
+| Intersection | **9.0x** | **17.0x** | **36.2x** |
+| Difference | **9.6x** | **22.1x** | **50.2x** |
+
+#### vs clojure.data.avl
+
+| Operation | N=10K | N=100K | N=500K |
+|-----------|------:|-------:|-------:|
+| Union | **10.9x** | **20.5x** | **42.1x** |
+| Intersection | **7.2x** | **13.0x** | **28.1x** |
+| Difference | **7.2x** | **12.7x** | **32.0x** |
+
+#### vs clojure.core/set
+
+| Operation | N=10K | N=100K | N=500K |
+|-----------|------:|-------:|-------:|
+| Union | **4.2x** | **7.2x** | **16.3x** |
+| Intersection | **3.8x** | **6.1x** | **12.9x** |
+| Difference | **4.4x** | **7.6x** | **18.6x** |
+
+### Set equality
+
+| | vs hash-set | vs sorted-set | vs data.avl |
+|--|------------:|--------------:|------------:|
+| N=10K | **2.8x** | **12.0x** | **14.1x** |
+| N=100K | **2.3x** | **9.3x** | **9.5x** |
+
+### Other operations
+
+| Operation | vs sorted-set | vs data.avl |
+|-----------|---------------|-------------|
+| Construction | **3.0x / 2.8x / 3.1x** | **1.5x / 1.3x / 1.7x** |
+| Lookup | 1.1x / 1.1x / 1.1x | 1.0x / 1.0x / 1.0x |
+| Split | — | **6.8x / 7.2x / 7.8x** |
+| Fold | **2.5x / 4.1x / 4.1x** | **5.8x / 5.9x / 8.8x** |
+
+*Benchmarked on a 2023 MacBook Pro (M2). See [Benchmarks](doc/benchmarks.md) for full results.*
+
+---
+
+## How It Works
+
+The core is a **weight-balanced binary tree**.  Each node knows its
+subtree size, enabling O(log n) positional access and efficient parallel
+decomposition.
+
+**Split and join** are the fundamental primitives — splitting at a key
+produces two trees in O(log n); joining is also O(log n). Set
+operations, subrange extraction, and parallel fold all reduce to
+split/join. Set operations use Adams' divide-and-conquer algorithm
+(1992) extended with the parallel forkl-join based approach from
+Blelloch, Ferizovic & Sun (2016).
+
+Collection constructors provide the comparator and node-construction hooks, so
+the same tree algorithms can back generic, primitive-specialized, and augmented
+variants.
+
+**Augmented trees** extend the basic structure: interval trees store
+max-endpoint per subtree for O(log n + k) overlap queries; segment trees
+store aggregates for O(log n) range queries.
+
+See [Algorithms](doc/algorithms.md) for implementation details and [Why
+Weight-Balanced Trees?](doc/why-weight-balanced-trees.md) for comparison
+with red-black and AVL trees.
+
+---
+
+## Collections
+
+The fundamental collection types currently implemented are:
+`ordered-set`, `ordered-map`, `rope`, `interval-set`, `interval-map`,
+`range-map`, `segment-tree`, `priority-queue`, `ordered-multiset`, `fuzzy-set`,
+and `fuzzy-map`.
+
+| Constructor | Description |
+|-------------|-------------|
+| **Ordered Set** | |
+| `(oc/ordered-set coll)` | Sorted set (drop-in for `sorted-set`) |
+| `(oc/ordered-set-by pred coll)` | Sorted set with custom comparator |
+| `(oc/long-ordered-set coll)` | Sorted set optimized for Long keys |
+| `(oc/string-ordered-set coll)` | Sorted set optimized for String keys |
+| **Ordered Map** | |
+| `(oc/ordered-map coll)` | Sorted map (drop-in for `sorted-map`) |
+| `(oc/ordered-map-by pred coll)` | Sorted map with custom comparator |
+| `(oc/long-ordered-map coll)` | Sorted map optimized for Long keys |
+| `(oc/string-ordered-map coll)` | Sorted map optimized for String keys |
+| **Interval Collections** | |
+| `(oc/interval-set coll)` | Set supporting interval overlap queries |
+| `(oc/interval-map coll)` | Map supporting interval overlap queries |
+| **Range Map** | |
+| `(oc/range-map)` | Non-overlapping ranges (Guava TreeRangeMap) |
+| **Segment Tree** | |
+| `(oc/segment-tree f identity coll)` | O(log n) range aggregate queries |
+| `(oc/segment-tree-by pred f identity coll)` | Segment tree with custom ordering predicate |
+| `(oc/segment-tree-with cmp f identity coll)` | Segment tree with custom Comparator |
+| **Priority Queue** | |
+| `(oc/priority-queue pairs)` | Priority queue from `[priority value]` pairs |
+| **Ordered Multiset** | |
+| `(oc/ordered-multiset coll)` | Sorted multiset (allows duplicates) |
+| **Rope** | |
+| `(oc/rope coll)` | Persistent sequence for structural editing |
+| `(oc/rope-concat a b)` | Concatenate two ropes — O(log n) |
+| `(oc/rope-splice r start end items)` | Replace a range — O(log n) |
+| **Fuzzy Collections** | |
+| `(oc/fuzzy-set coll)` | Returns closest element to query |
+| `(oc/fuzzy-map coll)` | Returns value for closest key to query |
+
+---
+
+## Ropes
+
+A rope is a persistent sequence optimized for **structural editing** —
+concatenation, splitting, splicing, and insertion in the middle of large
+sequences. Where `PersistentVector` is O(n) for mid-sequence edits,
+the rope is O(log n).
+
+```clojure
+(def r (oc/rope (range 100000)))
+
+;; Splice into the middle — O(log n), not O(n)
+(def edited (oc/rope-splice r 50000 50010 [:new :data]))
+
+;; Split — O(log n)
+(let [[left right] (oc/rope-split r 50000)]
+  [(count left) (count right)])  ;=> [50000 50000]
+
+;; Concatenate — O(log n)
+(oc/rope-concat (oc/rope [1 2 3]) (oc/rope [4 5 6]))
+;=> #ordered/rope [1 2 3 4 5 6]
+```
+
+---
+
+## Capabilities
+
+Operations that `sorted-set` and `sorted-map` don't provide — at any collection size.
+For the full collection-by-collection surface area, see [Collections API](doc/collections-api.md).
+
+### Positional Access & Rank
+
+```clojure
+(def s (oc/ordered-set [50 30 20 40 10]))
+
+(nth s 2)              ;=> 30     O(log n)
+(oc/rank s 30)         ;=> 2      O(log n)
+(oc/median s)          ;=> 30     O(log n)
+(oc/percentile s 90)   ;=> 50     O(log n)
+(oc/slice s 1 4)       ;=> (20 30 40)
+```
+
+### Nearest / Floor / Ceiling
+
+```clojure
+(def s (oc/ordered-set [200 200 400 300 500]))
+
+(oc/nearest s :<= 350)  ;=> 300  (floor)
+(oc/nearest s :>= 350)  ;=> 400  (ceiling)
+(oc/nearest s :< 300)   ;=> 200  (predecessor)
+(oc/nearest s :> 300)   ;=> 400  (successor)
+```
+
+### Split & Subrange
+
+```clojure
+(def s (oc/ordered-set [5 4 3 1 2]))
+
+(oc/split-key 3 s)  ;=> [#{1 2} 3 #{4 5}]    O(log n)
+(oc/split-at 2 s)   ;=> [#{1 2} #{3 4 5}]     O(log n)
+
+;; subrange returns a collection, not a seq
+(oc/subrange s :>= 2 :<= 4)  ;=> #{2 3 4}
+```
+
+### Interval Queries
 
 ```
-  (def foo (shuffle (range 500000)))
-  (def bar (shuffle (range 1000000)))
-
-  (def s0 (shuffle (range 0 1000000 2)))
-  (def s1 (shuffle (range 0 1000000 3)))
-
-;;
-;;; dean/ordered-set
-;;
-
-  (time (def x (ordered-set foo)))         ;; 500K: "Elapsed time: 564.248517 msecs"
-  (time (def y (ordered-set bar)))         ;;   1M: "Elapsed time: 1187.734211 msecs"
-
-  (time (def s (dean/intersection
-                 (ordered-set s0)
-                 (ordered-set s1))))       ;; 833K: "Elapsed time: 1242.961445 msecs"
-
-  (time (r/fold + + y))                    ;;   1M: "Elapsed time: 54.363545 msecs"
-
-
-;;
-;;; clojure.core/sorted-set
-;;
-
-  (time (def v (into (sorted-set) foo)))   ;; 500K: "Elapsed time: 839.188189 msecs"
-  (time (def w (into (sorted-set) bar)))   ;;   1M: "Elapsed time: 1974.798286 msecs"
-
-  (time (def s (clojure.set/intersection
-                 (into (sorted-set) s0)
-                 (into (sorted-set) s1)))) ;; 833K: "Elapsed time: 1589.786106 msecs"
-
-  (time (r/fold + + w))                    ;;   1M: "Elapsed time: 167.916539 msecs"
+ meeting: +-------+
+   lunch:       +-------+
+  review:                 +-------+
+         9==10==11==12==13==14==15==16==17
 ```
 
-### Testing
+```clojure
+(def schedule
+  (oc/interval-map
+    {[9 12] "meeting" [14 17] "review" [11 15] "lunch"}))
 
-Testing is accomplished with the standard `lein test`
+(schedule 11)       ;=> ("meeting" "lunch")       point query
+(schedule [10 14])  ;=> ("meeting" "lunch" "review")  range query
+(oc/span schedule)  ;=> [9 17]
 ```
-$ time lein test
 
-lein test com.dean.interval-tree.interval-map-test
+### Range Maps
 
-lein test com.dean.interval-tree.interval-set-test
+Non-overlapping ranges — each point maps to exactly one value. Inserting
+a new range automatically carves out whatever it overlaps.
 
-lein test com.dean.interval-tree.interval-test
+```clojure
+(def tiers
+  (-> (oc/range-map)
+      (assoc [0 100] :bronze)
+      (assoc [100 500] :silver)
+      (assoc [500 5000] :gold)))
 
-lein test com.dean.interval-tree.ordered-map-test
+(tiers 250)                      ;=> :silver
+(oc/get-entry tiers 250)         ;=> [[100 500] :silver]
+```
 
-lein test com.dean.interval-tree.ordered-set-test
+Insert a flash-sale range — bronze and silver are automatically split:
 
-lein test com.dean.interval-tree.tree-test
+```clojure
+(oc/ranges (assoc tiers [50 200] :flash))
 
-Ran 30 tests containing 98214 assertions.
+;; => ([[0 50]    :bronze]        ← auto-trimmed
+;;     [[50 200]  :flash]         ← inserted
+;;     [[200 500] :silver]        ← auto-trimmed
+;;     [[500 5000] :gold])
+```
+
+### Segment Trees
+
+```clojure
+(def sales (oc/sum-tree {1 100, 2 200, 3 150, 4 300, 5 250}))
+
+(oc/query sales 2 4)     ;=> 650    O(log n)
+(oc/aggregate sales)      ;=> 1000   O(1)
+
+;; Update and re-query
+
+(def sales' (assoc sales 3 500))
+(oc/query sales' 2 4)     ;=> 1000
+
+;; Also: min-tree, max-tree, or any associative operation
+
+(def peaks (oc/segment-tree max 0 {1 100, 2 200, 3 150}))
+(oc/query peaks 1 3)      ;=> 200
+```
+
+### Fuzzy Lookup
+
+```clojure
+(def sizes (oc/fuzzy-set [6 7 8 9 10 11 12 13]))
+(sizes 9.3)                    ;=> 9
+(oc/fuzzy-nearest sizes 9.3)   ;=> [9 0.30]
+
+(def tiers (oc/fuzzy-map {0 :bronze 500 :silver 1000 :gold}))
+(tiers 480)                    ;=> :silver
+```
+
+### Priority Queue & Multiset
+
+```clojure
+;; Priority queue (min-heap)
+
+(def pq (oc/priority-queue [[3 :medium] [1 :urgent] [5 :low]]))
+(peek pq)       ;=> [1 :urgent]
+(peek (pop pq)) ;=> [3 :medium]
+
+;; Multiset (sorted bag, allows duplicates)
+
+(def ms (oc/ordered-multiset [3 1 4 1 5 9 2 6 5 3 5]))
+(oc/multiplicity ms 5)  ;=> 3
+```
+
+### Parallel Fold
+
+All collection types implement `CollFold` for efficient `r/fold`:
+
+```clojure
+(require '[clojure.core.reducers :as r])
+
+(def combinef (fn ([] {}) ([m1 m2] (merge-with + m1 m2))))
+(def reducef  (fn [m x] (update m (mod x 100) (fnil inc 0))))
+
+(r/fold combinef reducef (oc/ordered-set (range 1000000)))
+
+;; 1M-element frequency-map workload from the benchmark suite:
+;; ~6.9x faster than hash-set reduce, ~4.5x faster than sorted-set fold,
+;; ~3.4x faster than data.avl fold
+```
+---
+
+## Testing
+
+```
+$ lein test
+
+Ran 454 tests containing 466,000+ assertions.
 0 failures, 0 errors.
-
-real     5m34.487s
-user    10m21.397s
-sys      0m5.047s
 ```
 
-### Modularity
+The test suite includes generative tests via `test.check` and equivalence
+tests against `sorted-set`, `sorted-map`, and `clojure.data.avl`.
 
-This data structure library is designed around the following concepts of
-modularity and extensibility.
+### Tooling
 
-#### Clojure/Java Interfaces
+```
+$ lein codox                 # Generate API docs in doc/api
+$ lein stats                 # Print project statistics
+```
 
-The top level collections are built on the standard Clojure/Java
-interfaces, so, for example, working with an `ordered-set` is
-identical to working with Clojure's `sorted-set`, using all of the same
-standard collection functions, for the 99% case: meta, nth, seq, rseq,
-assoc(-in), get(-in), invoke, compare, to-array, empty, .indexOf,
-.lastIndexof, size, iterator-seq, first, last, =, count, empty,
-contains, conj. disj, cons, fold, and many old friends will just
-work, using an efficient implementation that takes full advantage of the
-capabilities of our underlying tree index.
+### Benchmarks
 
-#### PExtensibleset
+```
+$ lein bench                  # Criterium, N=100K (~5 min)
+$ lein bench --full           # Criterium, N=10K,100K,500K (~40 min)
+$ lein bench --readme --full  # README tables only (~10 min)
+$ lein bench --sizes 50000    # Custom sizes
 
-An exception to the above is due to the fact that `clojure.set` does not
-provide interfaces for extensible sets. So, we provide our own
-intersection, union, difference, subset, and superset.  These operators
-work most efficiently on com.dean.interval-tree collections and provide
-support for backward interoperability with clojure (or possibly other)
-set datatypes.
+$ lein bench-simple           # Quick iteration bench (100 to 100K)
+$ lein bench-simple --full    # Full suite (100 to 1M)
+$ lein bench-range-map        # Range-map vs Guava TreeRangeMap
+$ lein bench-parallel         # Parallel threshold crossover analysis
+$ lein bench-report           # Analyze latest benchmark results
+```
 
-#### Root Container
-
-The individual collection types (ordered-set, ordered-map, interval-set,
-interval-map} are defined by their individual Class (clojure
-`deftype`) of top level container that holds the root of an
-indexed tree.  This container describes the behavior of the underlying
-tree data structure along several architectural dimensions.
-
-##### INodeCollection
+[Criterium](https://github.com/hugoduncan/criterium) results are written to
+`bench-results/<timestamp>.edn`.
 
 
-The fundamental collection of nodes provides an interface to node
-allocation machinery and to the root contained node.  A variant
-based on persistent (on-disk) storage, for example, has been built
-with customizations at this layer.
+---
 
-##### IBalancedCollection
+## Inspiration
 
-For functional balanced trees, provides an interface to the `stitch`
-function that returns a new, properly balanced tree containing one newly
-allocated node adjoined.  The provided algorithm is
-[weight balanced](https://en.wikipedia.org/wiki/Weight-balanced_tree)
-however others may be used. We've experimented with red-black trees,
-in particular, as variants at this layer.
+The implementation of this weight-balanced binary tree data
+structure library was inspired by the following:
 
-##### IOrderedCollection
+-  Adams (1992)
+   'Implementing Sets Efficiently in a Functional Language'
+   Technical Report CSTR 92-10, University of Southampton.
+   <http://groups.csail.mit.edu/mac/users/adams/BB/92-10.ps>
 
-Ordered collections define a comparator and predicates to determine the
-underlying algorithmic compatibility of other collections. Interval
-Collections are a special type of OrderedCollection.
+-  Hirai and Yamamoto (2011)
+   'Balancing Weight-Balanced Trees'
+   Journal of Functional Programming / 21 (3):
+   Pages 287-307
+   <https://yoichihirai.com/bst.pdf>
 
-#### Tree
+-  Oleg Kiselyov
+   'Towards the best collection API, A design of the overall optimal
+   collection traversal interface'
+   <https://okmij.org/ftp/papers/LL3-collections-enumerators.txt>
 
-The heart of the library is our [persistent tree](https://github.com/dco-dev/interval-tree/blob/master/src/com/dean/interval_tree/tree/tree.clj).
+-  Nievergelt and Reingold (1972)
+   'Binary Search Trees of Bounded Balance'
+   STOC '72 Proceedings
+   4th Annual ACM symposium on Theory of Computing
+   Pages 137-142
+   <https://dl.acm.org/doi/abs/10.1145/800152.804906>
 
-The code is well documented and explains in more detail the efficiencies
-of the internal collection operators.
+-  Driscoll, Sarnak, Sleator, and Tarjan (1989)
+   'Making Data Structures Persistent'
+   Journal of Computer and System Sciences Volume 38 Issue 1, February 1989
+   18th Annual ACM Symposium on Theory of Computing
+   Pages 86-124
+   <https://www.sciencedirect.com/science/article/pii/0022000089900342>
 
-This species of binary tree supports representations of sets, maps,
-and vectors.  In addition to indexed key and range query, it
-supports the `nth` operation to return nth node from the beginning of
-the ordered tree, and `node-rank` to return the rank (sequential
-position) of a given key within the ordered tree, both in logarithmic
-time.
+-  MIT Scheme weight balanced tree as reimplemented by Yoichi Hirai
+   and Kazuhiko Yamamoto using the revised non-variant algorithm recommended
+   integer balance parameters from (Hirai/Yamamoto 2011).
+   <https://www.cambridge.org/core/journals/journal-of-functional-programming/article/balancing-weightbalanced-trees/7281C4DE7E56B74F2D13F06E31DCBC5B>
 
-The axes of exstensibility of the tree implemntation
-(`*compare*`,`*n-join*`, `*t-join*`) correspond to the interfaces
-described above.
+-  Wikipedia
+   'Interval Tree'
+   <https://en.wikipedia.org/wiki/Interval_tree>
 
-### Inspiration
+-  Wikipedia
+   'Segment Tree'
+   <https://en.wikipedia.org/wiki/Segment_tree>
 
- This implementation of a weight-balanced binary interval-tree data
- structure was inspired by the following:
+-  Google Guava
+   'RangeMap'
+   <https://guava.dev/releases/snapshot/api/docs/com/google/common/collect/RangeMap.html>
 
- -  Adams (1992)
-     'Implementing Sets Efficiently in a Functional Language'
-     Technical Report CSTR 92-10, University of Southampton.
-     <http://groups.csail.mit.edu/mac/users/adams/BB/92-10.ps>
+-  Wikipedia
+   'Weight Balanced Tree'
+   <https://en.wikipedia.org/wiki/Weight-balanced_tree>
 
- -  Hirai and Yamamoto (2011)
-     'Balancing Weight-Balanced Trees'
-     Journal of Functional Programming / 21 (3):
-     Pages 287-307
-     <https://yoichihirai.com/bst.pdf>
+-  Andrew Baine (2007)
+   'Purely Functional Data Structures in Common Lisp'
+   Google Summer of Code 2007, mentored by Rahul Jain
+   <https://funds.common-lisp.dev/funds.pdf>
+   <https://developers.google.com/open-source/gsoc/2007/>
 
- -  Oleg Kiselyov
-     'Towards the best collection API, A design of the overall optimal
-     collection traversal interface'
-     <http://pobox.com/~oleg/ftp/papers/LL3-collections-enumerators.txt>
+- Scott L. Burson
+   'Functional Set-Theoretic Collections for Common Lisp'
+   <https://fset.common-lisp.dev/>
 
- -  Nievergelt and Reingold (1972)
-     'Binary Search Trees of Bounded Balance'
-     STOC '72 Proceedings
-     4th Annual ACM symposium on Theory of Computing
-     Pages 137-142
+-  Adams (1993)
+   'Efficient sets—a balancing act'
+   Journal of Functional Programming 3(4): 553-562
+   <https://www.cambridge.org/core/journals/journal-of-functional-programming/article/functional-pearls-efficient-setsa-balancing-act/0CAA1C189B4F7C15CE9B8C02D0D4B54E>
 
- -  Driscoll, Sarnak, Sleator, and Tarjan (1989)
-     'Making Data Structures Persistent'
-     Journal of Computer and System Sciences Volume 38 Issue 1, February 1989
-     18th Annual ACM Symposium on Theory of Computing
-     Pages 86-124
+-  Blelloch, Ferizovic, and Sun (2016)
+   'Just Join for Parallel Ordered Sets'
+   ACM SPAA 2016
+   <https://dl.acm.org/doi/10.1145/2935764.2935768>
 
- -  MIT Scheme weight balanced tree as reimplemented by Yoichi Hirai
-     and Kazuhiko Yamamoto using the revised non-variant algorithm recommended
-     integer balance parameters from (Hirai/Yamomoto 2011).
+-  Boehm, Atkinson, and Plass (1995)
+   'Ropes: an Alternative to Strings'
+   Software: Practice and Experience 25(12)
+   <https://www.cs.rit.edu/usr/local/pub/jeh/courses/QUARTERS/FP/Labs/CesswordsII/boehm-ropes.pdf>
 
- -  Wikipedia
-     'Interval Tree'
-     <https://en.wikipedia.org/wiki/Interval_tree>
+-  Haskell containers library (Data.Set, Data.Map)
+   <https://hackage.haskell.org/package/containers>
 
- -  Wikipedia
-     'Weight Balanced Tree'
-     <https://en.wikipedia.org/wiki/Weight-balanced_tree>
+-  SLIB Weight-Balanced Trees (Aubrey Jaffer)
+   <https://people.csail.mit.edu/jaffer/slib/Weight_002dBalanced-Trees.html>
 
- -  Andrew Baine, Rahul Jaine (2007)
-     'Purely Functional Data Structures in Common Lisp'
-     Google Summer of Code 2007
-     <https://common-lisp.net/project/funds/funds.pdf>
-     <https://developers.google.com/open-source/gsoc/2007/>
+-  PAM: Parallel Augmented Maps
+   <https://cmuparlay.github.io/PAMWeb/>
 
- - Scott L. Burson
-     'Functional Set-Theoretic Collections for Common Lisp'
-     <https://common-lisp.net/project/fset/>
+---
 
-### License
+## License
 
 The use and distribution terms for this software are covered by the [Eclipse Public License 1.0](http://opensource.org/licenses/eclipse-1.0.php), which can be found in the file LICENSE.txt at the root of this distribution. By using this software in any fashion, you are agreeing to be bound by the terms of this license. You must not remove this notice, or any other, from this software.
+
+---
+
+*For extended examples featuring Zorp, Kevin the sentient flip-flop, and Big Toe Tony's 47 feet, see [Zorp's Sneaker Emporium](doc/zorp-example.md).*

@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 420" font-family="Georgia, serif">
+  <defs>
+    <marker id="a" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="#555"/>
+    </marker>
+  </defs>
+
+  <text x="350" y="25" text-anchor="middle" font-size="15" font-weight="bold" fill="#222">The Rope: What Is Shared vs. What Is Replaced</text>
+
+  <!-- Kernel box -->
+  <rect x="30" y="50" width="300" height="340" rx="10" fill="#f8f9fa" stroke="#2c3e50" stroke-width="2"/>
+  <text x="180" y="75" text-anchor="middle" font-size="13" font-weight="bold" fill="#2c3e50">Tree Kernel (shared)</text>
+
+  <!-- Shared items -->
+  <rect x="50" y="90" width="260" height="24" rx="4" fill="#27ae60" opacity="0.15"/>
+  <text x="180" y="107" text-anchor="middle" font-size="10" fill="#1e8c4c">node-stitch — balancing rotations</text>
+
+  <rect x="50" y="120" width="260" height="24" rx="4" fill="#27ae60" opacity="0.15"/>
+  <text x="180" y="137" text-anchor="middle" font-size="10" fill="#1e8c4c">node-weight — balance metric</text>
+
+  <rect x="50" y="150" width="260" height="24" rx="4" fill="#27ae60" opacity="0.15"/>
+  <text x="180" y="167" text-anchor="middle" font-size="10" fill="#1e8c4c">SimpleNode — storage type</text>
+
+  <rect x="50" y="180" width="260" height="24" rx="4" fill="#27ae60" opacity="0.15"/>
+  <text x="180" y="197" text-anchor="middle" font-size="10" fill="#1e8c4c">node-greatest / node-least — fringe</text>
+
+  <rect x="50" y="210" width="260" height="24" rx="4" fill="#27ae60" opacity="0.15"/>
+  <text x="180" y="227" text-anchor="middle" font-size="10" fill="#1e8c4c">node-remove-least — pivot extraction</text>
+
+  <rect x="50" y="240" width="260" height="24" rx="4" fill="#27ae60" opacity="0.15"/>
+  <text x="180" y="257" text-anchor="middle" font-size="10" fill="#1e8c4c">node-key-seq — enumerator traversal</text>
+
+  <rect x="50" y="270" width="260" height="24" rx="4" fill="#27ae60" opacity="0.15"/>
+  <text x="180" y="287" text-anchor="middle" font-size="10" fill="#1e8c4c">node-reduce-keys — chunk reduction</text>
+
+  <rect x="50" y="300" width="260" height="24" rx="4" fill="#27ae60" opacity="0.15"/>
+  <text x="180" y="317" text-anchor="middle" font-size="10" fill="#1e8c4c">node-healthy? — balance verification</text>
+
+  <text x="180" y="355" text-anchor="middle" font-size="11" font-weight="bold" fill="#27ae60">8 facilities reused unchanged</text>
+
+  <!-- Rope box -->
+  <rect x="380" y="50" width="290" height="340" rx="10" fill="#fff5f5" stroke="#e74c3c" stroke-width="2"/>
+  <text x="525" y="75" text-anchor="middle" font-size="13" font-weight="bold" fill="#c0392b">Rope Layer (~400 lines)</text>
+
+  <!-- Replaced items -->
+  <rect x="400" y="90" width="250" height="24" rx="4" fill="#e74c3c" opacity="0.12"/>
+  <text x="525" y="107" text-anchor="middle" font-size="10" fill="#922b21">rope-split-at — index-based split</text>
+
+  <rect x="400" y="120" width="250" height="24" rx="4" fill="#e74c3c" opacity="0.12"/>
+  <text x="525" y="137" text-anchor="middle" font-size="10" fill="#922b21">rope-join — positional concat3</text>
+
+  <rect x="400" y="150" width="250" height="24" rx="4" fill="#e74c3c" opacity="0.12"/>
+  <text x="525" y="167" text-anchor="middle" font-size="10" fill="#922b21">rope-nth — element-count descent</text>
+
+  <rect x="400" y="180" width="250" height="24" rx="4" fill="#e74c3c" opacity="0.12"/>
+  <text x="525" y="197" text-anchor="middle" font-size="10" fill="#922b21">rope-conj-right — chunk append</text>
+
+  <rect x="400" y="210" width="250" height="24" rx="4" fill="#e74c3c" opacity="0.12"/>
+  <text x="525" y="227" text-anchor="middle" font-size="10" fill="#922b21">rope-assoc — index-based update</text>
+
+  <text x="525" y="265" text-anchor="middle" font-size="11" font-weight="bold" fill="#c0392b">5 position-aware equivalents</text>
+
+  <!-- Rope-specific additions -->
+  <rect x="400" y="285" width="250" height="24" rx="4" fill="#f39c12" opacity="0.15"/>
+  <text x="525" y="302" text-anchor="middle" font-size="10" fill="#7d6608">Chunk Size Invariant (CSI)</text>
+
+  <rect x="400" y="315" width="250" height="24" rx="4" fill="#f39c12" opacity="0.15"/>
+  <text x="525" y="332" text-anchor="middle" font-size="10" fill="#7d6608">Boundary normalization</text>
+
+  <rect x="400" y="345" width="250" height="24" rx="4" fill="#f39c12" opacity="0.15"/>
+  <text x="525" y="362" text-anchor="middle" font-size="10" fill="#7d6608">Transient tail buffer</text>
+
+  <!-- Arrows from kernel to rope -->
+  <line x1="310" y1="102" x2="398" y2="102" stroke="#27ae60" stroke-width="1" stroke-dasharray="4,2" marker-end="url(#a)"/>
+  <line x1="310" y1="132" x2="398" y2="132" stroke="#27ae60" stroke-width="1" stroke-dasharray="4,2" marker-end="url(#a)"/>
+  <line x1="310" y1="162" x2="398" y2="162" stroke="#27ae60" stroke-width="1" stroke-dasharray="4,2" marker-end="url(#a)"/>
+
+  <!-- Bottom summary -->
+  <text x="350" y="410" text-anchor="middle" font-size="11" font-style="italic" fill="#555">A conceptually novel collection built as a thin layer — not a separate implementation.</text>
+</svg>

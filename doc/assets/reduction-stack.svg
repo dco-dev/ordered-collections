@@ -1,0 +1,151 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 680" font-family="Georgia, serif" font-size="11">
+  <defs>
+    <marker id="ad" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#555"/></marker>
+  </defs>
+
+  <text x="380" y="22" text-anchor="middle" font-size="15" font-weight="bold" fill="#222">How (reduce + 0 ordered-set) Actually Works</text>
+
+  <!-- The call -->
+  <rect x="200" y="42" width="360" height="28" rx="5" fill="#eafaf1" stroke="#27ae60" stroke-width="2"/>
+  <text x="380" y="61" text-anchor="middle" font-size="12" font-weight="bold" fill="#1e8c4c" font-family="monospace">(reduce + 0 (ordered-set [50 30 20 40 10]))</text>
+
+  <!-- Step 1: IReduceInit -->
+  <line x1="380" y1="70" x2="380" y2="90" stroke="#555" stroke-width="1.5" marker-end="url(#ad)"/>
+  <rect x="140" y="93" width="480" height="40" rx="5" fill="#f8f9fa" stroke="#bdc3c7"/>
+  <text x="380" y="110" text-anchor="middle" font-size="10" fill="#2c3e50">Clojure calls <tspan font-family="monospace">.reduce(IReduceInit)</tspan> on OrderedSet → delegates to <tspan font-family="monospace" font-weight="bold">node-reduce-keys</tspan></text>
+  <text x="380" y="125" text-anchor="middle" font-size="9" fill="#888">projection: -k (extract key from node) · direction: forward</text>
+
+  <!-- Step 2: make-unary-reducer -->
+  <line x1="380" y1="133" x2="380" y2="150" stroke="#555" stroke-width="1.5" marker-end="url(#ad)"/>
+  <rect x="100" y="153" width="560" height="55" rx="5" fill="#e74c3c" opacity="0.1" stroke="#e74c3c"/>
+  <text x="380" y="170" text-anchor="middle" font-size="10" font-weight="bold" fill="#c0392b">make-unary-reducer kernel (enum-reduce-init macro)</text>
+  <text x="380" y="186" text-anchor="middle" font-size="10" fill="#555" font-family="monospace">loop [e (node-enumerator root), acc 0]</text>
+  <text x="380" y="200" text-anchor="middle" font-size="9" fill="#888">at each step: acc = (+ acc (-k (node-enum-first e))), then e = (node-enum-rest e)</text>
+
+  <!-- Step 3: The actual execution trace -->
+  <line x1="380" y1="208" x2="380" y2="225" stroke="#555" stroke-width="1.5" marker-end="url(#ad)"/>
+
+  <!-- Tree on the left -->
+  <g transform="translate(40,235)">
+    <text x="75" y="0" text-anchor="middle" font-size="10" fill="#888" font-weight="bold">The tree</text>
+    <rect x="55" y="10" width="40" height="22" rx="4" fill="#2c3e50"/>
+    <text x="75" y="26" text-anchor="middle" fill="white" font-size="10">30</text>
+    <rect x="25" y="45" width="35" height="22" rx="4" fill="#2c3e50"/>
+    <text x="42" y="61" text-anchor="middle" fill="white" font-size="10">10</text>
+    <rect x="90" y="45" width="35" height="22" rx="4" fill="#2c3e50"/>
+    <text x="107" y="61" text-anchor="middle" fill="white" font-size="10">40</text>
+    <rect x="45" y="80" width="30" height="20" rx="3" fill="#95a5a6"/>
+    <text x="60" y="95" text-anchor="middle" fill="white" font-size="9">20</text>
+    <rect x="105" y="80" width="30" height="20" rx="3" fill="#95a5a6"/>
+    <text x="120" y="95" text-anchor="middle" fill="white" font-size="9">50</text>
+    <line x1="65" y1="32" x2="50" y2="45" stroke="#555" stroke-width="1"/>
+    <line x1="85" y1="32" x2="100" y2="45" stroke="#555" stroke-width="1"/>
+    <line x1="50" y1="67" x2="55" y2="80" stroke="#555" stroke-width="1"/>
+    <line x1="115" y1="67" x2="115" y2="80" stroke="#555" stroke-width="1"/>
+  </g>
+
+  <!-- Execution trace on the right -->
+  <g transform="translate(200,235)">
+    <text x="260" y="0" text-anchor="middle" font-size="10" fill="#888" font-weight="bold">Enumerator walk → accumulator</text>
+
+    <!-- Header -->
+    <rect x="50" y="10" width="55" height="18" rx="3" fill="#2c3e50"/>
+    <text x="77" y="23" text-anchor="middle" fill="white" font-size="9" font-weight="bold">step</text>
+    <rect x="110" y="10" width="175" height="18" rx="3" fill="#2c3e50"/>
+    <text x="197" y="23" text-anchor="middle" fill="white" font-size="9" font-weight="bold">EnumFrame chain</text>
+    <rect x="290" y="10" width="60" height="18" rx="3" fill="#2c3e50"/>
+    <text x="320" y="23" text-anchor="middle" fill="white" font-size="9" font-weight="bold">key</text>
+    <rect x="355" y="10" width="80" height="18" rx="3" fill="#2c3e50"/>
+    <text x="395" y="23" text-anchor="middle" fill="white" font-size="9" font-weight="bold">acc = (+ acc k)</text>
+    <rect x="440" y="10" width="60" height="18" rx="3" fill="#2c3e50"/>
+    <text x="470" y="23" text-anchor="middle" fill="white" font-size="9" font-weight="bold">result</text>
+
+    <!-- Row 0: initial -->
+    <text x="77" y="46" text-anchor="middle" font-size="9" fill="#555">init</text>
+    <text x="197" y="46" text-anchor="middle" font-size="9" fill="#555" font-family="monospace">[10|⟨20⟩] → [30|⟨40⟩] → nil</text>
+    <text x="320" y="46" text-anchor="middle" font-size="9" fill="#888">—</text>
+    <text x="395" y="46" text-anchor="middle" font-size="9" fill="#888">—</text>
+    <text x="470" y="46" text-anchor="middle" font-size="10" font-weight="bold" fill="#2c3e50">0</text>
+
+    <!-- Row 1 -->
+    <text x="77" y="66" text-anchor="middle" font-size="9" fill="#555">1</text>
+    <text x="197" y="66" text-anchor="middle" font-size="9" fill="#27ae60" font-family="monospace">[10|⟨20⟩] → [30|⟨40⟩]</text>
+    <text x="320" y="66" text-anchor="middle" font-size="10" font-weight="bold" fill="#e74c3c">10</text>
+    <text x="395" y="66" text-anchor="middle" font-size="9" fill="#555" font-family="monospace">(+ 0 10)</text>
+    <text x="470" y="66" text-anchor="middle" font-size="10" font-weight="bold" fill="#2c3e50">10</text>
+
+    <!-- Row 2 -->
+    <text x="77" y="86" text-anchor="middle" font-size="9" fill="#555">2</text>
+    <text x="197" y="86" text-anchor="middle" font-size="9" fill="#27ae60" font-family="monospace">[20|nil] → [30|⟨40⟩]</text>
+    <text x="320" y="86" text-anchor="middle" font-size="10" font-weight="bold" fill="#e74c3c">20</text>
+    <text x="395" y="86" text-anchor="middle" font-size="9" fill="#555" font-family="monospace">(+ 10 20)</text>
+    <text x="470" y="86" text-anchor="middle" font-size="10" font-weight="bold" fill="#2c3e50">30</text>
+
+    <!-- Row 3 -->
+    <text x="77" y="106" text-anchor="middle" font-size="9" fill="#555">3</text>
+    <text x="197" y="106" text-anchor="middle" font-size="9" fill="#27ae60" font-family="monospace">[30|⟨40⟩] → nil</text>
+    <text x="320" y="106" text-anchor="middle" font-size="10" font-weight="bold" fill="#e74c3c">30</text>
+    <text x="395" y="106" text-anchor="middle" font-size="9" fill="#555" font-family="monospace">(+ 30 30)</text>
+    <text x="470" y="106" text-anchor="middle" font-size="10" font-weight="bold" fill="#2c3e50">60</text>
+
+    <!-- Row 4 -->
+    <text x="77" y="126" text-anchor="middle" font-size="9" fill="#555">4</text>
+    <text x="197" y="126" text-anchor="middle" font-size="9" fill="#27ae60" font-family="monospace">[40|⟨50⟩] → nil</text>
+    <text x="320" y="126" text-anchor="middle" font-size="10" font-weight="bold" fill="#e74c3c">40</text>
+    <text x="395" y="126" text-anchor="middle" font-size="9" fill="#555" font-family="monospace">(+ 60 40)</text>
+    <text x="470" y="126" text-anchor="middle" font-size="10" font-weight="bold" fill="#2c3e50">100</text>
+
+    <!-- Row 5 -->
+    <text x="77" y="146" text-anchor="middle" font-size="9" fill="#555">5</text>
+    <text x="197" y="146" text-anchor="middle" font-size="9" fill="#27ae60" font-family="monospace">[50|nil] → nil</text>
+    <text x="320" y="146" text-anchor="middle" font-size="10" font-weight="bold" fill="#e74c3c">50</text>
+    <text x="395" y="146" text-anchor="middle" font-size="9" fill="#555" font-family="monospace">(+ 100 50)</text>
+    <text x="470" y="146" text-anchor="middle" font-size="10" font-weight="bold" fill="#27ae60">150</text>
+
+    <!-- Row 6: done -->
+    <text x="77" y="166" text-anchor="middle" font-size="9" fill="#555">done</text>
+    <text x="197" y="166" text-anchor="middle" font-size="9" fill="#888" font-family="monospace">nil</text>
+    <text x="470" y="166" text-anchor="middle" font-size="12" font-weight="bold" fill="#27ae60">→ 150</text>
+  </g>
+
+  <!-- Annotations -->
+  <g transform="translate(40,435)">
+    <rect x="0" y="0" width="680" height="100" rx="8" fill="#f0f7ff" stroke="#2980b9"/>
+    <text x="340" y="20" text-anchor="middle" font-size="11" font-weight="bold" fill="#2471a3">What makes this efficient</text>
+
+    <text x="20" y="42" font-size="10" fill="#555">• No lazy-seq allocation — the enumerator is a chain of 3-field deftype objects, not cons cells</text>
+    <text x="20" y="58" font-size="10" fill="#555">• No intermediate collections — the accumulator is updated in-place through the loop</text>
+    <text x="20" y="74" font-size="10" fill="#555">• <tspan font-family="monospace">reduced?</tspan> checked at every step — early termination is free</text>
+    <text x="20" y="90" font-size="10" fill="#555">• Same mechanism serves all projections: keys (-k), entries (MapEntry), nodes (identity), reverse</text>
+  </g>
+
+  <!-- The three alternative paths -->
+  <g transform="translate(40,550)">
+    <rect x="0" y="0" width="680" height="110" rx="8" fill="#f8f9fa" stroke="#bdc3c7"/>
+    <text x="340" y="18" text-anchor="middle" font-size="11" font-weight="bold" fill="#2c3e50">Same enumerator, different consumers</text>
+
+    <rect x="15" y="30" width="155" height="65" rx="5" fill="white" stroke="#3498db"/>
+    <text x="92" y="48" text-anchor="middle" font-size="10" font-weight="bold" fill="#2471a3">reduce</text>
+    <text x="92" y="63" text-anchor="middle" font-size="8" fill="#555">enum-reduce-init macro</text>
+    <text x="92" y="76" text-anchor="middle" font-size="8" fill="#555">projection: -k, identity,</text>
+    <text x="92" y="88" text-anchor="middle" font-size="8" fill="#555">or MapEntry</text>
+
+    <rect x="185" y="30" width="155" height="65" rx="5" fill="white" stroke="#8e44ad"/>
+    <text x="262" y="48" text-anchor="middle" font-size="10" font-weight="bold" fill="#6c3483">seq / rseq</text>
+    <text x="262" y="63" text-anchor="middle" font-size="8" fill="#555">KeySeq / EntrySeq deftypes</text>
+    <text x="262" y="76" text-anchor="middle" font-size="8" fill="#555">ISeq.first → project(enum-first)</text>
+    <text x="262" y="88" text-anchor="middle" font-size="8" fill="#555">ISeq.next → enum-rest</text>
+
+    <rect x="355" y="30" width="155" height="65" rx="5" fill="white" stroke="#27ae60"/>
+    <text x="432" y="48" text-anchor="middle" font-size="10" font-weight="bold" fill="#1e8c4c">fold</text>
+    <text x="432" y="63" text-anchor="middle" font-size="8" fill="#555">split tree → chunks</text>
+    <text x="432" y="76" text-anchor="middle" font-size="8" fill="#555">fork-join each chunk</text>
+    <text x="432" y="88" text-anchor="middle" font-size="8" fill="#555">via node-reduce per chunk</text>
+
+    <rect x="525" y="30" width="140" height="65" rx="5" fill="white" stroke="#e67e22"/>
+    <text x="595" y="48" text-anchor="middle" font-size="10" font-weight="bold" fill="#d35400">reduce-kv</text>
+    <text x="595" y="63" text-anchor="middle" font-size="8" fill="#555">direct recursive walk</text>
+    <text x="595" y="76" text-anchor="middle" font-size="8" fill="#555">(f acc k v) — no packing</text>
+    <text x="595" y="88" text-anchor="middle" font-size="8" fill="#555">separate for 3-arity perf</text>
+  </g>
+</svg>

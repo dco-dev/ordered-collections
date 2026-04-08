@@ -1,6 +1,7 @@
 /target
 /classes
 /checkouts
+/plans
 pom.xml
 pom.xml.asc
 *.jar
@@ -8,3 +9,12 @@ pom.xml.asc
 /.lein-*
 /.nrepl-port
 *~
+# Benchmark results (local records)
+/bench-results/
+/doc/api/
+
+# Claude Code
+/.claude/
+.DS_Store
+/.cpcache
+/AGENTS.md

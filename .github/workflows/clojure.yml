@@ -2,18 +2,60 @@ name: Clojure CI
 
 on:
   push:
-    branches: [ master ]
+    branches: ["*"]
   pull_request:
-    branches: [ master ]
+    branches: ["master"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-
+  test:
+    name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Install dependencies
-      run: lein deps
-    - name: Run tests
-      run: lein test
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25.0.2"
+
+      - name: Install Clojure tooling
+        uses: DeLaGuardo/setup-clojure@13.5.2
+        with:
+          cli: latest
+          lein: latest
+          bb: latest
+
+      - name: Cache Clojure dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+            ~/.lein
+          key: ${{ runner.os }}-clojure-${{ hashFiles('project.clj', 'deps.edn') }}
+          restore-keys: |
+            ${{ runner.os }}-clojure-
+
+      - name: Show tool versions
+        run: |
+          java --version
+          clojure -Sdescribe
+          lein version
+          bb --version
+
+      - name: Run Leiningen tests
+        run: lein test
+
+      - name: Run tools.deps tests
+        run: clojure -M:test

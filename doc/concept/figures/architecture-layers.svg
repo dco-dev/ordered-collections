@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 520" font-family="Georgia, serif">
+  <defs>
+    <linearGradient id="kernel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2c3e50"/>
+      <stop offset="100%" stop-color="#1a252f"/>
+    </linearGradient>
+    <linearGradient id="hook" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#e74c3c"/>
+      <stop offset="100%" stop-color="#c0392b"/>
+    </linearGradient>
+    <linearGradient id="root" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2980b9"/>
+      <stop offset="100%" stop-color="#1f6da0"/>
+    </linearGradient>
+    <linearGradient id="proto" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#27ae60"/>
+      <stop offset="100%" stop-color="#1e8c4c"/>
+    </linearGradient>
+    <linearGradient id="coll" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8e44ad"/>
+      <stop offset="100%" stop-color="#6c3483"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Title -->
+  <text x="360" y="30" text-anchor="middle" font-size="16" font-weight="bold" fill="#222">Abstraction Architecture</text>
+
+  <!-- Layer 5: Collection Types (top) -->
+  <rect x="40" y="50" width="640" height="60" rx="8" fill="url(#coll)" opacity="0.9"/>
+  <text x="360" y="75" text-anchor="middle" font-size="13" fill="white" font-weight="bold">Layer 5: Collection Types</text>
+  <text x="360" y="97" text-anchor="middle" font-size="10" fill="#ddd">ordered-set · ordered-map · interval-set · interval-map · segment-tree · range-map · rope · fuzzy-set · priority-queue · multiset</text>
+
+  <!-- Layer 4: Domain Protocols -->
+  <rect x="40" y="125" width="640" height="55" rx="8" fill="url(#proto)" opacity="0.9"/>
+  <text x="360" y="148" text-anchor="middle" font-size="13" fill="white" font-weight="bold">Layer 4: Domain Protocols</text>
+  <text x="360" y="167" text-anchor="middle" font-size="10" fill="#ddd">PExtensibleSet · PRanked · PNearest · PSplittable · PRangeAggregate · PIntervalCollection · PFuzzy · PMultiset · PPriorityQueue</text>
+
+  <!-- Layer 3: Root Interfaces -->
+  <rect x="40" y="195" width="640" height="55" rx="8" fill="url(#root)" opacity="0.9"/>
+  <text x="360" y="218" text-anchor="middle" font-size="13" fill="white" font-weight="bold">Layer 3: Root Interfaces</text>
+  <text x="360" y="237" text-anchor="middle" font-size="10" fill="#ddd">INodeCollection (getRoot, getAllocator) · IOrderedCollection (getCmp, isCompatible) · IBalancedCollection (getStitch)</text>
+
+  <!-- Layer 2: Dynamic Hooks + Representational Polymorphism -->
+  <rect x="40" y="265" width="310" height="70" rx="8" fill="url(#hook)" opacity="0.9"/>
+  <text x="195" y="290" text-anchor="middle" font-size="13" fill="white" font-weight="bold">Layer 2a: Dynamic Hooks</text>
+  <text x="195" y="308" text-anchor="middle" font-size="10" fill="#ddd">*compare* — java.util.Comparator</text>
+  <text x="195" y="322" text-anchor="middle" font-size="10" fill="#ddd">*t-join* — [k v l r] → node</text>
+
+  <rect x="370" y="265" width="310" height="70" rx="8" fill="url(#hook)" opacity="0.85"/>
+  <text x="525" y="290" text-anchor="middle" font-size="13" fill="white" font-weight="bold">Layer 2b: Capture Pattern</text>
+  <text x="525" y="308" text-anchor="middle" font-size="10" fill="#ddd">capture once at boundary</text>
+  <text x="525" y="322" text-anchor="middle" font-size="10" fill="#ddd">thread (cmp, create) explicitly</text>
+
+  <!-- Arrow between hook boxes -->
+  <line x1="350" y1="300" x2="370" y2="300" stroke="#fff" stroke-width="2" marker-end="url(#arrowWhite)"/>
+
+  <!-- Layer 1: Node Types -->
+  <rect x="40" y="350" width="640" height="55" rx="8" fill="#555" opacity="0.9"/>
+  <text x="360" y="373" text-anchor="middle" font-size="13" fill="white" font-weight="bold">Layer 1: Node Interfaces &amp; Types</text>
+  <text x="360" y="392" text-anchor="middle" font-size="10" fill="#ddd">INode (k,v,l,r) · IBalancedNode (x) · IAugmentedNode (z) → SimpleNode · LongKeyNode · DoubleKeyNode · IntervalNode · AggregateNode</text>
+
+  <!-- Layer 0: Kernel -->
+  <rect x="40" y="420" width="640" height="85" rx="8" fill="url(#kernel)" opacity="0.95"/>
+  <text x="360" y="443" text-anchor="middle" font-size="14" fill="white" font-weight="bold">Tree Algebra Kernel — tree.clj (~2000 lines)</text>
+  <text x="360" y="463" text-anchor="middle" font-size="10" fill="#aaa">stitch · split · join · concat · union · intersection · difference · merge · nth · rank · fold · enumerator · reduce</text>
+  <text x="360" y="479" text-anchor="middle" font-size="10" fill="#e74c3c">parallel fork-join: union · intersection · difference · merge — O(log²n) span</text>
+  <text x="360" y="495" text-anchor="middle" font-size="10" fill="#aaa">All parameterized by (cmp, create) — no knowledge of node types or collection semantics</text>
+
+  <!-- Side labels -->
+  <text x="18" y="465" text-anchor="middle" font-size="9" fill="#888" transform="rotate(-90, 18, 465)">SHARED</text>
+  <text x="18" y="82" text-anchor="middle" font-size="9" fill="#888" transform="rotate(-90, 18, 82)">PER-TYPE</text>
+
+  <!-- Arrows showing flow -->
+  <defs>
+    <marker id="arrowGray" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="#999"/>
+    </marker>
+  </defs>
+  <line x1="360" y1="110" x2="360" y2="125" stroke="#999" stroke-width="1.5" marker-end="url(#arrowGray)"/>
+  <line x1="360" y1="180" x2="360" y2="195" stroke="#999" stroke-width="1.5" marker-end="url(#arrowGray)"/>
+  <line x1="360" y1="250" x2="360" y2="265" stroke="#999" stroke-width="1.5" marker-end="url(#arrowGray)"/>
+  <line x1="360" y1="335" x2="360" y2="350" stroke="#999" stroke-width="1.5" marker-end="url(#arrowGray)"/>
+  <line x1="360" y1="405" x2="360" y2="420" stroke="#999" stroke-width="1.5" marker-end="url(#arrowGray)"/>
+
+  <!-- Legend: "configure" vs "use" -->
+  <text x="700" y="310" text-anchor="end" font-size="9" fill="#e74c3c" font-style="italic">extension points</text>
+  <text x="700" y="465" text-anchor="end" font-size="9" fill="#2c3e50" font-style="italic">shared infrastructure</text>
+</svg>

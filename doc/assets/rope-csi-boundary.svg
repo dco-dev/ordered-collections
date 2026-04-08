@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="430" viewBox="0 0 960 430" role="img" aria-labelledby="title desc">
+  <title id="title">Chunk size invariant and boundary repair</title>
+  <desc id="desc">A rope concat boundary where an undersized internal chunk is repaired by merging and rechunking the boundary area.</desc>
+  <defs>
+    <style>
+      .bg { fill: #fbfcfe; }
+      .title { font: 700 28px Georgia, serif; fill: #102a43; }
+      .label { font: 600 18px Georgia, serif; fill: #243b53; }
+      .text { font: 15px Georgia, serif; fill: #486581; }
+      .small { font: 13px Georgia, serif; fill: #627d98; }
+      .ok { fill: #e3f9e5; stroke: #2f855a; stroke-width: 2; }
+      .runt { fill: #ffe3c2; stroke: #b36a00; stroke-width: 2; }
+      .bad { fill: #fde8e8; stroke: #c53030; stroke-width: 2; }
+      .fixed { fill: #d9f0ff; stroke: #1f6feb; stroke-width: 2; }
+      .arrow { stroke: #52606d; stroke-width: 3; marker-end: url(#arrow); }
+      .brace { fill: none; stroke: #7b8794; stroke-width: 2; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#52606d"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="960" height="430"/>
+  <text class="title" x="40" y="46">Chunk Size Invariant: only the rightmost chunk may be undersized</text>
+
+  <text class="label" x="40" y="92">Before concat</text>
+  <g transform="translate(40 112)">
+    <rect class="ok" rx="10" ry="10" width="150" height="54"/>
+    <rect class="runt" rx="10" ry="10" x="164" width="90" height="54"/>
+    <rect class="runt" rx="10" ry="10" x="388" width="80" height="54"/>
+    <rect class="ok" rx="10" ry="10" x="482" width="150" height="54"/>
+    <text class="text" x="75" y="33" text-anchor="middle">left chunk</text>
+    <text class="text" x="209" y="33" text-anchor="middle">left runt</text>
+    <text class="text" x="428" y="33" text-anchor="middle">right edge</text>
+    <text class="text" x="557" y="33" text-anchor="middle">right chunk</text>
+    <text class="small" x="209" y="74" text-anchor="middle">valid only because it is rightmost</text>
+    <text class="small" x="428" y="74" text-anchor="middle">becomes internal after concat</text>
+  </g>
+
+  <line class="arrow" x1="300" y1="180" x2="300" y2="226"/>
+  <text class="label" x="40" y="256">Naive concat would break CSI</text>
+
+  <g transform="translate(40 274)">
+    <rect class="ok" rx="10" ry="10" width="150" height="54"/>
+    <rect class="bad" rx="10" ry="10" x="164" width="90" height="54"/>
+    <rect class="bad" rx="10" ry="10" x="268" width="80" height="54"/>
+    <rect class="ok" rx="10" ry="10" x="362" width="150" height="54"/>
+    <text class="text" x="75" y="33" text-anchor="middle">left chunk</text>
+    <text class="text" x="209" y="33" text-anchor="middle">too small</text>
+    <text class="text" x="308" y="33" text-anchor="middle">too small</text>
+    <text class="text" x="437" y="33" text-anchor="middle">right chunk</text>
+  </g>
+
+  <path class="brace" d="M 214 336 C 214 356, 214 356, 234 356 S 254 376, 274 376 S 294 356, 314 356 S 334 356, 334 336"/>
+  <text class="small" x="274" y="398" text-anchor="middle">merge boundary region, then rechunk</text>
+
+  <line class="arrow" x1="624" y1="140" x2="792" y2="140"/>
+  <line class="arrow" x1="624" y1="300" x2="792" y2="300"/>
+
+  <text class="label" x="700" y="92">After boundary repair</text>
+  <g transform="translate(680 112)">
+    <rect class="fixed" rx="10" ry="10" width="120" height="54"/>
+    <rect class="fixed" rx="10" ry="10" x="134" width="120" height="54"/>
+    <text class="text" x="60" y="33" text-anchor="middle">rechunked</text>
+    <text class="text" x="194" y="33" text-anchor="middle">rechunked</text>
+    <text class="small" x="127" y="78" text-anchor="middle">both chunks back in the valid range</text>
+  </g>
+
+  <text class="small" x="680" y="234">This is why rope concat is not just raw tree append.</text>
+  <text class="small" x="680" y="256">The boundary must be repaired when a former runt moves inward.</text>
+</svg>

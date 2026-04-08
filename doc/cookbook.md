@@ -1,0 +1,726 @@
+# Use Case Cookbook
+
+Practical examples showing where ordered-collections shines.
+
+## Setup
+
+```clojure
+(require '[ordered-collections.core :as oc])
+(require '[clojure.core.reducers :as r])
+```
+
+---
+
+## 1. Leaderboard with Rank Queries
+
+**Problem:** Maintain a leaderboard where you need to:
+- Add player scores
+- Get a player's rank
+- Get the top N players
+- Get players around a specific rank
+
+```clojure
+(defn make-leaderboard []
+  ;; Map from [score player-id] -> player-data
+  ;; Using [score id] tuple ensures uniqueness and sorts by score
+  (oc/ordered-map-with (fn [[s1 id1] [s2 id2]]
+                         (let [c (compare s2 s1)]  ; descending by score
+                           (if (zero? c)
+                             (compare id1 id2)     ; then ascending by id
+                             c)))))
+
+(defn add-score [board player-id score data]
+  (assoc board [score player-id] data))
+
+(defn top-n [board n]
+  (->> board (take n) (map (fn [[[score id] data]]
+                             {:id id :score score :data data}))))
+
+(defn rank-of-player [board player-id score]
+  (oc/rank board [score player-id]))
+
+(defn players-around-rank [board rank window]
+  (let [start (max 0 (- rank window))
+        end   (min (count board) (+ rank window 1))]
+    (map-indexed (fn [i [[score id] data]]
+                   {:rank (+ start i) :id id :score score})
+                 (oc/slice board start end))))
+
+;; Usage
+(def board (-> (make-leaderboard)
+               (add-score "alice" 1500 {:name "Alice"})
+               (add-score "bob" 1450 {:name "Bob"})
+               (add-score "carol" 1600 {:name "Carol"})
+               (add-score "dave" 1550 {:name "Dave"})))
+
+(top-n board 3)
+;; => ({:id "carol", :score 1600, :data {:name "Carol"}}
+;;     {:id "dave", :score 1550, :data {:name "Dave"}}
+;;     {:id "alice", :score 1500, :data {:name "Alice"}})
+
+(rank-of-player board "alice" 1500)  ;; => 2 (0-indexed)
+
+(players-around-rank board 2 1)
+;; => ({:rank 1, :id "dave", :score 1550}
+;;     {:rank 2, :id "alice", :score 1500}
+;;     {:rank 3, :id "bob", :score 1450})
+```
+
+**Why ordered-collections?** O(log n) rank queries. With sorted-map, finding rank requires O(n) iteration.
+
+---
+
+## 2. Time-Series Windowing
+
+**Problem:** Store timestamped events and efficiently query time ranges.
+
+```clojure
+(defn make-event-log []
+  (oc/ordered-map))  ; keys are timestamps (longs or instants)
+
+(defn add-event [log timestamp event]
+  (assoc log timestamp event))
+
+(defn events-between [log start-time end-time]
+  ;; O(log n) to find range, O(k) to iterate k results
+  (subseq log >= start-time < end-time))
+
+(defn events-last-n-minutes [log now minutes]
+  (let [cutoff (- now (* minutes 60 1000))]
+    (subseq log >= cutoff)))
+
+(defn latest-events [log n]
+  ;; Last n events (most recent first)
+  (take n (rseq log)))
+
+(defn count-events-in-window [log start-time end-time]
+  ;; Efficient: uses reduce, not seq materialization
+  (reduce (fn [acc _] (inc acc)) 0
+          (subseq log >= start-time < end-time)))
+
+;; Usage
+(def log (-> (make-event-log)
+             (add-event 1000 {:type :login :user "alice"})
+             (add-event 2000 {:type :click :page "/home"})
+             (add-event 3000 {:type :purchase :item "widget"})
+             (add-event 4000 {:type :logout :user "alice"})))
+
+(events-between log 1500 3500)
+;; => ([2000 {:type :click, :page "/home"}]
+;;     [3000 {:type :purchase, :item "widget"}])
+
+(latest-events log 2)
+;; => ([4000 {:type :logout, :user "alice"}]
+;;     [3000 {:type :purchase, :item "widget"}])
+```
+
+**Why ordered-collections?** Native `subseq`/`rsubseq` support with O(log n) range location.
+
+---
+
+## 3. Meeting Room Scheduler
+
+**Problem:** Track meeting room bookings and find conflicts or free slots.
+
+```clojure
+(defn make-room-schedule []
+  ;; interval-map: [start end] -> booking-info
+  (oc/interval-map))
+
+(defn book-room [schedule start end booking]
+  (assoc schedule [start end] booking))
+
+(defn conflicts-at [schedule time]
+  ;; What meetings overlap with this time?
+  (schedule time))
+
+(defn conflicts-during [schedule start end]
+  ;; What meetings overlap with this range?
+  (schedule [start end]))
+
+(defn is-available? [schedule start end]
+  (empty? (conflicts-during schedule start end)))
+
+;; Usage
+(def room-a (-> (make-room-schedule)
+                (book-room 900 1000 {:title "Standup" :organizer "alice"})
+                (book-room 1030 1130 {:title "Design Review" :organizer "bob"})
+                (book-room 1400 1500 {:title "1:1" :organizer "carol"})))
+
+(conflicts-at room-a 930)
+;; => [{:title "Standup", :organizer "alice"}]
+
+(conflicts-during room-a 1030 1100)
+;; => [{:title "Design Review", :organizer "bob"}]
+
+(is-available? room-a 1200 1400)  ;; => true
+(is-available? room-a 1430 1530)  ;; => false
+```
+
+**Why ordered-collections?** Interval queries in O(log n + k) where k is the number of overlapping intervals. Linear scan would be O(n).
+
+---
+
+## 4. Persistent Work Queue
+
+**Problem:** Schedule work by priority, while keeping stable ordering among equal priorities.
+
+```clojure
+(defn make-work-queue []
+  (oc/priority-queue))
+
+(defn enqueue [q priority task]
+  (oc/push q priority task))
+
+(defn next-task [q]
+  (oc/peek-min q))
+
+(defn run-next [q]
+  (let [[priority task] (oc/peek-min q)]
+    {:task task
+     :remaining (oc/pop-min q)}))
+
+;; Usage
+(def q (-> (make-work-queue)
+           (enqueue 5 {:job :backup})
+           (enqueue 1 {:job :page-oncall})
+           (enqueue 2 {:job :send-email})
+           (enqueue 1 {:job :invalidate-cache})))
+
+(next-task q)
+;; => [1 {:job :page-oncall}]
+
+(-> q run-next :task)
+;; => {:job :page-oncall}
+
+(-> q run-next :remaining next-task)
+;; => [1 {:job :invalidate-cache}]
+```
+
+**Why ordered-collections?** A persistent priority queue gives O(log n) enqueue/dequeue while preserving insertion order among equal priorities.
+
+---
+
+## 5. Parallel Aggregation
+
+**Problem:** Aggregate large datasets efficiently using multiple cores.
+
+```clojure
+;; Generate a large dataset
+(def transactions
+  (oc/ordered-map
+    (for [i (range 1000000)]
+      [i {:amount (rand-int 1000)
+          :category (rand-nth [:food :transport :entertainment :utilities])}])))
+
+;; Sequential sum
+(time
+  (reduce (fn [acc [_ {:keys [amount]}]] (+ acc amount)) 0 transactions))
+;; "Elapsed time: 130 msecs"
+
+;; Parallel sum with r/fold
+(time
+  (r/fold
+    +                                              ; combiner
+    (fn [acc [_ {:keys [amount]}]] (+ acc amount)) ; reducer
+    transactions))
+;; "Elapsed time: 75 msecs" (1.7x speedup)
+
+;; Parallel group-by category
+(time
+  (r/fold
+    (partial merge-with +)  ; combine partial results
+    (fn [acc [_ {:keys [amount category]}]]
+      (update acc category (fnil + 0) amount))
+    transactions))
+;; => {:food 124523456, :transport 125012345, ...}
+```
+
+**Why ordered-collections?** True parallel fold via tree splitting. `sorted-map` falls back to sequential.
+
+---
+
+## 6. Efficient Set Algebra
+
+**Problem:** Compute intersections/unions/differences on large sorted sets.
+
+```clojure
+;; Two sets of user IDs
+(def premium-users (oc/ordered-set (range 0 100000 2)))     ; 50K users
+(def active-users (oc/ordered-set (range 0 100000 3)))     ; 33K users
+
+;; Find premium AND active users
+(time (def premium-active (oc/intersection premium-users active-users)))
+;; "Elapsed time: 45 msecs" for 16,667 result elements
+
+;; With clojure.set on sorted-set:
+(def premium-ss (into (sorted-set) (range 0 100000 2)))
+(def active-ss (into (sorted-set) (range 0 100000 3)))
+(time (clojure.set/intersection premium-ss active-ss))
+;; "Elapsed time: 180 msecs" - 4x slower
+
+;; Set difference: premium but not active
+(time (oc/difference premium-users active-users))
+;; "Elapsed time: 50 msecs"
+
+;; Union with deduplication
+(time (oc/union premium-users active-users))
+;; "Elapsed time: 60 msecs" for 66,667 result elements
+```
+
+**Why ordered-collections?** O(m log(n/m)) set operations via split/join vs O(n) linear merge.
+
+---
+
+## 7. Sliding Window Statistics
+
+**Problem:** Maintain statistics over a sliding time window.
+
+```clojure
+(defn make-window [max-age-ms]
+  {:data (oc/ordered-map)  ; timestamp -> value
+   :max-age max-age-ms})
+
+(defn add-sample [{:keys [data max-age] :as window} timestamp value]
+  (let [cutoff (- timestamp max-age)
+        ;; Keep samples at or after the cutoff.
+        fresh-data (oc/subrange data :>= cutoff)]
+    (assoc window :data (assoc fresh-data timestamp value))))
+
+(defn window-stats [{:keys [data]}]
+  (when (seq data)
+    (let [values (map val data)
+          n (count values)
+          sum (reduce + values)]
+      {:count n
+       :sum sum
+       :mean (/ sum n)
+       :min (apply min values)
+       :max (apply max values)})))
+
+;; Usage: 5-second window
+(def w (-> (make-window 5000)
+           (add-sample 1000 10)
+           (add-sample 2000 20)
+           (add-sample 3000 15)
+           (add-sample 6000 25)   ; this triggers cleanup of t=1000
+           ))
+
+(window-stats w)
+;; => {:count 3, :sum 60, :mean 20, :min 15, :max 25}
+```
+
+**Why ordered-collections?** Efficient range deletion via split, O(log n) bounds queries.
+
+---
+
+## 8. Range Aggregate Queries (Segment Tree)
+
+**Problem:** Answer "what is the sum/max/min of values from key a to key b?" with efficient updates.
+
+```clojure
+;; Daily sales data
+(def sales
+  (oc/segment-tree + 0  ; operation and identity
+    {0 1200, 1 1500, 2 1100, 3 1800, 4 2200, 5 1900, 6 1600}))
+
+;; Query: total sales for days 2-5
+(oc/query sales 2 5)
+;; => 7000 (1100 + 1800 + 2200 + 1900)
+
+;; Query: total for entire week
+(oc/query sales 0 6)
+;; => 11300
+
+;; Update day 3's sales (O(log n) update, not rebuild)
+(def sales-updated (assoc sales 3 2500))
+(oc/query sales-updated 2 5)
+;; => 7700 (1100 + 2500 + 2200 + 1900)
+
+;; Track peak daily sales
+(def peaks (oc/segment-tree max 0 {0 1200, 1 1500, 2 1100, 3 1800, 4 2200, 5 1900, 6 1600}))
+(oc/query peaks 0 6)
+;; => 2200 (max across all days)
+
+(oc/query peaks 0 2)
+;; => 1500 (max for days 0-2)
+
+;; Shorthand for sum trees
+(def sum-tree (oc/sum-tree {0 100, 1 200, 2 300, 3 400}))
+(oc/query sum-tree 1 3)
+;; => 900 (200 + 300 + 400)
+```
+
+**Why ordered-collections?** O(log n) range queries and O(log n) updates. Linear scan would be O(n) per query.
+
+---
+
+## 9. Database Index Simulation
+
+**Problem:** Build a secondary index supporting range queries.
+
+```clojure
+(defn make-index []
+  ;; Maps indexed-value -> set of primary keys
+  (oc/ordered-map))
+
+(defn index-add [idx value pk]
+  (update idx value (fnil conj #{}) pk))
+
+(defn index-remove [idx value pk]
+  (let [pks (disj (get idx value #{}) pk)]
+    (if (empty? pks)
+      (dissoc idx value)
+      (assoc idx value pks))))
+
+(defn index-lookup [idx value]
+  (get idx value #{}))
+
+(defn index-range [idx min-val max-val]
+  ;; All PKs where min-val <= indexed-value < max-val
+  (->> (subseq idx >= min-val < max-val)
+       (mapcat val)
+       set))
+
+;; Usage: index users by age
+(def age-index (-> (make-index)
+                   (index-add 25 "user-1")
+                   (index-add 30 "user-2")
+                   (index-add 25 "user-3")
+                   (index-add 35 "user-4")
+                   (index-add 28 "user-5")))
+
+(index-lookup age-index 25)
+;; => #{"user-1" "user-3"}
+
+(index-range age-index 25 31)
+;; => #{"user-1" "user-3" "user-2" "user-5"}
+```
+
+**Why ordered-collections?** Range queries on index values with O(log n) bounds location.
+
+---
+
+## 10. Ordered Multiset
+
+**Problem:** Track duplicate values while keeping them sorted.
+
+```clojure
+(def readings
+  (oc/ordered-multiset [72 68 72 70 68 72 71]))
+
+(seq readings)
+;; => (68 68 70 71 72 72 72)
+
+(oc/multiplicity readings 72)
+;; => 3
+
+(oc/distinct-elements readings)
+;; => (68 70 71 72)
+
+(oc/element-frequencies readings)
+;; => {68 2, 70 1, 71 1, 72 3}
+
+(-> readings
+    (oc/disj-one 72)
+    (oc/multiplicity 72))
+;; => 2
+```
+
+**Why ordered-collections?** You get sorted duplicate-preserving semantics with efficient counting and removal of one occurrence.
+
+---
+
+## 11. Fuzzy Lookup / Nearest Neighbor
+
+**Problem:** Find the closest matching value when exact match doesn't exist.
+
+```clojure
+;; Temperature calibration table
+(def calibration (oc/fuzzy-map {0.0   1.000
+                                 25.0  1.012
+                                 50.0  1.025
+                                 75.0  1.041
+                                 100.0 1.058}))
+
+;; Get calibration factor for any temperature
+(calibration 23.5)   ; => 1.012 (closest to 25.0)
+(calibration 60.0)   ; => 1.025 (closest to 50.0)
+(calibration 87.5)   ; => 1.041 (closest to 75.0)
+
+;; With tiebreaker preference
+(def fm-prefer-larger (oc/fuzzy-map {0 :a 10 :b 20 :c} :tiebreak :>))
+(fm-prefer-larger 5)  ; => :b (equidistant from 0 and 10, prefer larger)
+
+;; Fuzzy set for snapping to grid values
+(def grid-points (oc/fuzzy-set (range 0 101 10))) ; 0, 10, 20, ..., 100
+(grid-points 23)  ; => 20
+(grid-points 27)  ; => 30
+(grid-points 25)  ; => 20 (tiebreak defaults to :<, prefer smaller)
+
+;; Get nearest with distance info
+(oc/fuzzy-nearest calibration 60.0)
+;; => [50.0 1.025 10.0]  ; [key value distance]
+
+(oc/fuzzy-nearest grid-points 23)
+;; => [20 3.0]  ; [value distance]
+```
+
+**Why ordered-collections?** O(log n) nearest-neighbor lookup using tree split. Linear scan would be O(n).
+
+---
+
+## 12. Splitting Collections
+
+**Problem:** Partition a collection at a key or index for divide-and-conquer algorithms.
+
+```clojure
+(def prices (oc/ordered-set [100 200 300 400 500 600 700 800 900 1000]))
+
+;; split-key: partition at a key value
+;; Returns [elements-below, exact-match-or-nil, elements-above]
+(let [[below match above] (oc/split-key 500 prices)]
+  {:below (vec below)    ;; => [100 200 300 400]
+   :match match          ;; => 500
+   :above (vec above)})  ;; => [600 700 800 900 1000]
+
+;; Key doesn't have to exist
+(let [[below match above] (oc/split-key 550 prices)]
+  {:below (vec below)    ;; => [100 200 300 400 500]
+   :match match          ;; => nil
+   :above (vec above)})  ;; => [600 700 800 900 1000]
+
+;; split-at: partition at an index
+;; Returns [left, right]
+(let [[left right] (oc/split-at 3 prices)]
+  {:left (vec left)      ;; => [100 200 300]
+   :right (vec right)})  ;; => [400 500 600 700 800 900 1000]
+
+;; Useful for pagination
+(defn paginate [coll page-size page-num]
+  (let [offset (* page-size page-num)
+        [_ remaining] (oc/split-at offset coll)
+        [page _] (oc/split-at page-size remaining)]
+    (vec page)))
+
+(paginate prices 3 1)  ;; => [400 500 600] (page 1, 0-indexed)
+```
+
+**Why ordered-collections?** O(log n) split operations. Essential for parallel algorithms and range partitioning.
+
+---
+
+## 13. Subrange Extraction
+
+**Problem:** Extract a contiguous range of elements by key bounds.
+
+```clojure
+(def inventory
+  (oc/ordered-map
+    [[10 "widget-a"] [20 "widget-b"] [30 "widget-c"]
+     [40 "widget-d"] [50 "widget-e"] [60 "widget-f"]]))
+
+;; Two-sided bounds
+(oc/subrange inventory :>= 25 :<= 50)
+;; => {30 "widget-c", 40 "widget-d", 50 "widget-e"}
+
+;; One-sided bounds
+(oc/subrange inventory :> 40)
+;; => {50 "widget-e", 60 "widget-f"}
+
+(oc/subrange inventory :< 30)
+;; => {10 "widget-a", 20 "widget-b"}
+
+;; Works with sets too
+(def ids (oc/ordered-set (range 0 100 5)))  ; 0, 5, 10, ..., 95
+(vec (oc/subrange ids :>= 20 :< 40))
+;; => [20 25 30 35]
+
+;; Count elements in range without materializing
+(count (oc/subrange ids :>= 50 :<= 80))  ;; => 7
+```
+
+**Why ordered-collections?** Returns a new ordered collection that shares structure with the original tree. O(log n) to create, efficient to iterate.
+
+---
+
+## 14. Floor/Ceiling Queries
+
+**Problem:** Find the nearest element at or above/below a target.
+
+```clojure
+(def versions (oc/ordered-set [100 200 300 450 500 800]))
+
+;; Find version at or below target
+(oc/nearest versions :<= 350)  ;; => 300
+(oc/nearest versions :<= 300)  ;; => 300 (exact match)
+(oc/nearest versions :<= 50)   ;; => nil (nothing at or below)
+
+;; Find version strictly below target
+(oc/nearest versions :< 300)   ;; => 200
+
+;; Find version at or above target
+(oc/nearest versions :>= 350)  ;; => 450
+(oc/nearest versions :>= 800)  ;; => 800
+
+;; Find version strictly above target
+(oc/nearest versions :> 500)   ;; => 800
+
+;; Practical: find applicable config version
+(def config-versions
+  (oc/ordered-map
+    [[100 {:feature-a true}]
+     [200 {:feature-a true :feature-b true}]
+     [350 {:feature-a true :feature-b true :feature-c true}]]))
+
+(defn config-for-version [v]
+  (when-let [[_ config] (oc/nearest config-versions :<= v)]
+    config))
+
+(config-for-version 275)
+;; => {:feature-a true, :feature-b true}
+```
+
+**Why ordered-collections?** O(log n) floor/ceiling queries using tree structure.
+
+---
+
+## Performance Tips
+
+1. **Use `reduce` over `seq`** - Direct reduce uses optimized IReduceInit path
+   ```clojure
+   ;; Fast
+   (reduce + 0 my-set)
+
+   ;; Slower (forces lazy seq)
+   (reduce + 0 (seq my-set))
+   ```
+
+2. **Use `r/fold` for large collections** - Parallelizes automatically
+   ```clojure
+   (r/fold + my-large-set)  ; uses all cores
+   ```
+
+3. **Use `subseq` for range queries** - More efficient than filter
+   ```clojure
+   ;; Fast: O(log n) to find bounds
+   (subseq my-map >= 100 < 200)
+
+   ;; Slow: O(n) full scan
+   (filter (fn [[k _]] (<= 100 k 199)) my-map)
+   ```
+
+4. **Use constructor for bulk loading**
+   ```clojure
+   ;; For bulk loading, use the constructor (uses parallel fold internally)
+   (oc/ordered-set big-data)     ; fast: parallel construction
+   (oc/ordered-map key-val-pairs)
+   ```
+
+5. **Use `subrange` instead of filtering**
+   ```clojure
+   ;; Fast: O(log n) bounds, returns a view
+   (oc/subrange my-set :>= 100 :< 200)
+
+   ;; Slow: creates intermediate seq, tests every element
+   (filter #(<= 100 % 199) my-set)
+   ```
+
+6. **Use `nearest` for floor/ceiling**
+   ```clojure
+   ;; Fast: O(log n)
+   (oc/nearest my-set :<= target)
+
+   ;; Slow: O(n) in worst case
+   (last (take-while #(<= % target) my-set))
+   ```
+
+7. **Use specialized constructors for homogeneous keys**
+   ```clojure
+   ;; 20% faster lookup for Long keys
+   (oc/long-ordered-set (range 1000000))
+   (oc/long-ordered-map (map #(vector % %) (range 1000000)))
+
+   ;; 5% faster for String keys
+   (oc/string-ordered-set ["alice" "bob" "carol"])
+   ```
+
+---
+
+## 11. Document Editor Buffer
+
+**Problem:** Implement an editor buffer that supports:
+- Efficient insert and delete at any position
+- Undo/redo via persistent snapshots
+- Extracting a visible window without copying the whole document
+- Fast bulk assembly from parts (e.g., loading a file in chunks)
+
+Vectors are O(n) for mid-document edits — every insertion shifts all subsequent
+elements. A rope does these in O(log n), and persistent snapshots are
+nearly free because edits share structure with previous versions.
+
+```clojure
+;; Build a document from paragraphs
+(def doc
+  (apply oc/rope-concat
+    (map oc/rope
+      [["T" "h" "e" " " "q" "u" "i" "c" "k" " "]
+       ["b" "r" "o" "w" "n" " " "f" "o" "x" " "]
+       ["j" "u" "m" "p" "s" "."]])))
+
+(count doc)        ;; => 26
+(nth doc 10)       ;; => "b"
+(apply str doc)    ;; => "The quick brown fox jumps."
+
+;; Insert at cursor position — O(log n)
+(def after-insert
+  (oc/rope-insert doc 10 ["dark " ]))
+
+;; after-insert is not a copy — it shares almost all structure with doc
+(apply str after-insert)
+;; => "The quick dark brown fox jumps."
+
+;; Delete a range — O(log n)
+(def after-delete
+  (oc/rope-remove after-insert 10 15))
+
+(apply str after-delete)
+;; => "The quick brown fox jumps."
+
+;; Replace (find and replace) — O(log n)
+(def after-replace
+  (oc/rope-splice doc 4 9 (seq "slow")))
+
+(apply str after-replace)
+;; => "The slow brown fox jumps."
+
+;; Undo: just keep the old version — structural sharing makes this cheap
+(def history [doc after-insert after-delete after-replace])
+(apply str (nth history 0))  ;; => "The quick brown fox jumps."
+(apply str (nth history 1))  ;; => "The quick dark brown fox jumps."
+
+;; Extract visible window — O(log n), shares structure
+(def visible (oc/rope-sub doc 4 15))
+(apply str visible)  ;; => "quick brown"
+
+;; Split document at a section break
+(let [[before after] (oc/rope-split doc 10)]
+  [(apply str before) (apply str after)])
+;; => ["The quick " "brown fox jumps."]
+```
+
+**Why ordered-collections?** Every edit is O(log n) regardless of document
+size. A 100K-character document with 200 random edits takes ~3ms on a rope vs
+~5 seconds on a vector — a 1,968x advantage. The persistent structure means
+undo history is just a list of references, not copies.
+
+**Scaling:**
+
+| Operation | Rope | Vector |
+|---|---|---|
+| Insert at position | O(log n) | O(n) |
+| Delete range | O(log n) | O(n) |
+| Concatenate documents | O(log n) | O(n) |
+| Extract visible window | O(log n) | O(1) |
+| Undo (keep old version) | free | O(n) copy |
+| Reduce over full document | O(n) | O(n) |

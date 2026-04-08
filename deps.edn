@@ -1,0 +1,63 @@
+{:paths ["src" "resources"]
+
+ :deps {org.clojure/clojure {:mvn/version "1.12.4"}}
+
+ :aliases
+ {:dev
+  {:extra-paths ["test"]
+   :extra-deps {org.clojure/data.avl        {:mvn/version "0.2.0"}
+                org.clojure/test.check       {:mvn/version "1.1.1"}
+                org.clojure/math.combinatorics {:mvn/version "0.3.2"}
+                criterium/criterium          {:mvn/version "0.4.6"}
+                com.clojure-goes-fast/clj-memory-meter {:mvn/version "0.3.0"}
+                com.google.guava/guava       {:mvn/version "33.0.0-jre"}}
+   :jvm-opts ["-Djdk.attach.allowAttachSelf"
+              "-XX:+EnableDynamicAgentLoading"]}
+
+  :test
+  {:extra-paths ["test"]
+   :extra-deps {org.clojure/data.avl        {:mvn/version "0.2.0"}
+                org.clojure/test.check       {:mvn/version "1.1.1"}
+                org.clojure/math.combinatorics {:mvn/version "0.3.2"}
+                com.clojure-goes-fast/clj-memory-meter {:mvn/version "0.3.0"}
+                com.google.guava/guava       {:mvn/version "33.0.0-jre"}
+                io.github.cognitect-labs/test-runner
+                {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+   :jvm-opts ["-Djdk.attach.allowAttachSelf"
+              "-XX:+EnableDynamicAgentLoading"]
+   :main-opts ["-m" "cognitect.test-runner"]}
+
+  :bench
+  {:extra-paths ["test"]
+   :extra-deps {org.clojure/data.avl        {:mvn/version "0.2.0"}
+                org.clojure/test.check       {:mvn/version "1.1.1"}
+                criterium/criterium          {:mvn/version "0.4.6"}
+                com.clojure-goes-fast/clj-memory-meter {:mvn/version "0.3.0"}
+                com.google.guava/guava       {:mvn/version "33.0.0-jre"}}
+   :jvm-opts ["-Djdk.attach.allowAttachSelf"
+              "-XX:+EnableDynamicAgentLoading"
+              "-Xmx8g"]
+   :main-opts ["-m" "ordered-collections.bench-runner"]}
+
+  :bench-simple
+  {:extra-paths ["test"]
+   :extra-deps {org.clojure/data.avl        {:mvn/version "0.2.0"}
+                criterium/criterium          {:mvn/version "0.4.6"}
+                com.google.guava/guava       {:mvn/version "33.0.0-jre"}}
+   :jvm-opts ["-Djdk.attach.allowAttachSelf"
+              "-XX:+EnableDynamicAgentLoading"
+              "-Xmx8g"]
+   :main-opts ["-m" "ordered-collections.simple-bench"]}
+
+  :bench-range-map
+  {:extra-paths ["test"]
+   :extra-deps {com.google.guava/guava {:mvn/version "33.0.0-jre"}}
+   :jvm-opts ["-Xmx8g"]
+   :main-opts ["-m" "ordered-collections.range-map-bench"]}
+
+  :bench-parallel
+  {:extra-paths ["test"]
+   :extra-deps {org.clojure/data.avl   {:mvn/version "0.2.0"}
+                criterium/criterium    {:mvn/version "0.4.6"}}
+   :jvm-opts ["-Xmx8g"]
+   :main-opts ["-m" "ordered-collections.parallel-threshold-bench"]}}}

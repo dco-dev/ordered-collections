@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="420" viewBox="0 0 960 420" role="img" aria-labelledby="title desc">
+  <title id="title">Rope splice with structural sharing</title>
+  <desc id="desc">Splicing replaces the middle range while reusing left and right structure.</desc>
+  <defs>
+    <style>
+      .bg { fill: #fcfbf7; }
+      .title { font: 700 28px Georgia, serif; fill: #1f2933; }
+      .label { font: 600 18px Georgia, serif; fill: #243b53; }
+      .text { font: 15px Georgia, serif; fill: #486581; }
+      .shared { fill: #d9f0ff; stroke: #1f6feb; stroke-width: 2; }
+      .removed { fill: #fde8e8; stroke: #c53030; stroke-width: 2; }
+      .inserted { fill: #e3f9e5; stroke: #2f855a; stroke-width: 2; }
+      .outline { fill: none; stroke: #7b8794; stroke-width: 2; stroke-dasharray: 7 5; }
+      .arrow { stroke: #52606d; stroke-width: 3; marker-end: url(#arrow); }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#52606d"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="960" height="420"/>
+  <text class="title" x="40" y="48">Splice replaces one middle range and shares the rest</text>
+
+  <text class="label" x="40" y="95">Before</text>
+  <g transform="translate(40 112)">
+    <rect class="shared" rx="10" ry="10" width="190" height="56"/>
+    <rect class="removed" rx="10" ry="10" x="205" width="190" height="56"/>
+    <rect class="shared" rx="10" ry="10" x="410" width="190" height="56"/>
+    <text class="text" x="95" y="34" text-anchor="middle">shared left</text>
+    <text class="text" x="300" y="34" text-anchor="middle">remove [start,end)</text>
+    <text class="text" x="505" y="34" text-anchor="middle">shared right</text>
+  </g>
+
+  <line class="arrow" x1="320" y1="184" x2="320" y2="232"/>
+
+  <text class="label" x="640" y="95">Inserted content</text>
+  <g transform="translate(640 112)">
+    <rect class="inserted" rx="10" ry="10" width="220" height="56"/>
+    <text class="text" x="110" y="34" text-anchor="middle">new middle chunk(s)</text>
+  </g>
+
+  <text class="label" x="40" y="286">After</text>
+  <g transform="translate(40 302)">
+    <rect class="shared" rx="10" ry="10" width="190" height="56"/>
+    <rect class="inserted" rx="10" ry="10" x="205" width="220" height="56"/>
+    <rect class="shared" rx="10" ry="10" x="440" width="190" height="56"/>
+    <text class="text" x="95" y="34" text-anchor="middle">same left subtree</text>
+    <text class="text" x="315" y="34" text-anchor="middle">replacement</text>
+    <text class="text" x="535" y="34" text-anchor="middle">same right subtree</text>
+  </g>
+
+  <rect class="outline" x="34" y="106" width="572" height="68" rx="14" ry="14"/>
+  <rect class="outline" x="34" y="296" width="602" height="68" rx="14" ry="14"/>
+  <text class="text" x="718" y="320">Only the path near the edit is rebuilt.</text>
+  <text class="text" x="718" y="344">Large unchanged subtrees are shared.</text>
+</svg>
