@@ -1,6 +1,6 @@
-<table border="0" cellspacing="0" cellpadding="0"><tr><td width="180" valign="top" style="border: none;">
+<table border="0" cellspacing="0" cellpadding="0" style="border: none;"><tr style="border: none;"><td width="180" valign="top" style="border: none; border-color: white;">
 <img src="resources/pando.png" alt="One Tree, Many Forests" width="180"/>
-</td><td valign="top" style="border: none;">
+</td><td valign="top" style="border: none; border-color: white;">
 
 # ordered-collections
 
