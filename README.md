@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="resources/pando.png" alt="One Tree, Many Forests" width="220"/>
-</p>
+<img src="resources/pando.png" alt="One Tree, Many Forests" width="180" align="left" style="margin-right: 20px; margin-bottom: 10px;"/>
 
 # ordered-collections
 
@@ -21,6 +19,8 @@ you could solve efficiently:
 
 All built from a modular, extensible, weight-balanced tree platform with shared
 foundation for splitting, joining, and parallel operations.
+
+<br clear="left"/>
 
 ![tests](https://github.com/dco-dev/ordered-collections/actions/workflows/clojure.yml/badge.svg)
 [![Clojars Project](https://img.shields.io/clojars/v/com.dean/ordered-collections.svg)](https://clojars.org/com.dean/ordered-collections)
