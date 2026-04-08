@@ -93,12 +93,14 @@ The better question is:
 | Single splice | **6x** | **116x** | **584x** |
 | Concat many pieces | **3.4x** | **5.4x** | **9.5x** |
 | Chunk iteration | **58x** | **83x** | **117x** |
+| Fold (sum) | **5.6x** | **1.5x** | **1.3x** |
 | Reduce (sum) | 0.4x | **1.7x** | **1.3x** |
 | Random nth (1000) | 0.7x | 0.5x | 0.4x |
 
-The rope wins on 5 of 6 workloads at scale. The advantage grows with collection
-size because structural editing is O(log n) vs O(n). Random nth is slower
-(O(log n) vs O(1)) — an inherent tradeoff of tree-backed indexing.
+The rope wins on 6 of 7 workloads at scale. The advantage grows with collection
+size because structural editing is O(log n) vs O(n). Parallel fold beats vectors
+via tree-based fork-join decomposition. Random nth is slower (O(log n) vs O(1))
+— an inherent tradeoff of tree-backed indexing.
 
 
 ## Rope Design in This Library

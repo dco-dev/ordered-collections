@@ -182,7 +182,8 @@
    {:pattern #"^rope-concat$"          :oc :rope   :peer :vector  :label "Concat Pieces"     :section "Rope vs PersistentVector"}
    {:pattern #"^rope-chunk-iteration$" :oc :rope   :peer :vector  :label "Chunk Iteration"   :section "Rope vs PersistentVector"}
    {:pattern #"^rope-reduce$"          :oc :rope   :peer :vector  :label "Reduce (sum)"      :section "Rope vs PersistentVector"}
-   {:pattern #"^rope-nth$"             :oc :rope   :peer :vector  :label "Random nth (1000)" :section "Rope vs PersistentVector"}])
+   {:pattern #"^rope-fold-sum$"       :oc :rope   :peer :vector  :label "Fold (sum)"        :section "Rope vs PersistentVector"}
+   {:pattern #"^rope-nth$"            :oc :rope   :peer :vector  :label "Random nth (1000)" :section "Rope vs PersistentVector"}])
 
 (defn headline-wins
   "Extract headline speedups pivoted by size, with explicit OC variant and peer.

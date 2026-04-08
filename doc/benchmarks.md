@@ -386,6 +386,20 @@ better cache locality per reduction step than PersistentVector's 32-wide trie
 nodes. The rope uses a direct in-order tree walk (no enumerator frames) and
 delegates to the vector's native `.reduce` for chunk-internal iteration.
 
+### Parallel Fold
+
+| Workload | N=10K | N=100K | N=500K |
+|---|---:|---:|---:|
+| Fold sum — rope | 0.22ms | 0.31ms | 0.85ms |
+| Fold sum — vector | 1.23ms | 0.47ms | 1.13ms |
+| **Speedup** | **5.6x** | **1.5x** | **1.3x** |
+
+The rope's `r/fold` uses tree-based fork-join decomposition — split at the
+midpoint, fork left, compute right inline, join. This maps directly onto the
+`ForkJoinPool` work-stealing model without a separate chunking pass. At small N
+the speedup is largest because the rope's tree structure provides immediate
+parallelism while the vector's fold has higher setup overhead.
+
 ### Rope vs String (text workload)
 
 For text-editing workloads, the rope also beats `java.lang.String` at scale:
