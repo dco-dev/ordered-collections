@@ -1,4 +1,4 @@
-(ns oc-scripts-bench-parse
+(ns bench-parse
   "Benchmark result parsing and normalization."
   (:require [clojure.edn :as edn]
             [clojure.string :as str]))

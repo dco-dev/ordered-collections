@@ -1,8 +1,8 @@
-(ns oc-scripts-shell
+(ns shell
   "Shell helpers for babashka support scripts."
   (:require [clojure.java.shell :refer [sh]]
             [clojure.string :as str]
-            [oc-scripts-common :as common]))
+            [common :as common]))
 
 (defn run-result
   [& args]

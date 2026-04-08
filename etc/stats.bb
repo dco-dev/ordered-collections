@@ -3,9 +3,9 @@
 (require '[babashka.fs :as fs]
          '[clojure.edn :as edn]
          '[clojure.string :as str]
-         '[oc-scripts-common :as common]
-         '[oc-scripts-report :as report]
-         '[oc-scripts-shell :as shell])
+         '[common :as common]
+         '[report :as report]
+         '[shell :as shell])
 
 (defn count-lines
   [p]

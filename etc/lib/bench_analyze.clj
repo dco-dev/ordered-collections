@@ -1,4 +1,4 @@
-(ns oc-scripts-bench-analyze
+(ns bench-analyze
   "Benchmark analysis: ranking, scorecard, regressions, category classification."
   (:require [clojure.string :as str]))
 

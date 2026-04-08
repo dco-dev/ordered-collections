@@ -1,8 +1,8 @@
-(ns oc-scripts-bench-render
+(ns bench-render
   "Terminal rendering for benchmark reports."
   (:require [clojure.string :as str]
-            [oc-scripts-common :as common]
-            [oc-scripts-report :as report]))
+            [common :as common]
+            [report :as report]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

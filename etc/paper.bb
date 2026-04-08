@@ -1,9 +1,9 @@
 #!/usr/bin/env bb
 
 (require '[babashka.fs :as fs]
-         '[oc-scripts-common :as common]
-         '[oc-scripts-report :as report]
-         '[oc-scripts-shell :as shell])
+         '[common :as common]
+         '[report :as report]
+         '[shell :as shell])
 
 (def src (common/path "doc" "concept" "concept.md"))
 (def out (common/path "doc" "concept" "concept.pdf"))

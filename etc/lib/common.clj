@@ -1,4 +1,4 @@
-(ns oc-scripts-common
+(ns common
   "Shared support for babashka scripts under etc/."
   (:require [babashka.fs :as fs]
             [clj-figlet.core :as fig]

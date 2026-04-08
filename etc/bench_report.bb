@@ -1,10 +1,10 @@
 #!/usr/bin/env bb
 
 (require '[clojure.string :as str]
-         '[oc-scripts-bench-analyze :as analyze]
-         '[oc-scripts-bench-files :as files]
-         '[oc-scripts-bench-parse :as parse]
-         '[oc-scripts-bench-render :as render])
+         '[bench-analyze :as analyze]
+         '[bench-files :as files]
+         '[bench-parse :as parse]
+         '[bench-render :as render])
 
 (defn -main [& args]
   (let [opts (files/parse-args args)]

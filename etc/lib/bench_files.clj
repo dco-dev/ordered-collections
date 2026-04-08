@@ -1,8 +1,8 @@
-(ns oc-scripts-bench-files
+(ns bench-files
   "Benchmark result file discovery and argument parsing."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
-            [oc-scripts-common :as common]))
+            [common :as common]))
 
 (defn bench-results-dir
   []
