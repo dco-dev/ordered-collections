@@ -13,8 +13,8 @@ you could solve efficiently:
 
 </td></tr></table>
 
-- **Sets and Maps** work exactly as you're used to, but do more, faster
 - **Ropes** — concat, split, splice, insert: **10–5000x** faster than Clojure vector at scale
+- **Sets and Maps** work exactly as you're used to, but do more, up to **50x** faster
 - **Interval maps** for overlap queries ("what's scheduled at 3pm?")
 - **Range maps** for non-overlapping regions ("which subnet owns this IP?")
 - **Segment trees** for range aggregation ("total sales from day 10 to 50?")
