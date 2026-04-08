@@ -54,10 +54,12 @@ hood — and in the new things you can do.
 
 ;; Ropes — split, splice, concat in microseconds
 
-(def r (oc/rope [:a :b :c :d :e]))     ;=> #ordered/rope [:a :b :c :d :e]
-(apply oc/rope-concat (reverse (oc/rope-split r 2)))
-                                         ;=> #ordered/rope [:c :d :e :a :b]
-(oc/rope-splice r 1 3 [:x :y])           ;=> #ordered/rope [:a :x :y :d :e]
+(def r (oc/rope [:a :b :c :d :e]))     ;=> #ordered/rope [:a :b :c :d:e]
+
+(apply oc/rope-concat
+   (reverse (oc/rope-split r 2)))      ;=> #ordered/rope [:c :d :e :a :b]
+
+(oc/rope-splice r 1 3 [:x :y])         ;=> #ordered/rope [:a :x :y :d :e]
 
 ;; Sets
 
