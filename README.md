@@ -79,7 +79,24 @@ cardinality  Set algebra is the standout, with 28-57x wins at 500K.
 Even against unordered `clojure.core/set`the benchmarks still show
 roughly 4-19x wins.
 
-### Set algebra (speedup)
+### Rope vs PersistentVector
+
+| Workload | N=10K | N=100K | N=500K |
+|---|---:|---:|---:|
+| 200 random edits | **43x** | **498x** | **1968x** |
+| Single splice | **6x** | **116x** | **584x** |
+| Concat many pieces | **3.4x** | **5.4x** | **9.5x** |
+| Chunk iteration | **58x** | **83x** | **117x** |
+| Reduce (sum) | 0.4x | **1.7x** | **1.3x** |
+| Random nth (1000) | 0.7x | 0.5x | 0.4x |
+
+The rope wins on 5 of 6 workloads at scale and the advantage grows with
+collection size. Concat improves with N because the rope collects chunks in
+O(k) while the vector copies O(n) elements. Reduce beats vectors at N ≥ 100K
+thanks to 256-element chunk locality. Random access is slower (O(log n) vs
+O(1)) but bounded. See [Ropes](doc/ropes.md) for the full tutorial.
+
+### Set algebra
 
 #### vs clojure.core/sorted-set
 
@@ -215,23 +232,6 @@ the rope is O(log n).
 (oc/rope-concat (oc/rope [1 2 3]) (oc/rope [4 5 6]))
 ;=> #ordered/rope [1 2 3 4 5 6]
 ```
-
-### Rope vs PersistentVector
-
-| Workload | N=10K | N=100K | N=500K |
-|---|---:|---:|---:|
-| 200 random edits | **43x** | **498x** | **1968x** |
-| Single splice | **6x** | **116x** | **584x** |
-| Concat many pieces | **3.4x** | **5.4x** | **9.5x** |
-| Chunk iteration | **58x** | **83x** | **117x** |
-| Reduce (sum) | 0.4x | **1.7x** | **1.3x** |
-| Random nth (1000) | 0.7x | 0.5x | 0.4x |
-
-The rope wins on 5 of 6 workloads at scale and the advantage grows with
-collection size. Concat improves with N because the rope collects chunks in
-O(k) while the vector copies O(n) elements. Reduce beats vectors at N ≥ 100K
-thanks to 256-element chunk locality. Random access is slower (O(log n) vs
-O(1)) but bounded. See [Ropes](doc/ropes.md) for the full tutorial.
 
 ---
 
