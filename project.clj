@@ -1,5 +1,5 @@
 (defproject com.dean/ordered-collections "0.2.0-SNAPSHOT"
-  :description "Fast collections that do more than sort."
+  :description "Fast, modern, _ropes_ and ordered collections that do more than sort."
   :author       "Dan Lentz <danlentz@gmail.com>"
   :url "http://github.com/dco-dev/ordered-collections"
   :license {:name "Eclipse Public License"
