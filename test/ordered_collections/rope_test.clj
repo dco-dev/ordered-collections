@@ -458,9 +458,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (deftest rope-print-method
-  (is (= "#ordered/rope [1 2 3]" (pr-str (oc/rope [1 2 3]))))
-  (is (= "#ordered/rope []" (pr-str (oc/rope))))
-  (is (= "#ordered/rope [5 6 7]"
+  (is (= "#vec/rope [1 2 3]" (pr-str (oc/rope [1 2 3]))))
+  (is (= "#vec/rope []" (pr-str (oc/rope))))
+  (is (= "#vec/rope [5 6 7]"
         (pr-str (oc/rope-sub (oc/rope (range 10)) 5 8)))))
 
 
@@ -902,7 +902,7 @@
   (prop/for-all [xs (gen/vector gen/small-integer 0 500)]
     (let [r  (oc/rope xs)
           rt (clojure.edn/read-string
-               {:readers {'ordered/rope oc/rope}}
+               {:readers {'vec/rope oc/rope}}
                (pr-str r))]
       (and (= (vec r) (vec rt))
            (= (count r) (count rt))))))

@@ -9,7 +9,7 @@
 
 (def ^:private oc-prefixes
   ["ordered-set" "ordered-map" "long-ordered" "string-ordered"
-   "interval-set" "interval-map" "range-map" "rope"])
+   "interval-set" "interval-map" "range-map" "string-rope" "rope"])
 
 (defn- oc-variant?
   [variant]
@@ -23,7 +23,7 @@
 
 (def category-order
   [:set-algebra :construction :lookup :iteration :fold :split
-   :equality :rank :string :interval :rope :other])
+   :equality :rank :string :interval :rope :string-rope :other])
 
 (def ^:private category-patterns
   [[:set-algebra   #"union|intersection|difference"]
@@ -34,6 +34,7 @@
    [:split         #"split"]
    [:equality      #"equal|different|size-different"]
    [:rank          #"rank"]
+   [:string-rope   #"^string-rope"]
    [:string        #"string"]
    [:interval      #"interval"]
    [:rope          #"rope"]])
@@ -183,7 +184,27 @@
    {:pattern #"^rope-chunk-iteration$" :oc :rope   :peer :vector  :label "Chunk Iteration"   :section "Rope vs PersistentVector"}
    {:pattern #"^rope-reduce$"          :oc :rope   :peer :vector  :label "Reduce (sum)"      :section "Rope vs PersistentVector"}
    {:pattern #"^rope-fold-sum$"       :oc :rope   :peer :vector  :label "Fold (sum)"        :section "Rope vs PersistentVector"}
-   {:pattern #"^rope-nth$"            :oc :rope   :peer :vector  :label "Random nth (1000)" :section "Rope vs PersistentVector"}])
+   {:pattern #"^rope-nth$"            :oc :rope   :peer :vector  :label "Random nth (1000)" :section "Rope vs PersistentVector"}
+   ;; StringRope vs String (idiomatic str+subs)
+   {:pattern #"^string-rope-splice$"          :oc :string-rope :peer :string :label "Single Splice"      :section "StringRope vs String"}
+   {:pattern #"^string-rope-insert$"          :oc :string-rope :peer :string :label "Single Insert"      :section "StringRope vs String"}
+   {:pattern #"^string-rope-remove$"          :oc :string-rope :peer :string :label "Single Remove"      :section "StringRope vs String"}
+   {:pattern #"^string-rope-concat$"          :oc :string-rope :peer :string :label "Concat Halves"      :section "StringRope vs String"}
+   {:pattern #"^string-rope-split$"           :oc :string-rope :peer :string :label "Split at Midpoint"  :section "StringRope vs String"}
+   {:pattern #"^string-rope-repeated-edits$"  :oc :string-rope :peer :string :label "200 Random Edits"   :section "StringRope vs String"}
+   {:pattern #"^string-rope-nth$"             :oc :string-rope :peer :string :label "Random nth (1000)"  :section "StringRope vs String"}
+   {:pattern #"^string-rope-reduce$"          :oc :string-rope :peer :string :label "Reduce (sum chars)" :section "StringRope vs String"}
+   {:pattern #"^string-rope-re-find$"        :oc :string-rope :peer :string :label "re-find"            :section "StringRope vs String"}
+   {:pattern #"^string-rope-re-seq$"         :oc :string-rope :peer :string :label "re-seq"             :section "StringRope vs String"}
+   {:pattern #"^string-rope-re-replace$"     :oc :string-rope :peer :string :label "str/replace (regex)" :section "StringRope vs String"}
+   ;; StringRope vs StringBuilder (optimal mutable baseline)
+   {:pattern #"^string-rope-splice$"          :oc :string-rope :peer :string-builder :label "Single Splice"      :section "StringRope vs StringBuilder"}
+   {:pattern #"^string-rope-insert$"          :oc :string-rope :peer :string-builder :label "Single Insert"      :section "StringRope vs StringBuilder"}
+   {:pattern #"^string-rope-remove$"          :oc :string-rope :peer :string-builder :label "Single Remove"      :section "StringRope vs StringBuilder"}
+   {:pattern #"^string-rope-concat$"          :oc :string-rope :peer :string-builder :label "Concat Halves"      :section "StringRope vs StringBuilder"}
+   {:pattern #"^string-rope-split$"           :oc :string-rope :peer :string-builder :label "Split at Midpoint"  :section "StringRope vs StringBuilder"}
+   {:pattern #"^string-rope-repeated-edits$"  :oc :string-rope :peer :string-builder :label "200 Random Edits"   :section "StringRope vs StringBuilder"}
+   {:pattern #"^string-rope-construction$"    :oc :string-rope :peer :string-builder :label "Construction"       :section "StringRope vs StringBuilder"}])
 
 (defn headline-wins
   "Extract headline speedups pivoted by size, with explicit OC variant and peer.

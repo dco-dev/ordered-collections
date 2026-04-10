@@ -1,5 +1,5 @@
 (ns ordered-collections.protocol
-  (:refer-clojure :exclude [split-at subrange]))
+  (:refer-clojure :exclude [chunk-append split-at subrange]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -163,6 +163,34 @@
     "Check if collection contains exactly k (no fuzzy matching).")
   (exact-get [coll k] [coll k not-found]
     "Get value for exactly k (maps only, no fuzzy matching)."))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Rope Chunk Protocol
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defprotocol PRopeChunk
+  "Chunk abstraction allowing the rope kernel to be generic over chunk type.
+  Extended to APersistentVector (generic rope) and String (string rope).
+  Protocol dispatch cost (~2-3ns) is comparable to the type-hinted interface
+  calls it replaces."
+  (chunk-length [c] "Number of elements/characters in chunk")
+  (chunk-slice [c start end] "Subrange [start, end)")
+  (chunk-merge [c other] "Concatenate two chunks")
+  (chunk-nth [c i] "Element/character at index i")
+  (chunk-append [c x] "Append a single element/character")
+  (chunk-last [c] "Last element/character")
+  (chunk-butlast [c] "All but last element/character")
+  (chunk-update [c i x] "Replace element/character at index i")
+  (chunk-of [c x] "Create a new single-element chunk of the same type")
+  (chunk-reduce-init [c f init] "Reduce over elements/characters with init value.
+    When f returns (reduced x), stops and returns @(reduced x).")
+  (chunk-append-sb [c sb] "Append chunk contents to StringBuilder")
+  (chunk-splice [c start end replacement] "Replace [start, end) with replacement chunk (may be nil for deletion)")
+  (chunk-splice-split [c start end replacement half]
+    "Like chunk-splice but returns [left-chunk right-chunk] split at position
+    half in the spliced result. Avoids building the full intermediate chunk.
+    Used by the fused splice overflow path."))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

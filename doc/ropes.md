@@ -219,12 +219,12 @@ And the `Rope` type itself supports:
 (def a (oc/rope [0 1 2]))
 (def b (oc/rope [3 4 5]))
 
-(oc/rope-concat a b)  ;; => #ordered/rope [0 1 2 3 4 5]
+(oc/rope-concat a b)  ;; => #vec/rope [0 1 2 3 4 5]
 
 ;; Variadic — bulk concatenation in O(total chunks)
 
 (oc/rope-concat (oc/rope [1 2]) (oc/rope [3 4]) (oc/rope [5 6]))
-;; => #ordered/rope [1 2 3 4 5 6]
+;; => #vec/rope [1 2 3 4 5 6]
 ```
 
 ### Split and Slice
@@ -524,10 +524,10 @@ coerce their arguments automatically:
 
 ```clojure
 (oc/rope-concat (oc/rope [1 2]) [3 4])
-;; => #ordered/rope [1 2 3 4]
+;; => #vec/rope [1 2 3 4]
 
 (oc/rope-insert (oc/rope [1 2 3]) 1 [:a :b])
-;; => #ordered/rope [1 :a :b 2 3]
+;; => #vec/rope [1 :a :b 2 3]
 ```
 
 **Interop summary:**
@@ -540,7 +540,7 @@ coerce their arguments automatically:
 | Rope | PersistentVector | `(vec r)` |
 | Rope | lazy seq | `(seq r)` |
 | Rope | Java array | `(.toArray r)` |
-| Rope | EDN round-trip | `#ordered/rope` tagged literal |
+| Rope | EDN round-trip | `#vec/rope` tagged literal |
 
 
 ### Scenario 9: Java Interop
@@ -555,7 +555,7 @@ with Java APIs that expect these interfaces:
 (.size r)            ;; => 5
 (.contains r 30)     ;; => true
 (.indexOf r 40)      ;; => 3
-(.subList r 1 4)     ;; => #ordered/rope [20 30 40]
+(.subList r 1 4)     ;; => #vec/rope [20 30 40]
 (.toArray r)         ;; => Object[5] {10, 20, 30, 40, 50}
 ```
 

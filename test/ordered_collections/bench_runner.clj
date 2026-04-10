@@ -671,6 +671,202 @@
        :vector #(r/fold combinef reducef v)})))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; String Rope vs String vs StringBuilder Benchmarks
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Three competitors:
+;;   :string        — idiomatic Clojure: (str (subs ...) ...) — what most people write
+;;   :string-builder — optimal mutable: pre-sized StringBuilder with append(CharSequence,int,int)
+;;   :string-rope   — persistent rope: O(log n) structural edits with structural sharing
+;;
+;; StringRope's architectural advantages over StringBuilder:
+;;   • Persistent — old versions survive edits (free undo, no defensive copying)
+;;   • Structural sharing — concat/split are O(log n), no bulk copying
+;;   • Thread-safe by construction — immutable, no locking needed
+;;   • O(log n) splice/insert/remove vs StringBuilder's O(n) arraycopy
+
+(defn- sb-splice
+  "Optimal String splice via StringBuilder."
+  ^String [^String s ^long start ^long end ^String rep]
+  (let [si (int start)
+        ei (int end)
+        sb (StringBuilder. (+ (.length s) (.length rep) (- si) ei))]
+    (.append sb s 0 si)
+    (.append sb rep)
+    (.append sb s ei (.length s))
+    (.toString sb)))
+
+(defn- sb-insert
+  "Optimal String insert via StringBuilder."
+  ^String [^String s ^long i ^String ins]
+  (sb-splice s i i ins))
+
+(defn- sb-remove
+  "Optimal String remove via StringBuilder."
+  ^String [^String s ^long start ^long end]
+  (let [si (int start)
+        ei (int end)
+        sb (StringBuilder. (- (.length s) (- ei si)))]
+    (.append sb s 0 si)
+    (.append sb s ei (.length s))
+    (.toString sb)))
+
+(defn- random-text
+  "Generate a random ASCII text of length n."
+  ^String [^long n]
+  (let [sb (StringBuilder. n)
+        ^String chars "abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ\n0123456789"
+        nchars (.length chars)]
+    (dotimes [_ n]
+      (.append sb (.charAt chars (rand-int nchars))))
+    (.toString sb)))
+
+(defn bench-string-rope-construction [n]
+  (let [^String text (random-text n)]
+    (run-cases
+      {:string         #(String. text)
+       :string-builder #(let [sb (StringBuilder. (count text))]
+                          (.append sb text)
+                          (.toString sb))
+       :string-rope    #(core/string-rope text)})))
+
+(defn bench-string-rope-concat [n]
+  (let [^String text (random-text n)
+        half   (int (quot n 2))
+        ^String s1 (.substring text 0 half)
+        ^String s2 (.substring text half)
+        sr1    (core/string-rope s1)
+        sr2    (core/string-rope s2)]
+    (run-cases
+      {:string         #(str s1 s2)
+       :string-builder #(let [sb (StringBuilder. (.length text))]
+                          (.append sb s1)
+                          (.append sb s2)
+                          (.toString sb))
+       :string-rope    #(core/string-rope-concat sr1 sr2)})))
+
+(defn bench-string-rope-split [n]
+  (let [^String text (random-text n)
+        sr  (core/string-rope text)
+        mid (int (quot n 2))]
+    (run-cases
+      {:string         #(vector (subs text 0 mid) (subs text mid))
+       :string-builder #(vector (.substring text 0 mid) (.substring text mid))
+       :string-rope    #(core/rope-split sr mid)})))
+
+(defn bench-string-rope-splice [n]
+  (let [^String text (random-text n)
+        sr  (core/string-rope text)
+        mid (quot n 2)
+        lo  (max 0 (- mid 5))
+        hi  (min n (+ mid 5))
+        ^String rep "YYYYYYYYYY"]
+    (run-cases
+      {:string         #(str (subs text 0 lo) rep (subs text hi))
+       :string-builder #(sb-splice text lo hi rep)
+       :string-rope    #(core/rope-splice sr lo hi rep)})))
+
+(defn bench-string-rope-insert [n]
+  (let [^String text (random-text n)
+        sr  (core/string-rope text)
+        mid (quot n 2)
+        ^String ins "Y"]
+    (run-cases
+      {:string         #(str (subs text 0 mid) ins (subs text mid))
+       :string-builder #(sb-insert text mid ins)
+       :string-rope    #(core/rope-insert sr mid ins)})))
+
+(defn bench-string-rope-remove [n]
+  (let [^String text (random-text n)
+        sr  (core/string-rope text)
+        mid (quot n 2)
+        lo  (max 0 (- mid 5))
+        hi  (min n (+ mid 5))]
+    (run-cases
+      {:string         #(str (subs text 0 lo) (subs text hi))
+       :string-builder #(sb-remove text lo hi)
+       :string-rope    #(core/rope-remove sr lo hi)})))
+
+(defn bench-string-rope-nth [n & {:keys [num-ops] :or {num-ops 1000}}]
+  (let [^String text (random-text n)
+        sr   (core/string-rope text)
+        rng  (java.util.Random. 42)
+        idxs (int-array (repeatedly num-ops #(.nextInt rng (max 1 n))))]
+    (run-cases
+      {:string         #(areduce idxs i acc (char 0) (.charAt text (aget idxs i)))
+       :string-rope    #(areduce idxs i acc nil (nth sr (aget idxs i)))})))
+
+(defn bench-string-rope-reduce [n]
+  (let [^String text (random-text n)
+        sr  (core/string-rope text)
+        f   (fn [^long acc c] (+ acc (long (int (char c)))))]
+    (run-cases
+      {:string         #(let [len (.length text)]
+                          (loop [i (int 0), acc (long 0)]
+                            (if (< i len)
+                              (recur (unchecked-inc-int i) (+ acc (long (int (.charAt text i)))))
+                              acc)))
+       :string-rope    #(reduce f 0 sr)})))
+
+(defn bench-string-rope-str [n]
+  (let [^String text (random-text n)
+        sr  (core/string-rope text)]
+    (run-cases
+      {:string         #(String. text)
+       :string-rope    #(str sr)})))
+
+(defn bench-string-rope-repeated-edits [n]
+  (let [^String text (random-text n)
+        sr   (core/string-rope text)
+        rng  (java.util.Random. 42)
+        nops 200
+        idxs (vec (repeatedly nops #(.nextInt rng (max 1 n))))
+        ^String ins "XXXXX"]
+    (run-cases
+      {:string         #(loop [^String s text, i 0]
+                          (if (< i nops)
+                            (let [pos (rem (long (nth idxs i)) (long (.length s)))
+                                  end (min (.length s) (+ pos 5))]
+                              (recur (str (subs s 0 pos) ins (subs s end)) (unchecked-inc i)))
+                            s))
+       :string-builder #(loop [^String s text, i 0]
+                          (if (< i nops)
+                            (let [pos (rem (long (nth idxs i)) (long (.length s)))
+                                  end (min (.length s) (+ pos 5))]
+                              (recur (sb-splice s pos end ins) (unchecked-inc i)))
+                            s))
+       :string-rope    #(loop [r sr, i 0]
+                          (if (< i nops)
+                            (let [pos (rem (long (nth idxs i)) (long (count r)))
+                                  end (min (count r) (+ pos 5))]
+                              (recur (core/rope-splice r pos end ins) (unchecked-inc i)))
+                            r))})))
+
+(defn bench-string-rope-re-find [n]
+  (let [^String text (random-text n)
+        sr   (core/string-rope text)
+        pat  #"[A-Z]{2,}"]
+    (run-cases
+      {:string      #(re-find pat text)
+       :string-rope #(re-find pat sr)})))
+
+(defn bench-string-rope-re-seq [n]
+  (let [^String text (random-text n)
+        sr   (core/string-rope text)
+        pat  #"\w+"]
+    (run-cases
+      {:string      #(doall (re-seq pat text))
+       :string-rope #(doall (re-seq pat sr))})))
+
+(defn bench-string-rope-re-replace [n]
+  (let [^String text (random-text n)
+        sr   (core/string-rope text)
+        pat  #"[aeiou]"]
+    (run-cases
+      {:string      #(clojure.string/replace text pat "*")
+       :string-rope #(clojure.string/replace sr pat "*")})))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Suite Runners
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -699,7 +895,11 @@
    [:long-lookup bench-long-lookup]
    [:long-union bench-long-union]
    [:long-intersection bench-long-intersection]
-   [:long-difference bench-long-difference]])
+   [:long-difference bench-long-difference]
+   [:string-rope-splice bench-string-rope-splice]
+   [:string-rope-insert bench-string-rope-insert]
+   [:string-rope-remove bench-string-rope-remove]
+   [:string-rope-repeated-edits bench-string-rope-repeated-edits]])
 
 (def ^:private readme-benchmark-specs
   [[:set-construction bench-set-construction]
@@ -764,7 +964,16 @@
    [:string-set-lookup bench-string-set-lookup]
    [:string-set-union bench-string-set-union]
    [:string-set-intersection bench-string-set-intersection]
-   [:string-set-difference bench-string-set-difference]])
+   [:string-set-difference bench-string-set-difference]
+   [:string-rope-construction bench-string-rope-construction]
+   [:string-rope-concat bench-string-rope-concat]
+   [:string-rope-split bench-string-rope-split]
+   [:string-rope-splice bench-string-rope-splice]
+   [:string-rope-insert bench-string-rope-insert]
+   [:string-rope-remove bench-string-rope-remove]
+   {:key :string-rope-nth :fn bench-string-rope-nth :when #(<= % 500000)}
+   [:string-rope-reduce bench-string-rope-reduce]
+   [:string-rope-repeated-edits bench-string-rope-repeated-edits]])
 
 (defn run-wins-benchmarks
   "Run benchmarks focused on where ordered-collections wins."

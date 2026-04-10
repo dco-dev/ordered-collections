@@ -522,7 +522,7 @@
 
 (defmethod print-method OrderedMultiset [^OrderedMultiset ms ^java.io.Writer w]
   (if (order/default-comparator? (.cmp ms))
-    (do (.write w "#ordered/multiset [")
+    (do (.write w "#multi/set [")
         (when-let [s (seq ms)]
           (print-method (first s) w)
           (doseq [x (rest s)]

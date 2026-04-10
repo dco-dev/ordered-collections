@@ -18,6 +18,7 @@
             [ordered-collections.types.priority-queue      :as pq]
             [ordered-collections.types.range-map           :as rmap]
             [ordered-collections.types.rope               :as rope]
+            [ordered-collections.types.string-rope       :as string-rope]
             [ordered-collections.types.segment-tree        :as segtree]
             [ordered-collections.protocol                  :as proto]
             [ordered-collections.util                      :refer [defalias]])
@@ -1012,9 +1013,9 @@
 
    Examples:
      (rope-concat (rope [1 2 3]) (rope [4 5 6]))
-     ;=> #ordered/rope [1 2 3 4 5 6]
+     ;=> #vec/rope [1 2 3 4 5 6]
      (rope-concat (rope [1 2]) (rope [3 4]) (rope [5 6]))
-     ;=> #ordered/rope [1 2 3 4 5 6]"
+     ;=> #vec/rope [1 2 3 4 5 6]"
   rope/rope-concat)
 
 (defalias rope-split
@@ -1022,7 +1023,7 @@
 
    Examples:
      (rope-split (rope (range 10)) 4)
-     ;=> [#ordered/rope [0 1 2 3] #ordered/rope [4 5 6 7 8 9]]"
+     ;=> [#vec/rope [0 1 2 3] #vec/rope [4 5 6 7 8 9]]"
   proto/rope-split)
 
 (defalias rope-sub
@@ -1031,7 +1032,7 @@
 
    Examples:
      (rope-sub (rope (range 100)) 20 30)
-     ;=> #ordered/rope [20 21 22 23 24 25 26 27 28 29]"
+     ;=> #vec/rope [20 21 22 23 24 25 26 27 28 29]"
   proto/rope-sub)
 
 (defalias rope-insert
@@ -1039,7 +1040,7 @@
 
    Examples:
      (rope-insert (rope [0 1 2 3]) 2 [:a :b])
-     ;=> #ordered/rope [0 1 :a :b 2 3]"
+     ;=> #vec/rope [0 1 :a :b 2 3]"
   proto/rope-insert)
 
 (defalias rope-remove
@@ -1047,7 +1048,7 @@
 
    Examples:
      (rope-remove (rope (range 10)) 3 7)
-     ;=> #ordered/rope [0 1 2 7 8 9]"
+     ;=> #vec/rope [0 1 2 7 8 9]"
   proto/rope-remove)
 
 (defalias rope-splice
@@ -1055,7 +1056,7 @@
 
    Examples:
      (rope-splice (rope (range 10)) 2 5 [:x :y])
-     ;=> #ordered/rope [0 1 :x :y 5 6 7 8 9]"
+     ;=> #vec/rope [0 1 :x :y 5 6 7 8 9]"
   proto/rope-splice)
 
 (defalias rope-chunks
@@ -1078,3 +1079,32 @@
      (rope-str (rope (seq \"hello world\")))
      ;=> \"hello world\""
   proto/rope-str)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; String Rope
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defalias string-rope
+  "Create a persistent string rope for structural text editing.
+   Backed by a chunked weight-balanced tree with String chunks:
+   O(log n) concat, split, splice, insert, and remove. Competitive at
+   all sizes, dominant at scale.
+
+   Implements CharSequence for seamless Java interop (regex, clojure.string,
+   java.io, etc.). String equality: (= (string-rope \"x\") \"x\") is true.
+
+   Examples:
+     (string-rope \"hello world\")
+     (string-rope (slurp \"big-file.txt\"))
+     (str (string-rope \"hello\"))  ;=> \"hello\""
+  string-rope/string-rope)
+
+(defalias string-rope-concat
+  "Concatenate string ropes or strings.
+   Two arguments: O(log n) binary tree join.
+   Three or more: O(total chunks) bulk construction.
+
+   Examples:
+     (string-rope-concat (string-rope \"hello \") (string-rope \"world\"))
+     ;=> #string/rope \"hello world\""
+  string-rope/string-rope-concat)

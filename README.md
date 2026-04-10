@@ -55,12 +55,12 @@ hood — and in the new things you can do.
 
 ;; Ropes — O(log n) split, splice, concat
 
-(def r (oc/rope [:a :b :c :d :e]))     ;=> #ordered/rope [:a :b :c :d:e]
+(def r (oc/rope [:a :b :c :d :e]))     ;=> #vec/rope [:a :b :c :d:e]
 
 (apply oc/rope-concat
-   (reverse (oc/rope-split r 2)))      ;=> #ordered/rope [:c :d :e :a :b]
+   (reverse (oc/rope-split r 2)))      ;=> #vec/rope [:c :d :e :a :b]
 
-(oc/rope-insert r 2 [:x :y])           ;=> #ordered/rope [:a :b :x :y :c :d :e]
+(oc/rope-insert r 2 [:x :y])           ;=> #vec/rope [:a :b :x :y :c :d :e]
 
 ;; Sets
 
@@ -240,7 +240,7 @@ the rope is O(log n).
 
 ;; Concatenate — O(log n)
 (oc/rope-concat (oc/rope [1 2 3]) (oc/rope [4 5 6]))
-;=> #ordered/rope [1 2 3 4 5 6]
+;=> #vec/rope [1 2 3 4 5 6]
 ```
 
 ---

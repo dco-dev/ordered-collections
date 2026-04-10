@@ -533,7 +533,7 @@
 
 (defmethod print-method PriorityQueue [^PriorityQueue pq ^java.io.Writer w]
   (if (order/default-comparator? (.cmp pq))
-    (do (.write w "#ordered/priority-queue [")
+    (do (.write w "#priority/queue [")
         (when-let [s (seq pq)]
           (print-method (first s) w)
           (doseq [x (rest s)]

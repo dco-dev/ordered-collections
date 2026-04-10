@@ -15,17 +15,19 @@
 (def priority-queue   oc/priority-queue)
 (def ordered-multiset oc/ordered-multiset)
 (def rope             oc/rope)
+(def string-rope      oc/string-rope)
 
 (def readers
   "Map of tag symbols to reader functions.
    Pass to clojure.edn/read-string as the :readers option:
 
      (clojure.edn/read-string {:readers readers} s)"
-  {'ordered/set            ordered-set
-   'ordered/map            ordered-map
-   'ordered/interval-set   interval-set
-   'ordered/interval-map   interval-map
-   'ordered/range-map      range-map
-   'ordered/priority-queue priority-queue
-   'ordered/multiset       ordered-multiset
-   'ordered/rope           rope})
+  {'ordered/set      ordered-set
+   'ordered/map      ordered-map
+   'interval/set     interval-set
+   'interval/map     interval-map
+   'range/map        range-map
+   'priority/queue   priority-queue
+   'multi/set        ordered-multiset
+   'vec/rope         rope
+   'string/rope      string-rope})

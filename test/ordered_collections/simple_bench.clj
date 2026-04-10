@@ -14,7 +14,8 @@
      lein bench-simple --only maps,sets   ; Run maps and sets
 
    Categories for --only:
-     maps, sets, set-ops, intervals, specialty, strings, parallel, memory"
+     maps, sets, set-ops, intervals, specialty, strings, parallel, memory,
+     string-rope"
   (:require [clojure.core.reducers :as r]
             [clojure.data.avl :as avl]
             [clojure.string :as str]
@@ -658,6 +659,286 @@
   (bench-string-map-iteration sizes))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; String Rope vs String Structural Editing
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def ^:private string-rope-sizes [1000 4000 8000])
+
+(defn- random-text
+  "Generate a random ASCII text of length n."
+  ^String [^long n]
+  (let [sb (StringBuilder. n)
+        chars "abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ\n0123456789"
+        nchars (count chars)]
+    (dotimes [_ n]
+      (.append sb (.charAt chars (rand-int nchars))))
+    (.toString sb)))
+
+(defn- string-splice
+  "String equivalent of rope-splice via StringBuilder — fair baseline."
+  ^String [^String s ^long start ^long end ^String ins]
+  (let [si (int start)
+        ei (int end)
+        sb (StringBuilder. (+ (.length s) (.length ins) (- si) ei))]
+    (.append sb s 0 si)
+    (.append sb ins)
+    (.append sb s ei (.length s))
+    (.toString sb)))
+
+(defn- string-insert
+  "String equivalent of rope-insert via StringBuilder — fair baseline."
+  ^String [^String s ^long i ^String ins]
+  (string-splice s i i ins))
+
+(defn- string-remove
+  "String equivalent of rope-remove via StringBuilder — fair baseline."
+  ^String [^String s ^long start ^long end]
+  (let [si (int start)
+        ei (int end)
+        sb (StringBuilder. (- (.length s) (- ei si)))]
+    (.append sb s 0 si)
+    (.append sb s ei (.length s))
+    (.toString sb)))
+
+(defn bench-string-rope-construction
+  "Benchmark building a string-rope from a String of length N."
+  [sizes]
+  (print-header "STRING ROPE CONSTRUCTION: Build from String of length N"
+                ["String (id)" "string-rope"])
+  (doseq [n sizes]
+    (let [text (random-text n)]
+      (print-row n
+        [(bench 20 10 (identity text))
+         (bench 20 10 (core/string-rope text))]))))
+
+(defn bench-string-rope-concat
+  "Benchmark concatenating two equal halves."
+  [sizes]
+  (print-header "STRING ROPE CONCAT: Join two halves of length N/2"
+                ["String SB" "string-rope-concat"])
+  (doseq [n sizes]
+    (let [^String text (random-text n)
+          half (int (quot n 2))
+          ^String s1 (.substring text 0 half)
+          ^String s2 (.substring text half)
+          sr1  (core/string-rope s1)
+          sr2  (core/string-rope s2)]
+      (print-row n
+        [(bench 20 10
+           (let [sb (StringBuilder. (.length text))]
+             (.append sb s1)
+             (.append sb s2)
+             (.toString sb)))
+         (bench 20 10 (core/string-rope-concat sr1 sr2))]))))
+
+(defn bench-string-rope-split
+  "Benchmark splitting at midpoint."
+  [sizes]
+  (print-header "STRING ROPE SPLIT: Split at midpoint"
+                ["String subs" "rope-split"])
+  (doseq [n sizes]
+    (let [text (random-text n)
+          sr   (core/string-rope text)
+          mid  (quot n 2)]
+      (print-row n
+        [(bench 20 10 [(subs text 0 mid) (subs text mid)])
+         (bench 20 10 (core/rope-split sr mid))]))))
+
+(defn bench-string-rope-insert
+  "Benchmark inserting a short string at the midpoint, 100 times."
+  [sizes]
+  (print-header "STRING ROPE INSERT: 100 inserts of 10-char string at midpoint"
+                ["String SB" "rope-insert"])
+  (doseq [n sizes]
+    (let [text (random-text n)
+          sr   (core/string-rope text)
+          ins  "XXXXXXXXXX"]
+      (print-row n
+        [(bench 5 10
+           (loop [^String s text, i 0]
+             (if (< i 100)
+               (recur (string-insert s (quot (count s) 2) ins)
+                      (unchecked-inc i))
+               s)))
+         (bench 5 10
+           (loop [r sr, i 0]
+             (if (< i 100)
+               (recur (core/rope-insert r (quot (count r) 2) ins)
+                      (unchecked-inc i))
+               r)))]))))
+
+(defn bench-string-rope-remove
+  "Benchmark removing 10 chars from the midpoint, 100 times."
+  [sizes]
+  (print-header "STRING ROPE REMOVE: 100 removals of 10 chars at midpoint"
+                ["String SB" "rope-remove"])
+  (doseq [n sizes]
+    (let [text (random-text (+ n 1000))  ;; extra room for 100 removals
+          sr   (core/string-rope text)]
+      (print-row n
+        [(bench 5 10
+           (loop [^String s text, i 0]
+             (if (and (< i 100) (>= (count s) 10))
+               (let [mid (quot (count s) 2)
+                     lo  (max 0 (- mid 5))]
+                 (recur (string-remove s lo (+ lo 10))
+                        (unchecked-inc i)))
+               s)))
+         (bench 5 10
+           (loop [r sr, i 0]
+             (if (and (< i 100) (>= (count r) 10))
+               (let [mid (quot (count r) 2)
+                     lo  (max 0 (- mid 5))]
+                 (recur (core/rope-remove r lo (+ lo 10))
+                        (unchecked-inc i)))
+               r)))]))))
+
+(defn bench-string-rope-splice
+  "Benchmark replacing 10 chars with 10 new chars at midpoint, 100 times."
+  [sizes]
+  (print-header "STRING ROPE SPLICE: 100 replace-10 ops at midpoint"
+                ["String SB" "rope-splice"])
+  (doseq [n sizes]
+    (let [text (random-text n)
+          sr   (core/string-rope text)
+          rep  "YYYYYYYYYY"]
+      (print-row n
+        [(bench 5 10
+           (loop [^String s text, i 0]
+             (if (< i 100)
+               (let [mid (quot (count s) 2)
+                     lo  (max 0 (- mid 5))
+                     hi  (min (count s) (+ lo 10))]
+                 (recur (string-splice s lo hi rep) (unchecked-inc i)))
+               s)))
+         (bench 5 10
+           (loop [r sr, i 0]
+             (if (< i 100)
+               (let [mid (quot (count r) 2)
+                     lo  (max 0 (- mid 5))
+                     hi  (min (count r) (+ lo 10))]
+                 (recur (core/rope-splice r lo hi rep) (unchecked-inc i)))
+               r)))]))))
+
+(defn bench-string-rope-random-access
+  "Benchmark 10,000 random charAt lookups."
+  [sizes]
+  (print-header "STRING ROPE RANDOM ACCESS: 10,000 random charAt"
+                ["String .charAt" "string-rope nth"])
+  (doseq [n sizes]
+    (let [^String text (random-text n)
+          sr   (core/string-rope text)
+          idxs (int-array (repeatedly 10000 #(rand-int n)))]
+      (print-row n
+        [(bench 20 10 (dotimes [i 10000] (.charAt text (aget idxs i))))
+         (bench 20 10 (dotimes [i 10000] (nth sr (aget idxs i))))]))))
+
+(defn bench-string-rope-iteration
+  "Benchmark reduce over all characters."
+  [sizes]
+  (print-header "STRING ROPE ITERATION: reduce over all N chars"
+                ["String reduce" "string-rope reduce"])
+  (doseq [n sizes]
+    (let [text (random-text n)
+          sr   (core/string-rope text)]
+      (print-row n
+        [(bench 20 10 (reduce (fn [^long acc c] (+ acc (long (char c)))) 0 text))
+         (bench 20 10 (reduce (fn [^long acc c] (+ acc (long (char c)))) 0 sr))]))))
+
+(defn bench-string-rope-materialization
+  "Benchmark materializing back to String (toString)."
+  [sizes]
+  (print-header "STRING ROPE MATERIALIZE: toString"
+                ["String (id)" "string-rope str"])
+  (doseq [n sizes]
+    (let [text (random-text n)
+          sr   (core/string-rope text)]
+      (print-row n
+        [(bench 20 10 (identity text))
+         (bench 20 10 (str sr))]))))
+
+(defn bench-string-rope-editor-simulation
+  "Simulate a text editor session: interleaved inserts, deletes, and replacements.
+  50 edits of mixed operations at random positions."
+  [sizes]
+  (print-header "STRING ROPE EDITOR SIM: 50 mixed edits at random positions"
+                ["String" "string-rope"])
+  (doseq [n sizes]
+    (let [text     (random-text n)
+          sr       (core/string-rope text)
+          ;; Pre-generate a sequence of edit operations
+          edit-ops (vec (repeatedly 50
+                          (fn []
+                            (let [op (rand-int 3)]
+                              {:op op :ins (random-text (+ 1 (rand-int 20)))}))))]
+      (print-row n
+        [(bench 5 10
+           (reduce
+             (fn [^String s {:keys [op ^String ins]}]
+               (let [len (count s)]
+                 (if (< len 5) s
+                   (let [pos (rand-int (max 1 (- len 3)))]
+                     (case (int op)
+                       0 (string-insert s pos ins)
+                       1 (string-remove s pos (min len (+ pos (min 20 (rand-int len)))))
+                       2 (string-splice s pos (min len (+ pos 10)) ins))))))
+             text edit-ops))
+         (bench 5 10
+           (reduce
+             (fn [r {:keys [op ins]}]
+               (let [len (count r)]
+                 (if (< len 5) r
+                   (let [pos (rand-int (max 1 (- len 3)))]
+                     (case (int op)
+                       0 (core/rope-insert r pos ins)
+                       1 (core/rope-remove r pos (min len (+ pos (min 20 (rand-int len)))))
+                       2 (core/rope-splice r pos (min len (+ pos 10)) ins))))))
+             sr edit-ops))]))))
+
+(defn bench-string-rope-repeated-concat
+  "Benchmark building a large string by repeatedly concatenating small pieces."
+  [sizes]
+  (print-header "STRING ROPE REPEATED CONCAT: Append 100 x 10-char chunks"
+                ["String SB" "string-rope-concat" "string-rope transient"])
+  (doseq [n sizes]
+    (let [^String base-text (random-text n)
+          sr        (core/string-rope base-text)
+          chunks    (vec (repeatedly 100 #(random-text 10)))]
+      (print-row n
+        [(bench 5 10
+           (reduce (fn [^String acc ^String c]
+                     (let [sb (StringBuilder. (+ (.length acc) (.length c)))]
+                       (.append sb acc)
+                       (.append sb c)
+                       (.toString sb)))
+                   base-text chunks))
+         (bench 5 10
+           (reduce (fn [acc c] (core/string-rope-concat acc c)) sr chunks))
+         (bench 5 10
+           (let [t (transient sr)]
+             (persistent!
+               (reduce (fn [t c]
+                         (reduce conj! t c))
+                 t chunks))))]))))
+
+(defn run-string-rope-benchmarks
+  "Run all string-rope vs String structural editing benchmarks."
+  [sizes]
+  (let [sizes (or (seq (filter #(<= % 8000) sizes)) string-rope-sizes)]
+    (bench-string-rope-construction sizes)
+    (bench-string-rope-concat sizes)
+    (bench-string-rope-split sizes)
+    (bench-string-rope-insert sizes)
+    (bench-string-rope-remove sizes)
+    (bench-string-rope-splice sizes)
+    (bench-string-rope-random-access sizes)
+    (bench-string-rope-iteration sizes)
+    (bench-string-rope-materialization sizes)
+    (bench-string-rope-repeated-concat sizes)
+    (bench-string-rope-editor-simulation sizes)))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Size Presets
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -687,9 +968,11 @@
    :parallel  {:title "PARALLEL FOLD (r/fold)"
                :fn    run-parallel-benchmarks}
    :memory    {:title "MEMORY FOOTPRINT"
-               :fn    estimate-memory-footprint}})
+               :fn    estimate-memory-footprint}
+   :string-rope {:title "STRING ROPE vs STRING (Structural Editing)"
+                 :fn    run-string-rope-benchmarks}})
 
-(def category-order [:maps :sets :set-ops :intervals :specialty :strings :parallel :memory])
+(def category-order [:maps :sets :set-ops :intervals :specialty :strings :parallel :memory :string-rope])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Main Entry Points
@@ -751,7 +1034,8 @@
   (println "  --help             Show this help")
   (println)
   (println "Categories for --only:")
-  (println "  maps, sets, set-ops, intervals, specialty, strings, parallel, memory")
+  (println "  maps, sets, set-ops, intervals, specialty, strings, parallel, memory,")
+  (println "  string-rope")
   (println)
   (println "Examples:")
   (println "  lein bench-simple --quick --only sets")

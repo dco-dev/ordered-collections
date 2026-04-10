@@ -28,7 +28,13 @@
     - rope-conj-right:  fills rightmost chunk, overflows to new node
     - rope-pop-right:   shrinks rightmost chunk, removes if empty
     - coll->root:       partition-all target produces valid chunks"
-  (:require [ordered-collections.kernel.node :as node
+  (:refer-clojure :exclude [chunk-append])
+  (:require [ordered-collections.protocol :as proto
+             :refer [chunk-length chunk-slice chunk-merge chunk-nth
+                     chunk-append chunk-last chunk-butlast chunk-update
+                     chunk-of chunk-reduce-init chunk-append-sb
+                     chunk-splice chunk-splice-split]]
+            [ordered-collections.kernel.node :as node
              :refer [leaf leaf? -k -v -l -r]]
             [ordered-collections.kernel.tree :as tree]
             [ordered-collections.parallel :as par])
@@ -39,6 +45,140 @@
 (def ^:const +min-chunk-size+    128)
 
 (declare raw-rope-concat)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Chunk Protocol Extensions
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(extend-type clojure.lang.APersistentVector
+  proto/PRopeChunk
+  (chunk-length [c] (.count ^clojure.lang.Counted c))
+  (chunk-slice [c start end] (subvec c (int start) (int end)))
+  (chunk-merge [c other] (into c other))
+  (chunk-nth [c i] (.nth ^clojure.lang.Indexed c (unchecked-int i)))
+  (chunk-append [c x] (conj c x))
+  (chunk-last [c] (peek c))
+  (chunk-butlast [c] (pop c))
+  (chunk-update [c i x] (assoc c (int i) x))
+  (chunk-of [_ x] [x])
+  (chunk-reduce-init [c f init]
+    (if (instance? clojure.lang.IReduceInit c)
+      (.reduce ^clojure.lang.IReduceInit c f init)
+      ;; SubVector fallback — indexed iteration
+      (let [^clojure.lang.Indexed c c
+            n (.count ^clojure.lang.Counted c)]
+        (loop [i (int 0) acc init]
+          (if (< i n)
+            (let [ret (f acc (.nth c i))]
+              (if (reduced? ret) @ret (recur (unchecked-inc-int i) ret)))
+            acc)))))
+  (chunk-append-sb [c ^java.lang.StringBuilder sb]
+    (let [n (.count ^clojure.lang.Counted c)]
+      (dotimes [i n]
+        (.append sb (.nth ^clojure.lang.Indexed c (unchecked-int i))))))
+  (chunk-splice [c start end replacement]
+    (let [prefix (subvec c 0 (int start))
+          suffix (subvec c (int end))]
+      (if replacement
+        (into (into prefix replacement) suffix)
+        (into prefix suffix))))
+  (chunk-splice-split [c start end replacement half]
+    (let [si   (int start)
+          ei   (int end)
+          r    (or replacement [])
+          h    (int half)
+          rlen (count r)]
+      (cond
+        (<= h si)
+        [(subvec c 0 h)
+         (into (into (subvec c h si) r) (subvec c ei))]
+
+        (<= h (+ si rlen))
+        (let [roff (- h si)
+              rv   (vec r)]
+          [(into (subvec c 0 si) (subvec rv 0 roff))
+           (into (subvec rv roff) (subvec c ei))])
+
+        :else
+        (let [soff (+ ei (- h si rlen))]
+          [(into (into (subvec c 0 si) r) (subvec c ei soff))
+           (subvec c soff)])))))
+
+(extend-type String
+  proto/PRopeChunk
+  (chunk-length [c] (.length ^String c))
+  (chunk-slice [c start end] (.substring ^String c (int start) (int end)))
+  (chunk-merge [c other] (str c other))
+  (chunk-nth [c i] (.charAt ^String c (unchecked-int i)))
+  (chunk-append [c x] (str c (char x)))
+  (chunk-last [c] (.charAt ^String c (unchecked-dec-int (.length ^String c))))
+  (chunk-butlast [c] (.substring ^String c 0 (unchecked-dec-int (.length ^String c))))
+  (chunk-update [c i x]
+    (let [sb (StringBuilder. ^String c)]
+      (.setCharAt sb (unchecked-int i) (char x))
+      (.toString sb)))
+  (chunk-of [_ x] (String/valueOf (char x)))
+  (chunk-reduce-init [c f init]
+    (let [^String s c
+          n (.length s)]
+      (loop [i (int 0) acc init]
+        (if (< i n)
+          (let [ret (f acc (.charAt s i))]
+            (if (reduced? ret) @ret (recur (unchecked-inc-int i) ret)))
+          acc))))
+  (chunk-append-sb [c ^java.lang.StringBuilder sb]
+    (.append sb ^String c))
+  (chunk-splice [c start end replacement]
+    (let [^String s c
+          ^String r (or replacement "")
+          si (int start)
+          ei (int end)
+          sb (StringBuilder. (+ (- (.length s) (- ei si)) (.length r)))]
+      (.append sb s 0 si)
+      (.append sb r)
+      (.append sb s ei (.length s))
+      (.toString sb)))
+  (chunk-splice-split [c start end replacement half]
+    (let [^String s c
+          ^String r (or replacement "")
+          si (int start)
+          ei (int end)
+          rl (.length r)
+          sl (.length s)
+          h  (int half)
+          rhs-len (- (+ sl rl) (- ei si) h)]
+      (cond
+        ;; Split falls in prefix — left is a substring, right needs StringBuilder
+        (<= h si)
+        [(.substring s 0 h)
+         (let [sb (StringBuilder. rhs-len)]
+           (.append sb s h si)
+           (.append sb r)
+           (.append sb s ei sl)
+           (.toString sb))]
+
+        ;; Split falls in replacement — both need StringBuilder
+        (<= h (+ si rl))
+        (let [roff (- h si)]
+          [(let [sb (StringBuilder. h)]
+             (.append sb s 0 si)
+             (.append sb r 0 roff)
+             (.toString sb))
+           (let [sb (StringBuilder. rhs-len)]
+             (.append sb r roff rl)
+             (.append sb s ei sl)
+             (.toString sb))])
+
+        ;; Split falls in suffix — left needs StringBuilder, right is a substring
+        :else
+        (let [soff (+ ei (- h si rl))]
+          [(let [sb (StringBuilder. h)]
+             (.append sb s 0 si)
+             (.append sb r)
+             (.append sb s ei soff)
+             (.toString sb))
+           (.substring s soff sl)])))))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Rope Node Basics
@@ -54,19 +194,29 @@
   ^long [root]
   (tree/node-size root))
 
-(defn- rope-node-create
-  "Create a rope node rooted at chunk. The node value stores subtree element
-  count; the balance metric remains ordinary node count."
+(defn rope-node-create
+  "Create a rope node for generic (vector) chunks. The node value stores
+  subtree element count; the balance metric remains ordinary node count.
+  This is the *t-join* binding for the generic Rope type."
   [chunk _ l r]
   (node/->SimpleNode chunk
-    (+ (count chunk) (rope-size l) (rope-size r))
+    (+ (chunk-length chunk) (rope-size l) (rope-size r))
+    l r
+    (+ 1 (tree/node-size l) (tree/node-size r))))
+
+(defn string-rope-node-create
+  "Create a rope node for String chunks. The node value stores subtree
+  character count. This is the *t-join* binding for StringRope."
+  [^String chunk _ l r]
+  (node/->SimpleNode chunk
+    (+ (.length chunk) (rope-size l) (rope-size r))
     l r
     (+ 1 (tree/node-size l) (tree/node-size r))))
 
 (defn- chunk-node
   [chunk]
-  (when (seq chunk)
-    (rope-node-create (vec chunk) nil (leaf) (leaf))))
+  (when (pos? (chunk-length chunk))
+    (tree/*t-join* chunk nil (leaf) (leaf))))
 
 (defn- node-chunk
   [n]
@@ -74,17 +224,20 @@
 
 (defn- build-root
   [chunks]
-  (let [n (count chunks)]
-    (when (pos? n)
-      (let [mid   (quot n 2)
-            chunk (nth chunks mid)]
-        (rope-node-create chunk nil
-          (build-root (subvec chunks 0 mid))
-          (build-root (subvec chunks (inc mid) n)))))))
+  (let [create tree/*t-join*]
+    (letfn [(build [chunks]
+              (let [n (count chunks)]
+                (when (pos? n)
+                  (let [mid   (quot n 2)
+                        chunk (nth chunks mid)]
+                    (create chunk nil
+                      (build (subvec chunks 0 mid))
+                      (build (subvec chunks (inc mid) n)))))))]
+      (build chunks))))
 
 (defn chunks->root
   [chunks]
-  (build-root (vec (remove empty? chunks))))
+  (build-root (into [] (remove #(zero? (chunk-length %))) chunks)))
 
 (defn root->chunks
   [root]
@@ -96,13 +249,25 @@
   [coll]
   (chunks->root (mapv vec (partition-all +target-chunk-size+ coll))))
 
+(defn str->root
+  "Build a rope tree from a String, partitioned into substring chunks."
+  [^String s]
+  (let [n (.length s)]
+    (when (pos? n)
+      (build-root
+        (loop [pos 0, acc (transient [])]
+          (if (>= pos n)
+            (persistent! acc)
+            (let [end (min n (+ pos +target-chunk-size+))]
+              (recur end (conj! acc (.substring s pos end))))))))))
+
 (defn chunks->root-csi
   "Build a rope tree from a sequence of chunks, ensuring CSI.
   Scans left to right, accumulating a current chunk. When the current
   chunk reaches [min, target] it is emitted; when it would exceed target
   it is split evenly. The last chunk is emitted at any size (the runt)."
   [chunks]
-  (let [chunks (vec (remove empty? chunks))
+  (let [chunks (into [] (remove #(zero? (chunk-length %))) chunks)
         n      (count chunks)]
     (if (<= n 1)
       (build-root chunks)
@@ -110,8 +275,8 @@
                     (if (>= i n)
                       (persistent! (if cur (conj! acc cur) acc))
                       (let [chunk (nth chunks i)
-                            merged (if cur (into cur chunk) chunk)
-                            mn     (count merged)]
+                            merged (if cur (chunk-merge cur chunk) chunk)
+                            mn     (long (chunk-length merged))]
                         (cond
                           ;; Merged chunk fits in target — keep accumulating
                           (<= mn +target-chunk-size+)
@@ -126,12 +291,12 @@
                           :else
                           (let [half (quot mn 2)]
                             (recur (unchecked-inc-int i)
-                              (subvec merged half)
-                              (conj! acc (subvec merged 0 half))))))))]
+                              (chunk-slice merged half mn)
+                              (conj! acc (chunk-slice merged 0 half))))))))]
         (build-root fixed)))))
 
 (defn- rechunk-balanced
-  "Partition a flat vector of elements into chunks satisfying CSI:
+  "Partition a merged chunk into sub-chunks satisfying CSI:
   every chunk in [min, target] except possibly the last which may be
   smaller. When the last full-sized chunk would leave a remainder
   below min, the final two pieces are split evenly instead.
@@ -139,7 +304,7 @@
   For the small inputs produced by boundary normalization (~512 elements)
   this is constant-time work."
   [elems]
-  (let [n (count elems)]
+  (let [n (long (chunk-length elems))]
     (cond
       (<= n 0)                  []
       (<= n +target-chunk-size+) [elems]
@@ -148,40 +313,43 @@
         (let [rem (- n pos)]
           (cond
             (<= rem +target-chunk-size+)
-            (persistent! (conj! acc (subvec elems pos n)))
+            (persistent! (conj! acc (chunk-slice elems pos n)))
 
             (< (- rem +target-chunk-size+) +min-chunk-size+)
             ;; Taking a full target chunk would leave a runt below min.
             ;; Split the remaining portion evenly so both halves >= min.
             (let [half (quot rem 2)]
               (persistent!
-                (conj! (conj! acc (subvec elems pos (+ pos half)))
-                  (subvec elems (+ pos half) n))))
+                (conj! (conj! acc (chunk-slice elems pos (+ pos half)))
+                  (chunk-slice elems (+ pos half) n))))
 
             :else
             (recur (+ pos +target-chunk-size+)
-              (conj! acc (subvec elems pos (+ pos +target-chunk-size+))))))))))
+              (conj! acc (chunk-slice elems pos (+ pos +target-chunk-size+))))))))))
 
 (defn- rechunk-root
-  "Build a rope root from a small flat vector by rechunking to CSI.
+  "Build a rope root from a merged chunk by rechunking to CSI.
   Boundary repair only produces a handful of chunks, so it is worth
   constructing those shapes directly instead of routing through the
   general chunks->root builder."
   [elems]
-  (let [chunks (rechunk-balanced elems)]
+  (let [chunks (rechunk-balanced elems)
+        create tree/*t-join*]
     (case (count chunks)
       0 nil
       1 (chunk-node (nth chunks 0))
       2 (raw-rope-concat
           (chunk-node (nth chunks 0))
           (chunk-node (nth chunks 1)))
-      3 (rope-node-create (nth chunks 1) nil
+      3 (create (nth chunks 1) nil
           (chunk-node (nth chunks 0))
           (chunk-node (nth chunks 2)))
       (build-root chunks))))
 
 (defn normalize-root
-  "Full O(n) rechunk of a rope tree so every chunk satisfies CSI."
+  "Full O(n) rechunk of a rope tree so every chunk satisfies CSI.
+  Note: materializes all chunks to elements and reassembles as vectors.
+  For string ropes, use chunks->root-csi on root->chunks instead."
   [root]
   (if (leaf? root)
     nil
@@ -190,7 +358,7 @@
 
 (defn- rope-remove-greatest
   [n]
-  (let [create rope-node-create]
+  (let [create tree/*t-join*]
     (letfn [(rm-greatest [n]
               (cond
                 (leaf? n)      (throw (ex-info "remove-greatest: empty rope" {:node n}))
@@ -200,41 +368,41 @@
       (rm-greatest n))))
 
 (defn- raw-rope-concat
-  [l r]
-  (let [create rope-node-create]
-    (letfn [(cat [l r]
-              (cond
-                (leaf? l) r
-                (leaf? r) l
-                :else
-                (let [lw (tree/node-weight l)
-                      rw (tree/node-weight r)]
-                  (cond
-                    (< (* tree/+delta+ lw) rw)
-                    (let [rk  (node-chunk r)
-                          rl  (-l r)
-                          rr  (-r r)]
-                      (tree/node-stitch rk nil (cat l rl) rr create))
+  ([l r] (raw-rope-concat l r tree/*t-join*))
+  ([l r create]
+   (letfn [(cat [l r]
+             (cond
+               (leaf? l) r
+               (leaf? r) l
+               :else
+               (let [lw (tree/node-weight l)
+                     rw (tree/node-weight r)]
+                 (cond
+                   (< (* tree/+delta+ lw) rw)
+                   (let [rk  (node-chunk r)
+                         rl  (-l r)
+                         rr  (-r r)]
+                     (tree/node-stitch rk nil (cat l rl) rr create))
 
-                    (< (* tree/+delta+ rw) lw)
-                    (let [lk  (node-chunk l)
-                          ll  (-l l)
-                          lr  (-r l)]
-                      (tree/node-stitch lk nil ll (cat lr r) create))
+                   (< (* tree/+delta+ rw) lw)
+                   (let [lk  (node-chunk l)
+                         ll  (-l l)
+                         lr  (-r l)]
+                     (tree/node-stitch lk nil ll (cat lr r) create))
 
-                    :else
-                    (let [[chunk _] (tree/node-least-kv r)]
-                      (tree/node-stitch chunk nil l
-                        (tree/node-remove-least r create)
-                        create))))))]
-      (cat l r))))
+                   :else
+                   (let [[chunk _] (tree/node-least-kv r)]
+                     (tree/node-stitch chunk nil l
+                       (tree/node-remove-least r create)
+                       create))))))]
+     (cat l r))))
 
 (defn- rope-join
   "Balanced join: elements of l, then chunk, then elements of r.
   Analogous to node-concat3 but positional rather than comparator-ordered.
   Cost is O(|height(l) - height(r)|) when both are non-leaf."
   [chunk l r]
-  (let [create rope-node-create]
+  (let [create tree/*t-join*]
     (cond
       (and (leaf? l) (leaf? r))
       (chunk-node chunk)
@@ -272,14 +440,14 @@
   [root]
   (if (leaf? root)
     root
-    (if (or (>= (count (node-chunk (tree/node-greatest root))) +min-chunk-size+)
+    (if (or (>= (chunk-length (node-chunk (tree/node-greatest root))) +min-chunk-size+)
             (<= (tree/node-size root) 1))
       root
       (let [last-chunk (node-chunk (tree/node-greatest root))
             rest       (rope-remove-greatest root)
             prev-chunk (node-chunk (tree/node-greatest rest))
             rest2      (rope-remove-greatest rest)
-            combined   (into prev-chunk last-chunk)
+            combined   (chunk-merge prev-chunk last-chunk)
             mid        (rechunk-root combined)]
         (raw-rope-concat rest2 mid)))))
 
@@ -292,23 +460,23 @@
   [root]
   (if (leaf? root)
     root
-    (let [create rope-node-create]
-      (if (or (>= (count (node-chunk (tree/node-least root))) +min-chunk-size+)
+    (let [create tree/*t-join*]
+      (if (or (>= (chunk-length (node-chunk (tree/node-least root))) +min-chunk-size+)
               (<= (tree/node-size root) 1))
         root
         (let [first-chunk (node-chunk (tree/node-least root))
               rest        (tree/node-remove-least root create)
               next-chunk  (node-chunk (tree/node-least rest))
               rest2       (tree/node-remove-least rest create)
-              combined    (into first-chunk next-chunk)
-              cn          (count combined)]
+              combined    (chunk-merge first-chunk next-chunk)
+              cn          (long (chunk-length combined))]
           (if (<= cn +target-chunk-size+)
             (raw-rope-concat (chunk-node combined) rest2)
             ;; Split at min: left piece = min (valid internal),
             ;; right piece = cn - min which is in [min+1, target-1]
             ;; because cn is in (target, 2*target) and min = target/2.
-            (let [c1 (subvec combined 0 +min-chunk-size+)
-                  c2 (subvec combined +min-chunk-size+)]
+            (let [c1 (chunk-slice combined 0 +min-chunk-size+)
+                  c2 (chunk-slice combined +min-chunk-size+ cn)]
               (raw-rope-concat
                 (raw-rope-concat (chunk-node c1) (chunk-node c2))
                 rest2))))))))
@@ -324,11 +492,11 @@
   internal, so it must be >= min. If the combined boundary chunks
   are still below min, pull one more neighbor chunk."
   [l r lchunk rchunk]
-  (let [create   rope-node-create
+  (let [create   tree/*t-join*
         l'       (rope-remove-greatest l)
         r'       (tree/node-remove-least r create)
-        combined (into lchunk rchunk)
-        cn       (count combined)]
+        combined (chunk-merge lchunk rchunk)
+        cn       (long (chunk-length combined))]
     (if (or (>= cn +min-chunk-size+)
             (and (leaf? l') (leaf? r')))
       ;; Combined is large enough or it is the only content
@@ -338,13 +506,13 @@
       (if-not (leaf? l')
         (let [prev  (node-chunk (tree/node-greatest l'))
               l''   (rope-remove-greatest l')
-              all   (into prev combined)
+              all   (chunk-merge prev combined)
               mid   (rechunk-root all)]
           (raw-rope-concat (raw-rope-concat l'' mid) r'))
         ;; l' is empty so r' must be non-empty (both-empty handled above)
         (let [nxt  (node-chunk (tree/node-least r'))
               r''  (tree/node-remove-least r' create)
-              all  (into combined nxt)
+              all  (chunk-merge combined nxt)
               mid  (rechunk-root all)]
           (raw-rope-concat (raw-rope-concat l' mid) r''))))))
 
@@ -365,10 +533,10 @@
     (let [lchunk (node-chunk (tree/node-greatest l))
           rchunk (node-chunk (tree/node-least r))
           ;; l's rightmost becomes internal after concat
-          l-ok (>= (count lchunk) +min-chunk-size+)
+          l-ok (>= (chunk-length lchunk) +min-chunk-size+)
           ;; r's leftmost stays as rightmost (any size ok) when r has 1 chunk
           r-ok (or (<= (tree/node-size r) 1)
-                   (>= (count rchunk) +min-chunk-size+))]
+                   (>= (chunk-length rchunk) +min-chunk-size+))]
       (if (and l-ok r-ok)
         (raw-rope-concat l r)
         (merge-boundary l r lchunk rchunk)))))
@@ -384,29 +552,44 @@
     (let [l  (-l n)
           ls (if (leaf? l) 0 (long (-v l)))
           ck (-k n)
-          cs (long (.count ^clojure.lang.Counted ck))
+          cs (long (chunk-length ck))
           rs (+ ls cs)]
       (cond
         (< i ls) (recur l i)
-        (< i rs) (.nth ^clojure.lang.Indexed ck (unchecked-int (- i ls)))
+        (< i rs) (chunk-nth ck (- i ls))
         :else (recur (-r n) (- i rs))))))
+
+(defn rope-chunk-at
+  "Find the chunk containing index i and its global start offset.
+   Returns [chunk chunk-start-offset]."
+  [root ^long i]
+  (loop [n root, offset (long 0)]
+    (let [l  (-l n)
+          ls (if (leaf? l) 0 (long (-v l)))
+          ck (-k n)
+          cs (long (chunk-length ck))
+          rs (+ ls cs)]
+      (cond
+        (< i ls) (recur l offset)
+        (< i rs) [ck (+ offset ls)]
+        :else    (recur (-r n) (+ offset rs))))))
 
 (defn rope-assoc
   [root ^long i x]
-  (let [create rope-node-create]
+  (let [create tree/*t-join*]
     (letfn [(assoc* [n ^long i]
               (let [ck (-k n)
                     l  (-l n)
                     r  (-r n)
                     ls (if (leaf? l) 0 (long (-v l)))
-                    cs (long (.count ^clojure.lang.Counted ck))
+                    cs (long (chunk-length ck))
                     rs (+ ls cs)]
                 (cond
                   (< i ls)
                   (tree/node-stitch ck nil (assoc* l i) r create)
 
                   (< i rs)
-                  (create (assoc ck (- i ls) x) nil l r)
+                  (create (chunk-update ck (- i ls) x) nil l r)
 
                   :else
                   (tree/node-stitch ck nil l
@@ -434,7 +617,7 @@
                       l     (-l n)
                       r     (-r n)
                       ls    (if (leaf? l) 0 (long (-v l)))
-                      cs    (long (.count ^clojure.lang.Counted chunk))
+                      cs    (long (chunk-length chunk))
                       rs    (+ ls cs)]
                   (cond
                     (< i ls)
@@ -446,12 +629,12 @@
 
                     (< i rs)
                     (let [offset (- i ls)
-                          lc     (subvec chunk 0 offset)
-                          rc     (subvec chunk offset cs)]
-                      [(if (pos? (count lc))
+                          lc     (chunk-slice chunk 0 offset)
+                          rc     (chunk-slice chunk offset cs)]
+                      [(if (pos? (chunk-length lc))
                          (raw-rope-concat l (chunk-node lc))
                          l)
-                       (if (pos? (count rc))
+                       (if (pos? (chunk-length rc))
                          (raw-rope-concat (chunk-node rc) r)
                          r)])
 
@@ -492,7 +675,7 @@
                         l     (-l n)
                         r     (-r n)
                         ls    (if (leaf? l) 0 (long (-v l)))
-                        cs    (long (.count ^clojure.lang.Counted chunk))
+                        cs    (long (chunk-length chunk))
                         rs    (+ ls cs)]
                     (cond
                       (<= end ls)
@@ -502,7 +685,7 @@
                       (slice* r (- start rs) (- end rs))
 
                       (and (>= start ls) (<= end rs))
-                      (chunk-node (subvec chunk (- start ls) (- end ls)))
+                      (chunk-node (chunk-slice chunk (- start ls) (- end ls)))
 
                       :else
                       (let [left      (when (< start ls)
@@ -510,7 +693,7 @@
                             c0        (max 0 (- start ls))
                             c1        (min cs (- end ls))
                             mid-chunk (when (< c0 c1)
-                                        (subvec chunk c0 c1))
+                                        (chunk-slice chunk c0 c1))
                             right     (when (> end rs)
                                         (slice* r 0 (- end rs)))]
                         (slice-3 left mid-chunk right))))))))]
@@ -551,6 +734,75 @@
           left+mid
           (rope-concat left+mid rr))))))
 
+(defn rope-splice-inplace
+  "Fused single-chunk splice: replace [start, end) with replacement-chunk in
+  a single tree traversal. Returns new root when [start, end) falls entirely
+  within one chunk and the result chunk is in [1, target], or nil to signal
+  fallback to the multi-traversal path.
+
+  replacement-chunk may be nil for pure removal. The chunk type must match
+  the tree's chunk type (String for StringRope, vector for generic Rope)."
+  [root start end replacement-chunk create]
+  (when-not (leaf? root)
+    (let [start         (long start)
+          end           (long end)
+          ;; Single-chunk trees allow any result in [1, target].
+          ;; Multi-chunk trees require >= min to preserve CSI.
+          single-chunk? (and (leaf? (-l root)) (leaf? (-r root)))
+          min-len       (if single-chunk? 1 +min-chunk-size+)]
+      (letfn [(splice* [n ^long start ^long end]
+                (when-not (leaf? n)
+                  (let [ck (-k n)
+                        l  (-l n)
+                        r  (-r n)
+                        ls (if (leaf? l) 0 (long (-v l)))
+                        cs (long (chunk-length ck))
+                        rs (+ ls cs)]
+                    (cond
+                      ;; Range starts in left subtree
+                      (< start ls)
+                      (when (<= end ls)
+                        (when-let [new-l (splice* l start end)]
+                          (tree/node-stitch ck nil new-l r create)))
+
+                      ;; Range starts in (or at end of) this chunk
+                      (<= start rs)
+                      (when (<= end rs)
+                        (let [c-start (- start ls)
+                              c-end   (- end ls)
+                              rep-len (if replacement-chunk
+                                        (long (chunk-length replacement-chunk))
+                                        0)
+                              new-len (long (+ cs (- rep-len (- c-end c-start))))]
+                          (cond
+                            ;; Result fits — simple replacement
+                            (and (>= new-len min-len)
+                                 (<= new-len +target-chunk-size+))
+                            (create (chunk-splice ck c-start c-end
+                                      replacement-chunk)
+                              nil l r)
+
+                            ;; Overflow — build two halves directly, no intermediate
+                            (> new-len +target-chunk-size+)
+                            (let [half    (quot new-len 2)
+                                  [c1 c2] (chunk-splice-split ck c-start c-end
+                                             replacement-chunk half)
+                                  c2-node (create c2 nil (leaf) (leaf))]
+                              (tree/node-stitch c1 nil l
+                                (if (leaf? r)
+                                  c2-node
+                                  (raw-rope-concat c2-node r create))
+                                create))
+
+                            ;; Too small — fall back
+                            :else nil)))
+
+                      ;; Range starts in right subtree
+                      :else
+                      (when-let [new-r (splice* r (- start rs) (- end rs))]
+                        (tree/node-stitch ck nil l new-r create))))))]
+        (splice* root start end)))))
+
 (defn rope-insert-root
   "Insert mid-root at start in root."
   [root ^long start mid-root]
@@ -565,20 +817,20 @@
   [root]
   (when-not (leaf? root)
     (let [chunk (node-chunk (tree/node-greatest root))]
-      (peek chunk))))
+      (chunk-last chunk))))
 
 (defn rope-pop-right
   [root]
   (if (leaf? root)
     (throw (IllegalStateException. "Can't pop empty vector"))
-    (let [create rope-node-create]
+    (let [create tree/*t-join*]
       (letfn [(pop* [n]
                 (let [ck (-k n)
                       l  (-l n)
                       r  (-r n)]
                   (if (leaf? r)
-                    (if (> (.count ^clojure.lang.Counted ck) 1)
-                      (create (pop ck) nil l r)
+                    (if (> (chunk-length ck) 1)
+                      (create (chunk-butlast ck) nil l r)
                       l)
                     (tree/node-stitch ck nil l (pop* r) create))))]
         (pop* root)))))
@@ -587,15 +839,16 @@
   [root x]
   (if (leaf? root)
     (chunk-node [x])
-    (let [create rope-node-create]
+    (let [create tree/*t-join*]
       (letfn [(conj* [n]
                 (let [ck (-k n)
                       l  (-l n)
                       r  (-r n)]
                   (if (leaf? r)
-                    (if (< (.count ^clojure.lang.Counted ck) +target-chunk-size+)
-                      (create (conj ck x) nil l r)
-                      (tree/node-stitch ck nil l (chunk-node [x]) create))
+                    (if (< (chunk-length ck) +target-chunk-size+)
+                      (create (chunk-append ck x) nil l r)
+                      (tree/node-stitch ck nil l
+                        (chunk-node (chunk-of ck x)) create))
                     (tree/node-stitch ck nil l (conj* r) create))))]
         (conj* root)))))
 
@@ -875,10 +1128,8 @@
                          (do (vreset! stopped true) (reduced @ret))
                          ret)))]
        (letfn [(reduce-chunk [acc chunk]
-                 (if (instance? clojure.lang.IReduceInit chunk)
-                   (let [result (.reduce ^clojure.lang.IReduceInit chunk wf acc)]
-                     (if @stopped (reduced result) result))
-                   (reduce-chunk-indexed f acc chunk)))
+                 (let [result (chunk-reduce-init chunk wf acc)]
+                   (if @stopped (reduced result) result)))
                (walk [acc n]
                  (if (leaf? n)
                    acc
@@ -904,10 +1155,8 @@
                          (do (vreset! stopped true) (reduced @ret))
                          ret)))]
        (letfn [(reduce-chunk [acc chunk]
-                 (if (instance? clojure.lang.IReduceInit chunk)
-                   (let [result (.reduce ^clojure.lang.IReduceInit chunk wf acc)]
-                     (if @stopped (reduced result) result))
-                   (reduce-chunk-indexed f acc chunk)))
+                 (let [result (chunk-reduce-init chunk wf acc)]
+                   (if @stopped (reduced result) result)))
                (walk [acc n]
                  (if (leaf? n)
                    acc
@@ -921,12 +1170,12 @@
          ;; Bootstrap: first element as init, then reduce the rest
          (let [least  (tree/node-least root)
                chunk0 (-k least)
-               init   (.nth ^clojure.lang.Indexed chunk0 0)
+               init   (chunk-nth chunk0 0)
                acc0   (reduce-chunk init
-                        (subvec chunk0 1 (.count ^clojure.lang.Counted chunk0)))]
+                        (chunk-slice chunk0 1 (chunk-length chunk0)))]
            (if (reduced? acc0)
              @acc0
-             (let [rest-root (tree/node-remove-least root rope-node-create)
+             (let [rest-root (tree/node-remove-least root)
                    result    (walk acc0 rest-root)]
                (if (reduced? result) @result result)))))))))
 
@@ -938,9 +1187,7 @@
   left-to-right order, using subtree sizes to decide when to stop splitting."
   [root ^long n combinef reducef]
   (letfn [(reduce-chunk [acc chunk]
-            (if (instance? clojure.lang.IReduceInit chunk)
-              (.reduce ^clojure.lang.IReduceInit chunk reducef acc)
-              (reduce-chunk-indexed reducef acc chunk)))
+            (chunk-reduce-init chunk reducef acc))
           (fold-node [node]
             (cond
               (leaf? node)
@@ -982,9 +1229,7 @@
       (letfn [(walk [n]
                 (when-not (leaf? n)
                   (walk (-l n))
-                  (let [chunk (-k n)]
-                    (dotimes [i (count chunk)]
-                      (.append sb (nth chunk i))))
+                  (chunk-append-sb (-k n) sb)
                   (walk (-r n))))]
         (walk root))
       (.toString sb))))

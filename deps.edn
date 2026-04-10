@@ -60,4 +60,22 @@
    :extra-deps {org.clojure/data.avl   {:mvn/version "0.2.0"}
                 criterium/criterium    {:mvn/version "0.4.6"}}
    :jvm-opts ["-Xmx8g"]
-   :main-opts ["-m" "ordered-collections.parallel-threshold-bench"]}}}
+   :main-opts ["-m" "ordered-collections.parallel-threshold-bench"]}
+
+  :bench-rope-fold
+  {:extra-paths ["test"]
+   :extra-deps {criterium/criterium {:mvn/version "0.4.6"}}
+   :jvm-opts ["-Xmx8g"]
+   :main-opts ["-m" "ordered-collections.rope-fold-bench"]}
+
+  :bench-transient-rope
+  {:extra-paths ["test"]
+   :extra-deps {criterium/criterium {:mvn/version "0.4.6"}}
+   :jvm-opts ["-Xmx8g"]
+   :main-opts ["-m" "ordered-collections.transient-rope-bench"]}
+
+  :bench-rope-tuning
+  {:extra-paths ["test"]
+   :extra-deps {criterium/criterium {:mvn/version "0.4.6"}}
+   :jvm-opts ["-Xmx8g"]
+   :main-opts ["-m" "ordered-collections.rope-tuning-bench"]}}}

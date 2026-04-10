@@ -449,7 +449,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmethod print-method RangeMap [^RangeMap m ^java.io.Writer w]
-  (.write w "#ordered/range-map [")
+  (.write w "#range/map [")
   (let [s (seq m)]
     (when s
       (let [[k v] (first s)]

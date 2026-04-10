@@ -1,4 +1,4 @@
-(defproject com.dean/ordered-collections "0.2.0"
+(defproject com.dean/ordered-collections "0.3.0-SNAPSHOT"
   :description "Fast, modern, _ropes_ and ordered collections that do more than sort."
   :author       "Dan Lentz <danlentz@gmail.com>"
   :url "http://github.com/dco-dev/ordered-collections"
@@ -39,6 +39,7 @@
              "bench-rope-fold" ["run" "-m" "ordered-collections.rope-fold-bench"]
              "bench-transient-rope" ["run" "-m" "ordered-collections.transient-rope-bench"]
              "bench-rope-tuning" ["run" "-m" "ordered-collections.rope-tuning-bench"]
+             "bench-string-rope" ["run" "-m" "ordered-collections.string-rope-bench"]
              "stats"           ["shell" "bb" "stats"]
              "bench-report"    ["shell" "bb" "bench-report"]
              "paper"           ["shell" "bb" "paper"]})
