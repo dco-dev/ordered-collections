@@ -553,7 +553,7 @@
             (StringRope. (ropetree/rope-conj-right (ropetree/str->root s) c)
               alloc _meta nil))))
       (if (nil? root)
-        (StringRope. (String/valueOf (char o)) alloc _meta)
+        (StringRope. (String/valueOf (char o)) alloc _meta nil)
         (binding [tree/*t-join* alloc]
           (StringRope. (ropetree/rope-conj-right root (char o)) alloc _meta nil)))))
   (empty [_]
@@ -575,7 +575,7 @@
       (let [^String s root
             n (.length s)]
         (cond
-          (<= n 1) (StringRope. nil alloc _meta)
+          (<= n 1) (StringRope. nil alloc _meta nil)
           :else    (StringRope. (.substring s 0 (unchecked-dec-int n)) alloc _meta nil)))
       (binding [tree/*t-join* alloc]
         (StringRope. (ropetree/rope-pop-right root) alloc _meta nil))))
@@ -738,7 +738,7 @@
                          (when (<= n +flat-threshold+)
                            (str s1 s2))))]
       (if combined
-        (StringRope. (when (pos? (.length ^String combined)) combined) alloc _meta)
+        (StringRope. (when (pos? (.length ^String combined)) combined) alloc _meta nil)
         ;; Fall back to tree concat
         (let [other-root (cond
                            other-str   (ropetree/str->root ^String other-str)
@@ -755,12 +755,12 @@
       (if (string? root)
         (let [^String s root
               ii (int i)]
-          [(StringRope. (when (pos? ii) (.substring s 0 ii)) alloc _meta)
-           (StringRope. (when (< ii (.length s)) (.substring s ii)) alloc _meta)])
+          [(StringRope. (when (pos? ii) (.substring s 0 ii)) alloc _meta nil)
+           (StringRope. (when (< ii (.length s)) (.substring s ii)) alloc _meta nil)])
         (binding [tree/*t-join* alloc]
           (let [[l r] (ropetree/ensure-split-parts
                         (ropetree/rope-split-at root (long i)))]
-            [(StringRope. l alloc _meta) (StringRope. r alloc _meta)])))))
+            [(StringRope. l alloc _meta nil) (StringRope. r alloc _meta nil)])))))
   (rope-sub [_ start end]
     (let [n (flat-size root)]
       (check-range! (long start) (long end) n)
