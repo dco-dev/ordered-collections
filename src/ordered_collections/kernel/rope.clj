@@ -561,18 +561,18 @@
 
 (defn rope-chunk-at
   "Find the chunk containing index i and its global start offset.
-   Returns [chunk chunk-start-offset]."
+   Returns [chunk chunk-start-offset]. Index must be in bounds."
   [root ^long i]
-  (loop [n root, offset (long 0)]
+  (loop [n root, i i, offset (long 0)]
     (let [l  (-l n)
           ls (if (leaf? l) 0 (long (-v l)))
           ck (-k n)
           cs (long (chunk-length ck))
           rs (+ ls cs)]
       (cond
-        (< i ls) (recur l offset)
+        (< i ls) (recur l i offset)
         (< i rs) [ck (+ offset ls)]
-        :else    (recur (-r n) (+ offset rs))))))
+        :else    (recur (-r n) (- i rs) (+ offset rs))))))
 
 (defn rope-assoc
   [root ^long i x]
