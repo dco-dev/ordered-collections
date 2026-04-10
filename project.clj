@@ -1,4 +1,4 @@
-(defproject com.dean/ordered-collections "0.3.0-SNAPSHOT"
+(defproject com.dean/ordered-collections "0.2.1-SNAPSHOT"
   :description "Fast, modern, _ropes_ and ordered collections that do more than sort."
   :author       "Dan Lentz <danlentz@gmail.com>"
   :url "http://github.com/dco-dev/ordered-collections"

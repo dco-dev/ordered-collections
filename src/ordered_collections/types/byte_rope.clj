@@ -37,6 +37,20 @@
   StringRope threshold — small binary data stays on the fast path."
   1024)
 
+(def ^:const ^:private +target-chunk-size+
+  "ByteRope target chunk size in bytes. Bound into the kernel's
+  `*target-chunk-size*` dynamic var via `with-tree`. Tuned via
+  `lein bench-rope-tuning`: at 500K bytes, 1024 beats 256 on every
+  operation — construction (~3x), nth (+50%), split (+47%),
+  splice (+21%), concat (~2.4x) — because byte[] System.arraycopy
+  throughput is so high that the win is almost entirely in reducing
+  per-chunk tree overhead."
+  1024)
+
+(def ^:const ^:private +min-chunk-size+
+  "ByteRope minimum internal chunk size (= target/2)."
+  512)
+
 (def ^:private byte-array-class (Class/forName "[B"))
 
 
@@ -45,9 +59,15 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmacro ^:private with-tree
-  "Bind tree/*t-join* to the allocator for the duration of body."
+  "Bind the kernel's dynamic rope context for ByteRope operations:
+  `tree/*t-join*` to the allocator, and the CSI target/min to the
+  ByteRope-specific constants. Every tree-mutating operation must
+  execute inside this binding."
   [alloc & body]
-  `(binding [tree/*t-join* ~alloc] ~@body))
+  `(binding [tree/*t-join*                ~alloc
+             ropetree/*target-chunk-size* +target-chunk-size+
+             ropetree/*min-chunk-size*    +min-chunk-size+]
+     ~@body))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -784,7 +804,7 @@
               alloc _meta)))
         (let [^bytes ins (coll->bytes coll)
               ins-len (alength ins)]
-          (or (when (<= ins-len ropetree/+target-chunk-size+)
+          (or (when (<= ins-len +target-chunk-size+)
                 (when-let [new-root (ropetree/rope-splice-inplace
                                       root ii ii
                                       (when (pos? ins-len) ins)
@@ -824,7 +844,7 @@
               alloc _meta)))
         (let [^bytes rep (coll->bytes coll)
               rep-len (alength rep)]
-          (or (when (<= rep-len ropetree/+target-chunk-size+)
+          (or (when (<= rep-len +target-chunk-size+)
                 (when-let [new-root (ropetree/rope-splice-inplace
                                       root si ei
                                       (when (pos? rep-len) rep)
@@ -979,7 +999,7 @@
   (conj [this x]
     (when-not edit (throw (IllegalAccessError. "Transient used after persistent! call")))
     (.write tail (unchecked-int (long x)))
-    (when (>= (.size tail) ropetree/+target-chunk-size+)
+    (when (>= (.size tail) +target-chunk-size+)
       (.add chunks (.toByteArray tail))
       (set! chunk-bytes (+ chunk-bytes (.size tail)))
       (.reset tail))
@@ -1010,8 +1030,8 @@
         (ropetree/rope-nth root (long i))
 
         (and (>= j 0) (< j chunk-bytes))
-        (let [chunk-idx (quot j ropetree/+target-chunk-size+)
-              offset    (rem j ropetree/+target-chunk-size+)
+        (let [chunk-idx (quot j +target-chunk-size+)
+              offset    (rem j +target-chunk-size+)
               ^bytes chunk (.get chunks (int chunk-idx))]
           (bit-and (long (aget chunk (unchecked-int offset))) 0xFF))
 

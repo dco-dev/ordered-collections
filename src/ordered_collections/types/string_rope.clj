@@ -32,16 +32,33 @@
   the crossover point where tree edits outperform StringBuilder."
   1024)
 
+(def ^:const ^:private +target-chunk-size+
+  "StringRope target chunk size in characters. Bound into the kernel's
+  `*target-chunk-size*` dynamic var via `with-tree`. Tuned via
+  `lein bench-rope-tuning`: 1024 wins on every operation at N=500K
+  vs the historical 256, because JEP 254 compact strings make larger
+  String chunks proportionally cheaper than vector chunks."
+  1024)
+
+(def ^:const ^:private +min-chunk-size+
+  "StringRope minimum internal chunk size (= target/2)."
+  512)
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Tree binding macro
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmacro ^:private with-tree
-  "Bind tree/*t-join* to the allocator for the duration of body.
-  Every tree-mutating operation requires this binding."
+  "Bind the kernel's dynamic rope context for StringRope operations:
+  `tree/*t-join*` to the allocator, and the CSI target/min to the
+  StringRope-specific constants. Every tree-mutating operation must
+  execute inside this binding."
   [alloc & body]
-  `(binding [tree/*t-join* ~alloc] ~@body))
+  `(binding [tree/*t-join*                ~alloc
+             ropetree/*target-chunk-size* +target-chunk-size+
+             ropetree/*min-chunk-size*    +min-chunk-size+]
+     ~@body))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -779,7 +796,7 @@
             (->StringRope* (make-root result alloc) alloc _meta)))
         (let [^String ins (coll->str coll)
               ins-len (.length ins)]
-          (or (when (<= ins-len ropetree/+target-chunk-size+)
+          (or (when (<= ins-len +target-chunk-size+)
                 (when-let [new-root (ropetree/rope-splice-inplace
                                       root ii ii (when (pos? ins-len) ins) alloc)]
                   (->StringRope* new-root alloc _meta)))
@@ -811,7 +828,7 @@
             (->StringRope* (make-root result alloc) alloc _meta)))
         (let [^String rep (coll->str coll)
               rep-len (.length rep)]
-          (or (when (<= rep-len ropetree/+target-chunk-size+)
+          (or (when (<= rep-len +target-chunk-size+)
                 (when-let [new-root (ropetree/rope-splice-inplace
                                       root si ei (when (pos? rep-len) rep) alloc)]
                   (->StringRope* new-root alloc _meta)))
@@ -941,7 +958,7 @@
   (conj [this x]
     (when-not edit (throw (IllegalAccessError. "Transient used after persistent! call")))
     (.append tail (char x))
-    (when (>= (.length tail) ropetree/+target-chunk-size+)
+    (when (>= (.length tail) +target-chunk-size+)
       (.add chunks (.toString tail))
       (set! chunk-chars (+ chunk-chars (.length tail)))
       (.setLength tail 0))
@@ -973,8 +990,8 @@
           (if (instance? Character c) c (Character/valueOf (char c))))
 
         (and (>= j 0) (< j chunk-chars))
-        (let [chunk-idx (quot j ropetree/+target-chunk-size+)
-              offset    (rem j ropetree/+target-chunk-size+)
+        (let [chunk-idx (quot j +target-chunk-size+)
+              offset    (rem j +target-chunk-size+)
               ^String chunk (.get chunks (int chunk-idx))]
           (Character/valueOf (.charAt chunk (unchecked-int offset))))
 

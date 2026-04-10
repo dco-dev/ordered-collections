@@ -16,6 +16,34 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Constants & tree binding macro
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def ^:const ^:private +target-chunk-size+
+  "Generic Rope target chunk size (element count). Bound into the
+  kernel's `*target-chunk-size*` dynamic var via `with-tree`. Tuned
+  via `lein bench-rope-tuning`: at 100K+ elements, 1024 gives better
+  nth/reduce/concat than the historical 256 with only a small splice
+  regression (which is still ~6000x faster than PersistentVector)."
+  1024)
+
+(def ^:const ^:private +min-chunk-size+
+  "Generic Rope minimum internal chunk size (= target/2)."
+  512)
+
+(defmacro ^:private with-tree
+  "Bind the kernel's dynamic rope context for generic Rope operations:
+  `tree/*t-join*` to the allocator, and the CSI target/min to the
+  generic-rope constants. Every tree-mutating operation must execute
+  inside this binding."
+  [alloc & body]
+  `(binding [tree/*t-join*                ~alloc
+             ropetree/*target-chunk-size* +target-chunk-size+
+             ropetree/*min-chunk-size*    +min-chunk-size+]
+     ~@body))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Helpers
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -208,7 +236,7 @@
     (when (.containsKey this k)
       (MapEntry. k (.nth this k))))
   (assoc [this k v]
-    (binding [tree/*t-join* alloc]
+    (with-tree alloc
       (let [n (ropetree/rope-size root)]
         (cond
           (not (insert-index? n k))
@@ -228,7 +256,7 @@
 
   IPersistentCollection
   (cons [_ o]
-    (binding [tree/*t-join* alloc]
+    (with-tree alloc
       (Rope. (ropetree/rope-conj-right root o) alloc _meta)))
   (empty [_]
     (Rope. nil alloc _meta))
@@ -239,7 +267,7 @@
   (peek [_]
     (ropetree/rope-peek-right root))
   (pop [_]
-    (binding [tree/*t-join* alloc]
+    (with-tree alloc
       (Rope. (ropetree/rope-pop-right root) alloc _meta)))
 
   clojure.lang.Seqable
@@ -324,29 +352,29 @@
 
   proto/PRope
   (rope-cat [this other]
-    (binding [tree/*t-join* alloc]
+    (with-tree alloc
       (Rope. (ropetree/rope-concat root (.-root ^Rope other)) alloc _meta)))
   (rope-split [_ i]
     (check-insert-index! (ropetree/rope-size root) i)
-    (binding [tree/*t-join* alloc]
+    (with-tree alloc
       (let [[l r] (ropetree/ensure-split-parts
                     (ropetree/rope-split-at root (long i)))]
         [(Rope. l alloc _meta) (Rope. r alloc _meta)])))
   (rope-sub [_ start end]
     (let [n (ropetree/rope-size root)]
       (check-range! start end n)
-      (binding [tree/*t-join* alloc]
+      (with-tree alloc
         (Rope. (ropetree/rope-subvec-root root (long start) (long end)) alloc _meta))))
   (rope-insert [this i coll]
     (let [n (ropetree/rope-size root)]
       (check-insert-index! n i)
       (or (when (and (instance? clojure.lang.APersistentVector coll)
                      (pos? (count coll))
-                     (<= (count coll) ropetree/+target-chunk-size+))
+                     (<= (count coll) +target-chunk-size+))
             (when-let [new-root (ropetree/rope-splice-inplace
                                   root (long i) (long i) coll alloc)]
               (Rope. new-root alloc _meta)))
-          (binding [tree/*t-join* alloc]
+          (with-tree alloc
             (let [mid (->rope coll)]
               (Rope. (ropetree/rope-insert-root root (long i) (.-root ^Rope mid)) alloc _meta))))))
   (rope-remove [this start end]
@@ -356,19 +384,19 @@
       (or (when-let [new-root (ropetree/rope-splice-inplace
                                 root start end nil alloc)]
             (Rope. new-root alloc _meta))
-          (binding [tree/*t-join* alloc]
+          (with-tree alloc
             (Rope. (ropetree/rope-remove-root root start end) alloc _meta)))))
   (rope-splice [this start end coll]
     (check-range! start end (ropetree/rope-size root))
     (let [start (long start)
           end   (long end)]
       (or (when (and (instance? clojure.lang.APersistentVector coll)
-                     (<= (count coll) ropetree/+target-chunk-size+))
+                     (<= (count coll) +target-chunk-size+))
             (let [rep-chunk (when (pos? (count coll)) coll)]
               (when-let [new-root (ropetree/rope-splice-inplace
                                     root start end rep-chunk alloc)]
                 (Rope. new-root alloc _meta))))
-          (binding [tree/*t-join* alloc]
+          (with-tree alloc
             (let [mid (->rope coll)]
               (Rope. (ropetree/rope-splice-root root start end (.-root ^Rope mid)) alloc _meta))))))
   (rope-chunks [_]
@@ -394,7 +422,7 @@
   [x]
   (if (instance? Rope x)
     x
-    (binding [tree/*t-join* ropetree/rope-node-create]
+    (with-tree ropetree/rope-node-create
       (Rope. (ropetree/coll->root x) ropetree/rope-node-create {}))))
 
 (defn rope-concat
@@ -407,7 +435,7 @@
   ([left right]
    (proto/rope-cat (->rope left) (->rope right)))
   ([left right & more]
-   (binding [tree/*t-join* ropetree/rope-node-create]
+   (with-tree ropetree/rope-node-create
      (Rope. (ropetree/chunks->root-csi
               (into [] (mapcat (comp ropetree/root->chunks rope-root))
                     (list* left right more)))
@@ -509,16 +537,16 @@
   (conj [this x]
     (when-not edit (throw (IllegalAccessError. "Transient used after persistent! call")))
     (.add tail x)
-    (when (>= (.size tail) ropetree/+target-chunk-size+)
+    (when (>= (.size tail) +target-chunk-size+)
       (.add chunks (vec tail))
-      (set! chunk-elems (+ chunk-elems ropetree/+target-chunk-size+))
+      (set! chunk-elems (+ chunk-elems +target-chunk-size+))
       (.clear tail))
     this)
 
   (persistent [_]
     (when-not edit (throw (IllegalAccessError. "Transient used after persistent! call")))
     (set! edit false)
-    (binding [tree/*t-join* alloc]
+    (with-tree alloc
       (Rope. (transient-final-root root chunks tail) alloc _meta)))
 
   clojure.lang.Counted
@@ -533,8 +561,8 @@
       (cond
         (and (>= i 0) (< i rs))   (ropetree/rope-nth root i)
         (and (>= j 0) (< j chunk-elems))
-        (let [chunk-idx (quot j ropetree/+target-chunk-size+)
-              offset    (rem j ropetree/+target-chunk-size+)
+        (let [chunk-idx (quot j +target-chunk-size+)
+              offset    (rem j +target-chunk-size+)
               chunk     (.get chunks chunk-idx)]
           (.nth ^clojure.lang.Indexed chunk offset))
 
@@ -555,21 +583,22 @@
 (defn rope
   ([] (Rope. nil ropetree/rope-node-create {}))
   ([coll]
-   (binding [tree/*t-join* ropetree/rope-node-create]
+   (with-tree ropetree/rope-node-create
      (Rope. (ropetree/coll->root coll) ropetree/rope-node-create {}))))
 
 (defn- rope-root
   [x]
   (if (instance? Rope x)
     (.-root ^Rope x)
-    (ropetree/coll->root x)))
+    (with-tree ropetree/rope-node-create
+      (ropetree/coll->root x))))
 
 (defn rope-concat-all
   "Bulk concatenation of rope values or rope-coercible collections.
   Collects all chunks and builds the tree directly in O(total chunks),
   avoiding pairwise tree operations."
   [& xs]
-  (binding [tree/*t-join* ropetree/rope-node-create]
+  (with-tree ropetree/rope-node-create
     (Rope. (ropetree/chunks->root-csi
              (into [] (mapcat (comp ropetree/root->chunks rope-root)) xs))
       ropetree/rope-node-create

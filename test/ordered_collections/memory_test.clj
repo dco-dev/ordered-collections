@@ -223,6 +223,73 @@
                                    n (* 100 (- ratio 1.0))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; StringRope Memory
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- random-ascii ^String [^long n]
+  (let [sb (StringBuilder. (int n))
+        chars "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789"
+        nchars (.length chars)]
+    (dotimes [_ n]
+      (.append sb (.charAt chars (rand-int nchars))))
+    (.toString sb)))
+
+(deftest string-rope-memory
+  (testing "StringRope memory vs String (ASCII content, latin-1 compact storage)"
+    (doseq [n [1000 10000 100000]]
+      (let [^String text (random-ascii n)
+            sr           (oc/string-rope text)
+            sr-bpe       (bytes-per-element sr n)
+            str-bpe      (bytes-per-element text n)
+            ratio        (/ sr-bpe str-bpe)]
+
+        (println)
+        (println (format "=== StringRope Memory at N=%,d ===" n))
+        (println (format "  string-rope: %5.1f bytes/char  (total: %s)"
+                         sr-bpe (format-bytes (measure-bytes sr))))
+        (println (format "  string:      %5.1f bytes/char  (total: %s)"
+                         str-bpe (format-bytes (measure-bytes text))))
+        (println (format "  ratio:       %.2fx" ratio))
+
+        ;; StringRope overhead should be bounded — flat mode is
+        ;; ~string, tree mode adds per-chunk String + SimpleNode overhead
+        (is (< ratio 3.0)
+            (format "StringRope overhead should be < 3x at N=%d (was %.2fx)" n ratio))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ByteRope Memory
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- random-bytes ^bytes [^long n]
+  (let [rng (java.util.Random. 42)
+        b (byte-array (int n))]
+    (.nextBytes rng b)
+    b))
+
+(deftest byte-rope-memory
+  (testing "ByteRope memory vs byte[]"
+    (doseq [n [1000 10000 100000]]
+      (let [^bytes data (random-bytes n)
+            br          (oc/byte-rope data)
+            br-bpe      (bytes-per-element br n)
+            ba-bpe      (bytes-per-element data n)
+            ratio       (/ br-bpe ba-bpe)]
+
+        (println)
+        (println (format "=== ByteRope Memory at N=%,d ===" n))
+        (println (format "  byte-rope: %5.1f bytes/byte  (total: %s)"
+                         br-bpe (format-bytes (measure-bytes br))))
+        (println (format "  byte[]:    %5.1f bytes/byte  (total: %s)"
+                         ba-bpe (format-bytes (measure-bytes data))))
+        (println (format "  ratio:     %.2fx" ratio))
+
+        ;; byte[] packs at 1 byte/byte plus a tiny object header, so the
+        ;; tree-mode rope's per-chunk + per-node overhead is proportionally
+        ;; bigger than for StringRope. Bound it loosely.
+        (is (< ratio 5.0)
+            (format "ByteRope overhead should be < 5x at N=%d (was %.2fx)" n ratio))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Summary Report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -242,7 +309,18 @@
           core-map (into (sorted-map) map-data)
           avl-map (into (avl/sorted-map) map-data)
           ordered-map (oc/ordered-map map-data)
-          long-map (oc/long-ordered-map map-data)]
+          long-map (oc/long-ordered-map map-data)
+
+          ;; Ropes — compared against their natural baselines
+          rope-data (range n)
+          rope (oc/rope rope-data)
+          vector (vec rope-data)
+
+          text (random-ascii n)
+          string-rope (oc/string-rope text)
+
+          ^bytes byte-data (random-bytes n)
+          byte-rope (oc/byte-rope byte-data)]
 
       (println)
       (println "╔══════════════════════════════════════════════════════════════╗")
@@ -269,6 +347,39 @@
                 ratio (/ bpe core-bpe)]
             (println (format "║ %-20s │ %10.1f │ %12s │ %8.2fx ║"
                              name bpe (format-bytes (measure-bytes coll)) ratio)))))
+      (println "╠══════════════════════════════════════════════════════════════╣")
+      (println "║ Rope family          │ Bytes/Elem │ Total Memory │ vs base   ║")
+      (println "╠══════════════════════════════════════════════════════════════╣")
+      (let [vec-bpe  (bytes-per-element vector n)
+            rope-bpe (bytes-per-element rope n)]
+        (println (format "║ %-20s │ %10.1f │ %12s │ %8s ║"
+                         "vector (baseline)" vec-bpe
+                         (format-bytes (measure-bytes vector))
+                         "1.00x"))
+        (println (format "║ %-20s │ %10.1f │ %12s │ %8.2fx ║"
+                         "rope" rope-bpe
+                         (format-bytes (measure-bytes rope))
+                         (/ rope-bpe vec-bpe))))
+      (let [str-bpe (bytes-per-element text n)
+            sr-bpe  (bytes-per-element string-rope n)]
+        (println (format "║ %-20s │ %10.1f │ %12s │ %8s ║"
+                         "string (baseline)" str-bpe
+                         (format-bytes (measure-bytes text))
+                         "1.00x"))
+        (println (format "║ %-20s │ %10.1f │ %12s │ %8.2fx ║"
+                         "string-rope" sr-bpe
+                         (format-bytes (measure-bytes string-rope))
+                         (/ sr-bpe str-bpe))))
+      (let [ba-bpe (bytes-per-element byte-data n)
+            br-bpe (bytes-per-element byte-rope n)]
+        (println (format "║ %-20s │ %10.1f │ %12s │ %8s ║"
+                         "byte[] (baseline)" ba-bpe
+                         (format-bytes (measure-bytes byte-data))
+                         "1.00x"))
+        (println (format "║ %-20s │ %10.1f │ %12s │ %8.2fx ║"
+                         "byte-rope" br-bpe
+                         (format-bytes (measure-bytes byte-rope))
+                         (/ br-bpe ba-bpe))))
       (println "╚══════════════════════════════════════════════════════════════╝")
 
       ;; Assertions for documentation accuracy

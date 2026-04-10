@@ -45,8 +45,22 @@
   (:import  [clojure.lang Murmur3 SeqIterator Util]))
 
 
-(def ^:const +target-chunk-size+ 256)
-(def ^:const +min-chunk-size+    128)
+;; Library-wide default CSI values. Kept as plain defs so external code
+;; (tests, benchmarks) can reference them. Internal kernel code reads
+;; from the dynamic vars below, which each rope variant binds inside
+;; its `with-tree` macro to its own per-variant constants. This lets
+;; the generic rope, string-rope, and byte-rope each carry a chunk size
+;; that is appropriate for their underlying storage.
+;;
+;; Defaults are 1024/512 after tuning via `lein bench-rope-tuning`.
+;; The generic rope, string rope, and byte rope all benefit from larger
+;; chunks at 100K+ element counts. See each types/*_rope.clj file for
+;; the per-variant rationale.
+(def +target-chunk-size+ 1024)
+(def +min-chunk-size+    512)
+
+(def ^:dynamic *target-chunk-size* +target-chunk-size+)
+(def ^:dynamic *min-chunk-size*    +min-chunk-size+)
 
 (declare raw-rope-concat)
 
@@ -133,33 +147,38 @@
     (tree/node-reduce-keys conj [] root)))
 
 (defn coll->root
-  "Build a rope tree from a sequential collection, partitioned into chunks."
+  "Build a rope tree from a sequential collection, partitioned into chunks.
+  Uses the currently bound `*target-chunk-size*`."
   [coll]
-  (chunks->root (mapv vec (partition-all +target-chunk-size+ coll))))
+  (chunks->root (mapv vec (partition-all (long *target-chunk-size*) coll))))
 
 (defn str->root
-  "Build a rope tree from a String, partitioned into substring chunks."
+  "Build a rope tree from a String, partitioned into substring chunks.
+  Uses the currently bound `*target-chunk-size*`."
   [^String s]
-  (let [n (.length s)]
+  (let [n (.length s)
+        target (long *target-chunk-size*)]
     (when (pos? n)
       (build-root
         (loop [pos 0, acc (transient [])]
           (if (>= pos n)
             (persistent! acc)
-            (let [end (min n (+ pos +target-chunk-size+))]
+            (let [end (min n (+ pos target))]
               (recur end (conj! acc (.substring s pos end))))))))))
 
 (defn bytes->root
   "Build a rope tree from a byte array, partitioned into target-sized byte[] chunks.
-  Always copies the input so the tree never shares mutable state with the caller."
+  Always copies the input so the tree never shares mutable state with the caller.
+  Uses the currently bound `*target-chunk-size*`."
   [^bytes data]
-  (let [n (alength data)]
+  (let [n (alength data)
+        target (long *target-chunk-size*)]
     (when (pos? n)
       (build-root
         (loop [pos 0, acc (transient [])]
           (if (>= pos n)
             (persistent! acc)
-            (let [end (int (min n (+ pos +target-chunk-size+)))]
+            (let [end (int (min n (+ pos target)))]
               (recur end (conj! acc
                            (java.util.Arrays/copyOfRange data (int pos) end))))))))))
 
@@ -187,10 +206,13 @@
   "Build a rope tree from a sequence of chunks, ensuring CSI.
   Scans left to right, accumulating a current chunk. When the current
   chunk reaches [min, target] it is emitted; when it would exceed target
-  it is split evenly. The last chunk is emitted at any size (the runt)."
+  it is split evenly. The last chunk is emitted at any size (the runt).
+  Uses the currently bound `*target-chunk-size*` and `*min-chunk-size*`."
   [chunks]
   (let [chunks (into [] (remove #(zero? (chunk-length %))) chunks)
-        n      (count chunks)]
+        n      (count chunks)
+        target (long *target-chunk-size*)
+        minsz  (long *min-chunk-size*)]
     (if (<= n 1)
       (build-root chunks)
       (let [fixed (loop [i (int 0), cur nil, acc (transient [])]
@@ -201,8 +223,8 @@
                             mn     (long (chunk-length merged))]
                         (cond
                           ;; Merged chunk fits in target — keep accumulating
-                          (<= mn +target-chunk-size+)
-                          (if (and (>= mn +min-chunk-size+)
+                          (<= mn target)
+                          (if (and (>= mn minsz)
                                    (< (unchecked-inc-int i) n))
                             ;; Large enough and not last — emit and reset
                             (recur (unchecked-inc-int i) nil (conj! acc merged))
@@ -226,18 +248,20 @@
   For the small inputs produced by boundary normalization (~512 elements)
   this is constant-time work."
   [elems]
-  (let [n (long (chunk-length elems))]
+  (let [n      (long (chunk-length elems))
+        target (long *target-chunk-size*)
+        minsz  (long *min-chunk-size*)]
     (cond
-      (<= n 0)                  []
-      (<= n +target-chunk-size+) [elems]
+      (<= n 0)      []
+      (<= n target) [elems]
       :else
       (loop [pos 0, acc (transient [])]
         (let [rem (- n pos)]
           (cond
-            (<= rem +target-chunk-size+)
+            (<= rem target)
             (persistent! (conj! acc (chunk-slice elems pos n)))
 
-            (< (- rem +target-chunk-size+) +min-chunk-size+)
+            (< (- rem target) minsz)
             ;; Taking a full target chunk would leave a runt below min.
             ;; Split the remaining portion evenly so both halves >= min.
             (let [half (quot rem 2)]
@@ -246,8 +270,8 @@
                   (chunk-slice elems (+ pos half) n))))
 
             :else
-            (recur (+ pos +target-chunk-size+)
-              (conj! acc (chunk-slice elems pos (+ pos +target-chunk-size+))))))))))
+            (recur (+ pos target)
+              (conj! acc (chunk-slice elems pos (+ pos target))))))))))
 
 (defn- rechunk-root
   "Build a rope root from a merged chunk by rechunking to CSI.
@@ -362,16 +386,17 @@
   [root]
   (if (leaf? root)
     root
-    (if (or (>= (chunk-length (node-chunk (tree/node-greatest root))) +min-chunk-size+)
-            (<= (tree/node-size root) 1))
-      root
-      (let [last-chunk (node-chunk (tree/node-greatest root))
-            rest       (rope-remove-greatest root)
-            prev-chunk (node-chunk (tree/node-greatest rest))
-            rest2      (rope-remove-greatest rest)
-            combined   (chunk-merge prev-chunk last-chunk)
-            mid        (rechunk-root combined)]
-        (raw-rope-concat rest2 mid)))))
+    (let [minsz (long *min-chunk-size*)]
+      (if (or (>= (chunk-length (node-chunk (tree/node-greatest root))) minsz)
+              (<= (tree/node-size root) 1))
+        root
+        (let [last-chunk (node-chunk (tree/node-greatest root))
+              rest       (rope-remove-greatest root)
+              prev-chunk (node-chunk (tree/node-greatest rest))
+              rest2      (rope-remove-greatest rest)
+              combined   (chunk-merge prev-chunk last-chunk)
+              mid        (rechunk-root combined)]
+          (raw-rope-concat rest2 mid))))))
 
 (defn- ensure-left-fringe
   "Restore CSI when the leftmost chunk may be undersized.
@@ -382,8 +407,10 @@
   [root]
   (if (leaf? root)
     root
-    (let [create tree/*t-join*]
-      (if (or (>= (chunk-length (node-chunk (tree/node-least root))) +min-chunk-size+)
+    (let [create tree/*t-join*
+          target (long *target-chunk-size*)
+          minsz  (long *min-chunk-size*)]
+      (if (or (>= (chunk-length (node-chunk (tree/node-least root))) minsz)
               (<= (tree/node-size root) 1))
         root
         (let [first-chunk (node-chunk (tree/node-least root))
@@ -392,13 +419,13 @@
               rest2       (tree/node-remove-least rest create)
               combined    (chunk-merge first-chunk next-chunk)
               cn          (long (chunk-length combined))]
-          (if (<= cn +target-chunk-size+)
+          (if (<= cn target)
             (raw-rope-concat (chunk-node combined) rest2)
             ;; Split at min: left piece = min (valid internal),
             ;; right piece = cn - min which is in [min+1, target-1]
             ;; because cn is in (target, 2*target) and min = target/2.
-            (let [c1 (chunk-slice combined 0 +min-chunk-size+)
-                  c2 (chunk-slice combined +min-chunk-size+ cn)]
+            (let [c1 (chunk-slice combined 0 minsz)
+                  c2 (chunk-slice combined minsz cn)]
               (raw-rope-concat
                 (raw-rope-concat (chunk-node c1) (chunk-node c2))
                 rest2))))))))
@@ -415,11 +442,12 @@
   are still below min, pull one more neighbor chunk."
   [l r lchunk rchunk]
   (let [create   tree/*t-join*
+        minsz    (long *min-chunk-size*)
         l'       (rope-remove-greatest l)
         r'       (tree/node-remove-least r create)
         combined (chunk-merge lchunk rchunk)
         cn       (long (chunk-length combined))]
-    (if (or (>= cn +min-chunk-size+)
+    (if (or (>= cn minsz)
             (and (leaf? l') (leaf? r')))
       ;; Combined is large enough or it is the only content
       (let [mid (rechunk-root combined)]
@@ -452,13 +480,14 @@
     (leaf? l) r
     (leaf? r) l
     :else
-    (let [lchunk (node-chunk (tree/node-greatest l))
+    (let [minsz  (long *min-chunk-size*)
+          lchunk (node-chunk (tree/node-greatest l))
           rchunk (node-chunk (tree/node-least r))
           ;; l's rightmost becomes internal after concat
-          l-ok (>= (chunk-length lchunk) +min-chunk-size+)
+          l-ok (>= (chunk-length lchunk) minsz)
           ;; r's leftmost stays as rightmost (any size ok) when r has 1 chunk
           r-ok (or (<= (tree/node-size r) 1)
-                   (>= (chunk-length rchunk) +min-chunk-size+))]
+                   (>= (chunk-length rchunk) minsz))]
       (if (and l-ok r-ok)
         (raw-rope-concat l r)
         (merge-boundary l r lchunk rchunk)))))
@@ -668,10 +697,12 @@
   (when-not (leaf? root)
     (let [start         (long start)
           end           (long end)
+          target        (long *target-chunk-size*)
+          minsz         (long *min-chunk-size*)
           ;; Single-chunk trees allow any result in [1, target].
           ;; Multi-chunk trees require >= min to preserve CSI.
           single-chunk? (and (leaf? (-l root)) (leaf? (-r root)))
-          min-len       (if single-chunk? 1 +min-chunk-size+)]
+          min-len       (if single-chunk? 1 minsz)]
       (letfn [(splice* [n ^long start ^long end]
                 (when-not (leaf? n)
                   (let [ck (-k n)
@@ -699,13 +730,13 @@
                           (cond
                             ;; Result fits — simple replacement
                             (and (>= new-len min-len)
-                                 (<= new-len +target-chunk-size+))
+                                 (<= new-len target))
                             (create (chunk-splice ck c-start c-end
                                       replacement-chunk)
                               nil l r)
 
                             ;; Overflow — build two halves directly, no intermediate
-                            (> new-len +target-chunk-size+)
+                            (> new-len target)
                             (let [half    (quot new-len 2)
                                   [c1 c2] (chunk-splice-split ck c-start c-end
                                              replacement-chunk half)
@@ -761,13 +792,14 @@
   [root x]
   (if (leaf? root)
     (chunk-node [x])
-    (let [create tree/*t-join*]
+    (let [create tree/*t-join*
+          target (long *target-chunk-size*)]
       (letfn [(conj* [n]
                 (let [ck (-k n)
                       l  (-l n)
                       r  (-r n)]
                   (if (leaf? r)
-                    (if (< (chunk-length ck) +target-chunk-size+)
+                    (if (< (chunk-length ck) target)
                       (create (chunk-append ck x) nil l r)
                       (tree/node-stitch ck nil l
                         (chunk-node (chunk-of ck x)) create))
@@ -1143,13 +1175,20 @@
   "Check that a rope root satisfies the Chunk Size Invariant:
   - every chunk has size in [1, target]
   - every chunk except the rightmost has size >= min
-  Returns true if CSI holds, false otherwise."
-  [root]
-  (if (leaf? root)
-    true
-    (let [chunks (root->chunks root)
-          sizes  (mapv count chunks)]
-      (and
-        (every? pos? sizes)
-        (every? #(<= % +target-chunk-size+) sizes)
-        (every? #(>= % +min-chunk-size+) (butlast sizes))))))
+  Returns true if CSI holds, false otherwise.
+
+  Reads the currently bound `*target-chunk-size*` and `*min-chunk-size*`,
+  so callers testing a particular rope variant should invoke this from
+  inside that variant's `with-tree` binding (or the 3-arity form that
+  takes explicit sizes)."
+  ([root]
+   (invariant-valid? root (long *target-chunk-size*) (long *min-chunk-size*)))
+  ([root ^long target ^long minsz]
+   (if (leaf? root)
+     true
+     (let [chunks (root->chunks root)
+           sizes  (mapv #(long (chunk-length %)) chunks)]
+       (and
+         (every? pos? sizes)
+         (every? #(<= (long %) target) sizes)
+         (every? #(>= (long %) minsz) (butlast sizes)))))))
