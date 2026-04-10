@@ -34,6 +34,10 @@
                      chunk-append chunk-last chunk-butlast chunk-update
                      chunk-of chunk-reduce-init chunk-append-sb
                      chunk-splice chunk-splice-split]]
+            ;; Force-load PRopeChunk extensions for the built-in chunk
+            ;; backends (APersistentVector, String, byte[]). These must be
+            ;; loaded before any rope-kernel function dispatches on a chunk.
+            [ordered-collections.kernel.chunk]
             [ordered-collections.kernel.node :as node
              :refer [leaf leaf? -k -v -l -r]]
             [ordered-collections.kernel.tree :as tree]
@@ -46,142 +50,13 @@
 
 (declare raw-rope-concat)
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Chunk Protocol Extensions
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(extend-type clojure.lang.APersistentVector
-  proto/PRopeChunk
-  (chunk-length [c] (.count ^clojure.lang.Counted c))
-  (chunk-slice [c start end] (subvec c (int start) (int end)))
-  (chunk-merge [c other] (into c other))
-  (chunk-nth [c i] (.nth ^clojure.lang.Indexed c (unchecked-int i)))
-  (chunk-append [c x] (conj c x))
-  (chunk-last [c] (peek c))
-  (chunk-butlast [c] (pop c))
-  (chunk-update [c i x] (assoc c (int i) x))
-  (chunk-of [_ x] [x])
-  (chunk-reduce-init [c f init]
-    (if (instance? clojure.lang.IReduceInit c)
-      (.reduce ^clojure.lang.IReduceInit c f init)
-      ;; SubVector fallback — indexed iteration
-      (let [^clojure.lang.Indexed c c
-            n (.count ^clojure.lang.Counted c)]
-        (loop [i (int 0) acc init]
-          (if (< i n)
-            (let [ret (f acc (.nth c i))]
-              (if (reduced? ret) @ret (recur (unchecked-inc-int i) ret)))
-            acc)))))
-  (chunk-append-sb [c ^java.lang.StringBuilder sb]
-    (let [n (.count ^clojure.lang.Counted c)]
-      (dotimes [i n]
-        (.append sb (.nth ^clojure.lang.Indexed c (unchecked-int i))))))
-  (chunk-splice [c start end replacement]
-    (let [prefix (subvec c 0 (int start))
-          suffix (subvec c (int end))]
-      (if replacement
-        (into (into prefix replacement) suffix)
-        (into prefix suffix))))
-  (chunk-splice-split [c start end replacement half]
-    (let [si   (int start)
-          ei   (int end)
-          r    (or replacement [])
-          h    (int half)
-          rlen (count r)]
-      (cond
-        (<= h si)
-        [(subvec c 0 h)
-         (into (into (subvec c h si) r) (subvec c ei))]
-
-        (<= h (+ si rlen))
-        (let [roff (- h si)
-              rv   (vec r)]
-          [(into (subvec c 0 si) (subvec rv 0 roff))
-           (into (subvec rv roff) (subvec c ei))])
-
-        :else
-        (let [soff (+ ei (- h si rlen))]
-          [(into (into (subvec c 0 si) r) (subvec c ei soff))
-           (subvec c soff)])))))
-
-(extend-type String
-  proto/PRopeChunk
-  (chunk-length [c] (.length ^String c))
-  (chunk-slice [c start end] (.substring ^String c (int start) (int end)))
-  (chunk-merge [c other] (str c other))
-  (chunk-nth [c i] (.charAt ^String c (unchecked-int i)))
-  (chunk-append [c x] (str c (char x)))
-  (chunk-last [c] (.charAt ^String c (unchecked-dec-int (.length ^String c))))
-  (chunk-butlast [c] (.substring ^String c 0 (unchecked-dec-int (.length ^String c))))
-  (chunk-update [c i x]
-    (let [sb (StringBuilder. ^String c)]
-      (.setCharAt sb (unchecked-int i) (char x))
-      (.toString sb)))
-  (chunk-of [_ x] (String/valueOf (char x)))
-  (chunk-reduce-init [c f init]
-    (let [^String s c
-          n (.length s)]
-      (loop [i (int 0) acc init]
-        (if (< i n)
-          (let [ret (f acc (.charAt s i))]
-            (if (reduced? ret) @ret (recur (unchecked-inc-int i) ret)))
-          acc))))
-  (chunk-append-sb [c ^java.lang.StringBuilder sb]
-    (.append sb ^String c))
-  (chunk-splice [c start end replacement]
-    (let [^String s c
-          ^String r (or replacement "")
-          si (int start)
-          ei (int end)
-          sb (StringBuilder. (+ (- (.length s) (- ei si)) (.length r)))]
-      (.append sb s 0 si)
-      (.append sb r)
-      (.append sb s ei (.length s))
-      (.toString sb)))
-  (chunk-splice-split [c start end replacement half]
-    (let [^String s c
-          ^String r (or replacement "")
-          si (int start)
-          ei (int end)
-          rl (.length r)
-          sl (.length s)
-          h  (int half)
-          rhs-len (- (+ sl rl) (- ei si) h)]
-      (cond
-        ;; Split falls in prefix — left is a substring, right needs StringBuilder
-        (<= h si)
-        [(.substring s 0 h)
-         (let [sb (StringBuilder. rhs-len)]
-           (.append sb s h si)
-           (.append sb r)
-           (.append sb s ei sl)
-           (.toString sb))]
-
-        ;; Split falls in replacement — both need StringBuilder
-        (<= h (+ si rl))
-        (let [roff (- h si)]
-          [(let [sb (StringBuilder. h)]
-             (.append sb s 0 si)
-             (.append sb r 0 roff)
-             (.toString sb))
-           (let [sb (StringBuilder. rhs-len)]
-             (.append sb r roff rl)
-             (.append sb s ei sl)
-             (.toString sb))])
-
-        ;; Split falls in suffix — left needs StringBuilder, right is a substring
-        :else
-        (let [soff (+ ei (- h si rl))]
-          [(let [sb (StringBuilder. h)]
-             (.append sb s 0 si)
-             (.append sb r)
-             (.append sb s ei soff)
-             (.toString sb))
-           (.substring s soff sl)])))))
-
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Rope Node Basics
+;;
+;; The chunk-backend protocol extensions this kernel dispatches on
+;; (APersistentVector, String, byte[]) live in
+;; `ordered-collections.kernel.chunk`, loaded via the ns require above.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn rope-size
@@ -213,6 +88,15 @@
     l r
     (+ 1 (tree/node-size l) (tree/node-size r))))
 
+(defn byte-rope-node-create
+  "Create a rope node for byte[] chunks. The node value stores subtree
+  byte count. This is the *t-join* binding for ByteRope."
+  [^bytes chunk _ l r]
+  (node/->SimpleNode chunk
+    (+ (alength chunk) (rope-size l) (rope-size r))
+    l r
+    (+ 1 (tree/node-size l) (tree/node-size r))))
+
 (defn- chunk-node
   [chunk]
   (when (pos? (chunk-length chunk))
@@ -236,16 +120,20 @@
       (build chunks))))
 
 (defn chunks->root
+  "Build a balanced rope tree from a sequence of chunks.
+  Empty chunks are filtered out."
   [chunks]
   (build-root (into [] (remove #(zero? (chunk-length %))) chunks)))
 
 (defn root->chunks
+  "Extract all chunks from a rope tree in order."
   [root]
   (if (leaf? root)
     []
     (tree/node-reduce-keys conj [] root)))
 
 (defn coll->root
+  "Build a rope tree from a sequential collection, partitioned into chunks."
   [coll]
   (chunks->root (mapv vec (partition-all +target-chunk-size+ coll))))
 
@@ -260,6 +148,40 @@
             (persistent! acc)
             (let [end (min n (+ pos +target-chunk-size+))]
               (recur end (conj! acc (.substring s pos end))))))))))
+
+(defn bytes->root
+  "Build a rope tree from a byte array, partitioned into target-sized byte[] chunks.
+  Always copies the input so the tree never shares mutable state with the caller."
+  [^bytes data]
+  (let [n (alength data)]
+    (when (pos? n)
+      (build-root
+        (loop [pos 0, acc (transient [])]
+          (if (>= pos n)
+            (persistent! acc)
+            (let [end (int (min n (+ pos +target-chunk-size+)))]
+              (recur end (conj! acc
+                           (java.util.Arrays/copyOfRange data (int pos) end))))))))))
+
+(defn byte-rope->bytes
+  "Materialize a byte rope tree to a single byte array via bulk arraycopy. O(n)."
+  ^bytes [root]
+  (if (leaf? root)
+    (byte-array 0)
+    (let [n (long (rope-size root))
+          result (byte-array n)
+          offset (long-array 1)]
+      (letfn [(walk [n]
+                (when-not (leaf? n)
+                  (walk (-l n))
+                  (let [^bytes chunk (-k n)
+                        clen (alength chunk)
+                        off  (aget offset 0)]
+                    (System/arraycopy chunk 0 result (int off) clen)
+                    (aset offset 0 (unchecked-add off clen)))
+                  (walk (-r n))))]
+        (walk root))
+      result)))
 
 (defn chunks->root-csi
   "Build a rope tree from a sequence of chunks, ensuring CSI.
@@ -1073,18 +995,21 @@
     (RopeSeqReverse. enum chunk i cnt m)))
 
 (defn rope-seq
+  "Forward seq over a rope tree's elements."
   [root]
   (when-let [enum (tree/node-enumerator root)]
     (let [chunk (-k (tree/node-enum-first enum))]
       (RopeSeq. enum chunk 0 (rope-size root) nil))))
 
 (defn rope-rseq
+  "Reverse seq over a rope tree's elements."
   [root]
   (when-let [enum (tree/node-enumerator-reverse root)]
     (let [chunk (-k (tree/node-enum-first enum))]
       (RopeSeqReverse. enum chunk (dec (count chunk)) (rope-size root) nil))))
 
 (defn rope-chunks-reduce
+  "Reduce over chunks (not individual elements) of a rope tree."
   ([f init root]
    (if (leaf? root)
      init
@@ -1094,90 +1019,66 @@
      (f)
      (tree/node-reduce-keys f root))))
 
-(defn- reduce-chunk-indexed
-  "Fallback reduce for SubVector and other non-IReduceInit chunks."
-  [f acc chunk]
-  (let [^clojure.lang.Indexed chunk chunk
-        n (.count ^clojure.lang.Counted chunk)]
-    (loop [i (int 0) acc acc]
-      (if (< i n)
-        (let [ret (f acc (.nth chunk i))]
-          (if (reduced? ret)
-            ret
-            (recur (unchecked-inc-int i) ret)))
-        acc))))
+
+(defn- rope-tree-walk
+  "In-order tree walk reducing with wf (a wrapper around f that tracks
+  early termination via the stopped volatile). Left subtree recurses on
+  the stack (bounded by height O(log n)); right subtree uses recur for
+  zero stack growth. Returns result, possibly (reduced ...)."
+  [wf stopped init root]
+  (letfn [(reduce-chunk [acc chunk]
+            (let [result (chunk-reduce-init chunk wf acc)]
+              (if @stopped (reduced result) result)))
+          (walk [acc n]
+            (if (leaf? n)
+              acc
+              (let [acc (walk acc (-l n))]
+                (if (reduced? acc)
+                  acc
+                  (let [acc (reduce-chunk acc (-k n))]
+                    (if (reduced? acc)
+                      acc
+                      (recur acc (-r n))))))))]
+    (walk init root)))
+
+(defn- wrap-reduce-fn
+  "Create the stopped volatile + wrapper fn pair for rope-reduce.
+  chunk-reduce-init derefs reduced values internally, so the stopped
+  volatile provides a side-channel for the walk to detect early stop."
+  [f]
+  (let [stopped (volatile! false)
+        wf      (fn [acc x]
+                  (let [ret (f acc x)]
+                    (if (reduced? ret)
+                      (do (vreset! stopped true) (reduced @ret))
+                      ret)))]
+    [stopped wf]))
 
 (defn rope-reduce
   "Direct in-order tree walk: left subtree, chunk, right subtree.
   Bypasses the enumerator infrastructure to eliminate EnumFrame allocation
-  and per-chunk lambda overhead. The right-subtree continuation uses recur
-  for zero stack growth on that branch; left-subtree recursion depth is
-  bounded by tree height (O(log n)).
-
-  For IReduceInit chunks (PersistentVector), delegates to the vector's
-  native reduce for tight array iteration. A single volatile + wrapper
-  closure is allocated once per reduce call (not per chunk) to detect
-  early termination from reduced."
+  and per-chunk lambda overhead."
   ([f init root]
    (if (leaf? root)
      init
-     (let [stopped (volatile! false)
-           wf      (fn [acc x]
-                     (let [ret (f acc x)]
-                       (if (reduced? ret)
-                         (do (vreset! stopped true) (reduced @ret))
-                         ret)))]
-       (letfn [(reduce-chunk [acc chunk]
-                 (let [result (chunk-reduce-init chunk wf acc)]
-                   (if @stopped (reduced result) result)))
-               (walk [acc n]
-                 (if (leaf? n)
-                   acc
-                   (let [acc (walk acc (-l n))]
-                     (if (reduced? acc)
-                       acc
-                       (let [acc (reduce-chunk acc (-k n))]
-                         (if (reduced? acc)
-                           acc
-                           (recur acc (-r n))))))))]
-         (let [result (walk init root)]
-           (if (reduced? result) @result result))))))
-  ;; 1-arity duplicates the walk/reduce-chunk letfn because both arities
-  ;; close over the same volatile + wrapper; factoring it out would require
-  ;; passing them as arguments through the recursive walk for no readability gain.
+     (let [[stopped wf] (wrap-reduce-fn f)
+           result (rope-tree-walk wf stopped init root)]
+       (if (reduced? result) @result result))))
   ([f root]
    (if (leaf? root)
      (f)
-     (let [stopped (volatile! false)
-           wf      (fn [acc x]
-                     (let [ret (f acc x)]
-                       (if (reduced? ret)
-                         (do (vreset! stopped true) (reduced @ret))
-                         ret)))]
-       (letfn [(reduce-chunk [acc chunk]
-                 (let [result (chunk-reduce-init chunk wf acc)]
-                   (if @stopped (reduced result) result)))
-               (walk [acc n]
-                 (if (leaf? n)
-                   acc
-                   (let [acc (walk acc (-l n))]
-                     (if (reduced? acc)
-                       acc
-                       (let [acc (reduce-chunk acc (-k n))]
-                         (if (reduced? acc)
-                           acc
-                           (recur acc (-r n))))))))]
-         ;; Bootstrap: first element as init, then reduce the rest
-         (let [least  (tree/node-least root)
-               chunk0 (-k least)
-               init   (chunk-nth chunk0 0)
-               acc0   (reduce-chunk init
-                        (chunk-slice chunk0 1 (chunk-length chunk0)))]
-           (if (reduced? acc0)
-             @acc0
-             (let [rest-root (tree/node-remove-least root)
-                   result    (walk acc0 rest-root)]
-               (if (reduced? result) @result result)))))))))
+     (let [[stopped wf] (wrap-reduce-fn f)
+           least  (tree/node-least root)
+           chunk0 (-k least)
+           init   (chunk-nth chunk0 0)
+           rest0  (chunk-slice chunk0 1 (chunk-length chunk0))
+           acc0   (let [result (chunk-reduce-init rest0 wf init)]
+                    (if @stopped (reduced result) result))]
+       (if (reduced? acc0)
+         @acc0
+         (let [rest-root (tree/node-remove-least root)
+               result    (rope-tree-walk wf stopped acc0 rest-root)]
+           (if (reduced? result) @result result)))))))
 
 (defn rope-fold
   "Parallel fold over the rope's existing tree shape.

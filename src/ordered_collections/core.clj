@@ -19,6 +19,7 @@
             [ordered-collections.types.range-map           :as rmap]
             [ordered-collections.types.rope               :as rope]
             [ordered-collections.types.string-rope       :as string-rope]
+            [ordered-collections.types.byte-rope         :as byte-rope]
             [ordered-collections.types.segment-tree        :as segtree]
             [ordered-collections.protocol                  :as proto]
             [ordered-collections.util                      :refer [defalias]])
@@ -1108,3 +1109,84 @@
      (string-rope-concat (string-rope \"hello \") (string-rope \"world\"))
      ;=> #string/rope \"hello world\""
   string-rope/string-rope-concat)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Byte Rope
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defalias byte-rope
+  "Create a persistent byte rope for structural editing of binary data.
+   Backed by a chunked weight-balanced tree with byte[] chunks:
+   O(log n) concat, split, splice, insert, and remove. Unsigned byte
+   semantics — elements are longs in [0, 255].
+
+   Accepts nil, byte[] (defensively copied), String (UTF-8 encoded),
+   InputStream (fully consumed), another ByteRope, or any sequential
+   collection of unsigned byte values.
+
+   Examples:
+     (byte-rope)                          ;=> #byte/rope \"\"
+     (byte-rope (byte-array [1 2 3]))     ;=> #byte/rope \"010203\"
+     (byte-rope [0 127 255])              ;=> #byte/rope \"007fff\"
+     (byte-rope \"hello\")                  ;=> #byte/rope \"68656c6c6f\""
+  byte-rope/byte-rope)
+
+(defalias byte-rope-concat
+  "Concatenate byte ropes or byte arrays.
+   Two arguments: O(log n) binary tree join.
+   Three or more: O(total chunks) bulk construction."
+  byte-rope/byte-rope-concat)
+
+(defalias byte-rope-bytes
+  "Materialize a byte rope to a defensively-copied byte[]."
+  byte-rope/byte-rope-bytes)
+
+(defalias byte-rope-hex
+  "Return the byte rope's contents as a lowercase hex string."
+  byte-rope/byte-rope-hex)
+
+(defalias byte-rope-write
+  "Stream a byte rope's contents to an OutputStream, chunk by chunk."
+  byte-rope/byte-rope-write)
+
+(defalias byte-rope-input-stream
+  "Return a java.io.InputStream that reads over the byte rope's contents."
+  byte-rope/byte-rope-input-stream)
+
+(defalias byte-rope-get-byte
+  "Return the unsigned byte value (long in [0, 255]) at offset."
+  byte-rope/byte-rope-get-byte)
+
+(defalias byte-rope-get-short
+  "Return a big-endian unsigned 16-bit integer at offset."
+  byte-rope/byte-rope-get-short)
+
+(defalias byte-rope-get-short-le
+  "Return a little-endian unsigned 16-bit integer at offset."
+  byte-rope/byte-rope-get-short-le)
+
+(defalias byte-rope-get-int
+  "Return a big-endian signed 32-bit integer at offset."
+  byte-rope/byte-rope-get-int)
+
+(defalias byte-rope-get-int-le
+  "Return a little-endian signed 32-bit integer at offset."
+  byte-rope/byte-rope-get-int-le)
+
+(defalias byte-rope-get-long
+  "Return a big-endian signed 64-bit integer at offset."
+  byte-rope/byte-rope-get-long)
+
+(defalias byte-rope-get-long-le
+  "Return a little-endian signed 64-bit integer at offset."
+  byte-rope/byte-rope-get-long-le)
+
+(defalias byte-rope-index-of
+  "Return the first index of the given unsigned byte value, or -1."
+  byte-rope/byte-rope-index-of)
+
+(defalias byte-rope-digest
+  "Compute a cryptographic digest (SHA-256, SHA-1, MD5, etc.) of the byte
+  rope's contents by streaming chunks through java.security.MessageDigest.
+  Returns a byte rope of the digest."
+  byte-rope/byte-rope-digest)

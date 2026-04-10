@@ -6,4 +6,5 @@
  priority/queue    ordered-collections.readers/priority-queue
  multi/set         ordered-collections.readers/ordered-multiset
  vec/rope          ordered-collections.readers/rope
- string/rope       ordered-collections.readers/string-rope}
+ string/rope       ordered-collections.readers/string-rope
+ byte/rope         ordered-collections.readers/byte-rope}

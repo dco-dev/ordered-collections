@@ -15,7 +15,7 @@
 
    Categories for --only:
      maps, sets, set-ops, intervals, specialty, strings, parallel, memory,
-     string-rope"
+     rope, string-rope, byte-rope"
   (:require [clojure.core.reducers :as r]
             [clojure.data.avl :as avl]
             [clojure.string :as str]
@@ -659,6 +659,258 @@
   (bench-string-map-iteration sizes))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Rope (Vector) Benchmarks
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def ^:private rope-sizes [1000 10000 100000])
+
+(defn bench-rope-concat
+  "Benchmark concatenating rope pieces vs into vector."
+  [sizes]
+  (print-header "ROPE CONCAT: Concat 4 pieces of N/4 elements"
+                ["vector" "rope"])
+  (doseq [n sizes]
+    (let [quarter (quot n 4)
+          v1 (vec (range 0 quarter))
+          v2 (vec (range quarter (* 2 quarter)))
+          v3 (vec (range (* 2 quarter) (* 3 quarter)))
+          v4 (vec (range (* 3 quarter) n))
+          r1 (core/rope v1) r2 (core/rope v2)
+          r3 (core/rope v3) r4 (core/rope v4)]
+      (print-row n
+        [(bench 5 10 (vec (concat v1 v2 v3 v4)))
+         (bench 5 10 (core/rope-concat r1 r2 r3 r4))]))))
+
+(defn bench-rope-splice
+  "Benchmark replacing 32 elements at midpoint."
+  [sizes]
+  (print-header "ROPE SPLICE: Replace 32 elements at midpoint"
+                ["vector" "rope"])
+  (doseq [n sizes]
+    (let [v   (vec (range n))
+          r   (core/rope (range n))
+          mid (quot n 2)
+          lo  (max 0 (- mid 16))
+          hi  (min n (+ mid 16))
+          ins (vec (range 32))]
+      (print-row n
+        [(bench 5 10 (vec (concat (subvec v 0 lo) ins (subvec v hi))))
+         (bench 5 10 (core/rope-splice r lo hi ins))]))))
+
+(defn bench-rope-repeated-edits
+  "Benchmark 200 random splice edits."
+  [sizes]
+  (print-header "ROPE REPEATED EDITS: 200 random splice edits"
+                ["vector" "rope"])
+  (doseq [n sizes]
+    (let [v    (vec (range n))
+          r    (core/rope (range n))
+          rng  (java.util.Random. 42)
+          nops 200
+          idxs (vec (repeatedly nops #(.nextInt rng (max 1 n))))
+          ins  (vec (range nops))]
+      (print-row n
+        [(bench 2 5
+           (loop [v v, i 0]
+             (if (< i nops)
+               (let [pos (rem (nth idxs i) (count v))]
+                 (recur (vec (concat (subvec v 0 pos) [(nth ins i)]
+                                     (subvec v (min (+ pos 5) (count v)))))
+                        (inc i)))
+               v)))
+         (bench 2 5
+           (loop [r r, i 0]
+             (if (< i nops)
+               (let [pos (rem (nth idxs i) (count r))]
+                 (recur (core/rope-splice r pos (min (+ pos 5) (count r)) [(nth ins i)])
+                        (inc i)))
+               r)))]))))
+
+(defn bench-rope-reduce
+  "Benchmark reduce over all elements."
+  [sizes]
+  (print-header "ROPE REDUCE: reduce + over all N elements"
+                ["vector" "rope"])
+  (doseq [n sizes]
+    (let [v (vec (range n))
+          r (core/rope (range n))]
+      (print-row n
+        [(bench 20 10 (reduce + 0 v))
+         (bench 20 10 (reduce + 0 r))]))))
+
+(defn bench-rope-nth
+  "Benchmark 1000 random nth lookups."
+  [sizes]
+  (print-header "ROPE NTH: 1,000 random nth lookups"
+                ["vector" "rope"])
+  (doseq [n sizes]
+    (let [v    (vec (range n))
+          r    (core/rope (range n))
+          idxs (int-array (repeatedly 1000 #(rand-int n)))]
+      (print-row n
+        [(bench 20 10 (areduce idxs i acc nil (nth v (aget idxs i))))
+         (bench 20 10 (areduce idxs i acc nil (nth r (aget idxs i))))]))))
+
+(defn bench-rope-fold
+  "Benchmark r/fold parallel sum."
+  [sizes]
+  (print-header "ROPE FOLD: r/fold parallel sum"
+                ["vector" "rope"])
+  (doseq [n sizes]
+    (let [v (vec (range n))
+          r (core/rope (range n))]
+      (print-row n
+        [(bench 20 10 (r/fold + v))
+         (bench 20 10 (r/fold + r))]))))
+
+(defn run-rope-benchmarks
+  "Run all generic rope vs vector benchmarks."
+  [sizes]
+  (let [sizes (or (seq (filter #(<= % 100000) sizes)) rope-sizes)]
+    (bench-rope-concat sizes)
+    (bench-rope-splice sizes)
+    (bench-rope-repeated-edits sizes)
+    (bench-rope-reduce sizes)
+    (bench-rope-nth sizes)
+    (bench-rope-fold sizes)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Byte Rope Benchmarks
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def ^:private byte-rope-sizes [1000 10000 100000])
+
+(defn- bench-ba-random
+  ^bytes [^long n]
+  (let [rng (java.util.Random. 42)
+        b (byte-array n)]
+    (.nextBytes rng b)
+    b))
+
+(defn- bench-ba-splice
+  ^bytes [^bytes s ^long start ^long end ^bytes rep]
+  (let [si (int start)
+        ei (int end)
+        sl (alength s)
+        rl (int (if rep (alength rep) 0))
+        result (byte-array (+ (- sl (- ei si)) rl))]
+    (System/arraycopy s 0 result 0 si)
+    (when (pos? rl)
+      (System/arraycopy rep 0 result si rl))
+    (System/arraycopy s ei result (+ si rl) (- sl ei))
+    result))
+
+(defn bench-byte-rope-concat
+  "Benchmark concatenating byte rope pieces vs byte[] arraycopy."
+  [sizes]
+  (print-header "BYTE ROPE CONCAT: Concat 4 pieces of N/4 bytes"
+                ["byte[]" "byte-rope"])
+  (doseq [n sizes]
+    (let [quarter (quot n 4)
+          ^bytes b1 (bench-ba-random quarter)
+          ^bytes b2 (bench-ba-random quarter)
+          ^bytes b3 (bench-ba-random quarter)
+          ^bytes b4 (bench-ba-random (- n (* 3 quarter)))
+          r1 (core/byte-rope b1) r2 (core/byte-rope b2)
+          r3 (core/byte-rope b3) r4 (core/byte-rope b4)]
+      (print-row n
+        [(bench 5 10 (let [a (byte-array (+ (alength b1) (alength b2)
+                                            (alength b3) (alength b4)))]
+                       (System/arraycopy b1 0 a 0 (alength b1))
+                       (System/arraycopy b2 0 a (alength b1) (alength b2))
+                       (System/arraycopy b3 0 a (+ (alength b1) (alength b2))
+                                         (alength b3))
+                       (System/arraycopy b4 0 a (+ (alength b1) (alength b2)
+                                                   (alength b3))
+                                         (alength b4))
+                       a))
+         (bench 5 10 (core/byte-rope-concat r1 r2 r3 r4))]))))
+
+(defn bench-byte-rope-splice
+  "Benchmark replacing 32 bytes at midpoint."
+  [sizes]
+  (print-header "BYTE ROPE SPLICE: Replace 32 bytes at midpoint"
+                ["byte[]" "byte-rope"])
+  (doseq [n sizes]
+    (let [^bytes data (bench-ba-random n)
+          r   (core/byte-rope data)
+          mid (quot n 2)
+          lo  (max 0 (- mid 16))
+          hi  (min n (+ mid 16))
+          ^bytes rep (bench-ba-random 32)]
+      (print-row n
+        [(bench 5 10 (bench-ba-splice data lo hi rep))
+         (bench 5 10 (core/rope-splice r lo hi rep))]))))
+
+(defn bench-byte-rope-repeated-edits
+  "Benchmark 200 random splice edits."
+  [sizes]
+  (print-header "BYTE ROPE REPEATED EDITS: 200 random splice edits"
+                ["byte[]" "byte-rope"])
+  (doseq [n sizes]
+    (let [^bytes data (bench-ba-random n)
+          r    (core/byte-rope data)
+          rng  (java.util.Random. 42)
+          nops 200
+          idxs (vec (repeatedly nops #(.nextInt rng (max 1 n))))
+          ^bytes ins (bench-ba-random 5)]
+      (print-row n
+        [(bench 2 5
+           (loop [^bytes s data, i 0]
+             (if (< i nops)
+               (let [pos (rem (long (nth idxs i)) (long (alength s)))
+                     end (min (alength s) (+ pos 5))]
+                 (recur (bench-ba-splice s pos end ins) (inc i)))
+               s)))
+         (bench 2 5
+           (loop [r r, i 0]
+             (if (< i nops)
+               (let [pos (rem (long (nth idxs i)) (long (count r)))
+                     end (min (count r) (+ pos 5))]
+                 (recur (core/rope-splice r pos end ins) (inc i)))
+               r)))]))))
+
+(defn bench-byte-rope-reduce
+  "Benchmark reduce over all bytes."
+  [sizes]
+  (print-header "BYTE ROPE REDUCE: sum all N bytes"
+                ["byte[]" "byte-rope"])
+  (doseq [n sizes]
+    (let [^bytes data (bench-ba-random n)
+          r (core/byte-rope data)]
+      (print-row n
+        [(bench 20 10 (let [len (alength data)]
+                        (loop [i (int 0), acc (long 0)]
+                          (if (< i len)
+                            (recur (unchecked-inc-int i)
+                                   (+ acc (bit-and (long (aget data i)) 0xff)))
+                            acc))))
+         (bench 20 10 (reduce + 0 r))]))))
+
+(defn bench-byte-rope-digest
+  "Benchmark SHA-256 digest."
+  [sizes]
+  (print-header "BYTE ROPE DIGEST: SHA-256 over N bytes"
+                ["byte[]" "byte-rope"])
+  (doseq [n sizes]
+    (let [^bytes data (bench-ba-random n)
+          r (core/byte-rope data)]
+      (print-row n
+        [(bench 5 10 (let [md (java.security.MessageDigest/getInstance "SHA-256")]
+                       (.digest md data)))
+         (bench 5 10 (core/byte-rope-digest r "SHA-256"))]))))
+
+(defn run-byte-rope-benchmarks
+  "Run all byte rope vs byte[] benchmarks."
+  [sizes]
+  (let [sizes (or (seq (filter #(<= % 100000) sizes)) byte-rope-sizes)]
+    (bench-byte-rope-concat sizes)
+    (bench-byte-rope-splice sizes)
+    (bench-byte-rope-repeated-edits sizes)
+    (bench-byte-rope-reduce sizes)
+    (bench-byte-rope-digest sizes)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; String Rope vs String Structural Editing
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -969,10 +1221,14 @@
                :fn    run-parallel-benchmarks}
    :memory    {:title "MEMORY FOOTPRINT"
                :fn    estimate-memory-footprint}
+   :rope        {:title "ROPE vs VECTOR (Structural Editing)"
+                 :fn    run-rope-benchmarks}
    :string-rope {:title "STRING ROPE vs STRING (Structural Editing)"
-                 :fn    run-string-rope-benchmarks}})
+                 :fn    run-string-rope-benchmarks}
+   :byte-rope   {:title "BYTE ROPE vs byte[] (Structural Editing)"
+                 :fn    run-byte-rope-benchmarks}})
 
-(def category-order [:maps :sets :set-ops :intervals :specialty :strings :parallel :memory :string-rope])
+(def category-order [:maps :sets :set-ops :intervals :specialty :strings :parallel :memory :rope :string-rope :byte-rope])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Main Entry Points
@@ -1035,7 +1291,7 @@
   (println)
   (println "Categories for --only:")
   (println "  maps, sets, set-ops, intervals, specialty, strings, parallel, memory,")
-  (println "  string-rope")
+  (println "  rope, string-rope, byte-rope")
   (println)
   (println "Examples:")
   (println "  lein bench-simple --quick --only sets")

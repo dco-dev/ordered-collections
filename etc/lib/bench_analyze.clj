@@ -185,6 +185,7 @@
    {:pattern #"^rope-reduce$"          :oc :rope   :peer :vector  :label "Reduce (sum)"      :section "Rope vs PersistentVector"}
    {:pattern #"^rope-fold-sum$"       :oc :rope   :peer :vector  :label "Fold (sum)"        :section "Rope vs PersistentVector"}
    {:pattern #"^rope-nth$"            :oc :rope   :peer :vector  :label "Random nth (1000)" :section "Rope vs PersistentVector"}
+   {:pattern #"^rope-fold-freq$"     :oc :rope   :peer :vector  :label "Fold (freq map)"  :section "Rope vs PersistentVector"}
    ;; StringRope vs String (idiomatic str+subs)
    {:pattern #"^string-rope-splice$"          :oc :string-rope :peer :string :label "Single Splice"      :section "StringRope vs String"}
    {:pattern #"^string-rope-insert$"          :oc :string-rope :peer :string :label "Single Insert"      :section "StringRope vs String"}
@@ -196,6 +197,7 @@
    {:pattern #"^string-rope-reduce$"          :oc :string-rope :peer :string :label "Reduce (sum chars)" :section "StringRope vs String"}
    {:pattern #"^string-rope-re-find$"        :oc :string-rope :peer :string :label "re-find"            :section "StringRope vs String"}
    {:pattern #"^string-rope-re-seq$"         :oc :string-rope :peer :string :label "re-seq"             :section "StringRope vs String"}
+   {:pattern #"^string-rope-str$"            :oc :string-rope :peer :string :label "Materialization (str)" :section "StringRope vs String"}
    {:pattern #"^string-rope-re-replace$"     :oc :string-rope :peer :string :label "str/replace (regex)" :section "StringRope vs String"}
    ;; StringRope vs StringBuilder (optimal mutable baseline)
    {:pattern #"^string-rope-splice$"          :oc :string-rope :peer :string-builder :label "Single Splice"      :section "StringRope vs StringBuilder"}
@@ -204,7 +206,20 @@
    {:pattern #"^string-rope-concat$"          :oc :string-rope :peer :string-builder :label "Concat Halves"      :section "StringRope vs StringBuilder"}
    {:pattern #"^string-rope-split$"           :oc :string-rope :peer :string-builder :label "Split at Midpoint"  :section "StringRope vs StringBuilder"}
    {:pattern #"^string-rope-repeated-edits$"  :oc :string-rope :peer :string-builder :label "200 Random Edits"   :section "StringRope vs StringBuilder"}
-   {:pattern #"^string-rope-construction$"    :oc :string-rope :peer :string-builder :label "Construction"       :section "StringRope vs StringBuilder"}])
+   {:pattern #"^string-rope-construction$"    :oc :string-rope :peer :string-builder :label "Construction"       :section "StringRope vs StringBuilder"}
+   ;; ByteRope vs byte[] (arraycopy baseline)
+   {:pattern #"^byte-rope-splice$"          :oc :byte-rope :peer :byte-array :label "Single Splice"      :section "ByteRope vs byte[]"}
+   {:pattern #"^byte-rope-insert$"          :oc :byte-rope :peer :byte-array :label "Single Insert"      :section "ByteRope vs byte[]"}
+   {:pattern #"^byte-rope-remove$"          :oc :byte-rope :peer :byte-array :label "Single Remove"      :section "ByteRope vs byte[]"}
+   {:pattern #"^byte-rope-concat$"          :oc :byte-rope :peer :byte-array :label "Concat 4 Pieces"    :section "ByteRope vs byte[]"}
+   {:pattern #"^byte-rope-split$"           :oc :byte-rope :peer :byte-array :label "Split at Midpoint"  :section "ByteRope vs byte[]"}
+   {:pattern #"^byte-rope-repeated-edits$"  :oc :byte-rope :peer :byte-array :label "200 Random Edits"   :section "ByteRope vs byte[]"}
+   {:pattern #"^byte-rope-nth$"             :oc :byte-rope :peer :byte-array :label "Random nth (1000)"  :section "ByteRope vs byte[]"}
+   {:pattern #"^byte-rope-reduce$"          :oc :byte-rope :peer :byte-array :label "Reduce (sum bytes)" :section "ByteRope vs byte[]"}
+   {:pattern #"^byte-rope-fold$"            :oc :byte-rope :peer :byte-array :label "Fold (sum bytes)"   :section "ByteRope vs byte[]"}
+   {:pattern #"^byte-rope-construction$"    :oc :byte-rope :peer :byte-array :label "Construction"       :section "ByteRope vs byte[]"}
+   {:pattern #"^byte-rope-bytes$"           :oc :byte-rope :peer :byte-array :label "Materialization"    :section "ByteRope vs byte[]"}
+   {:pattern #"^byte-rope-digest$"          :oc :byte-rope :peer :byte-array :label "SHA-256"            :section "ByteRope vs byte[]"}])
 
 (defn headline-wins
   "Extract headline speedups pivoted by size, with explicit OC variant and peer.

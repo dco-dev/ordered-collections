@@ -413,3 +413,105 @@
            (= (re-matches #"\w+" s) (re-matches #"\w+" sr))
            (= (str/replace s #"[aeiou]" "*")
               (str/replace sr #"[aeiou]" "*"))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Flat→Tree Boundary
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest flat-tree-boundary
+  (testing "1024 chars stays flat"
+    (let [s  (apply str (repeat 1024 "x"))
+          sr (oc/string-rope s)]
+      (is (= 1024 (count sr)))
+      (is (string? (.-root ^ordered_collections.types.string_rope.StringRope sr)))
+      (is (= s (str sr)))))
+  (testing "1025 chars promotes to tree"
+    (let [s  (apply str (repeat 1025 "x"))
+          sr (oc/string-rope s)]
+      (is (= 1025 (count sr)))
+      (is (not (string? (.-root ^ordered_collections.types.string_rope.StringRope sr))))
+      (is (= s (str sr)))))
+  (testing "flat→tree promotion via edits"
+    (let [sr (oc/string-rope (apply str (repeat 1020 "a")))]
+      (is (string? (.-root ^ordered_collections.types.string_rope.StringRope sr)))
+      ;; Insert 10 chars — stays flat (1030 < 1024? no, 1030 > 1024 → promotes)
+      (let [sr2 (oc/rope-insert sr 500 "bbbbbbbbbb")]
+        (is (= 1030 (count sr2)))
+        ;; Should have promoted to tree since 1030 > 1024
+        (is (not (string?
+                   (.-root ^ordered_collections.types.string_rope.StringRope sr2))))
+        (is (= (str (oc/string-rope (apply str (repeat 1020 "a"))))
+               (str (apply str (repeat 1020 "a"))))))))
+  (testing "tree→flat demotion via transient persistent!"
+    ;; Build a large rope then shrink it via transient
+    (let [sr (oc/string-rope (apply str (repeat 2000 "x")))
+          ;; persistent! from transient should demote if ≤ threshold
+          t  (transient sr)
+          sr2 (persistent! t)]
+      ;; Still 2000 chars, stays tree
+      (is (= 2000 (count sr2))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; HashMap Key Compatibility
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest hashmap-key-compatibility
+  (testing "StringRope hasheq matches String hasheq"
+    (let [s  "hello world"
+          sr (oc/string-rope s)]
+      (is (= (hash s) (hash sr)))))
+  (testing "StringRope keys looked up by another StringRope"
+    (let [sr1 (oc/string-rope "hello world")
+          sr2 (oc/string-rope "hello world")
+          m   {sr1 :found}]
+      (is (= :found (get m sr2)))))
+  (testing "String-keyed map looked up by StringRope"
+    (let [s  "hello world"
+          sr (oc/string-rope s)
+          m  {s :found}]
+      ;; StringRope.equals(String) works because we control it
+      (is (= :found (get m sr)))))
+  (testing "Tree-mode rope hasheq matches"
+    (let [s  (apply str (repeat 2000 "x"))
+          sr (oc/string-rope s)]
+      (is (= (hash s) (hash sr))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Cursor Cache Stress
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest cursor-cache-stress
+  (testing "sequential charAt across chunk boundaries"
+    (let [s  (apply str (map #(char (+ (int \a) (mod % 26))) (range 2000)))
+          sr (oc/string-rope s)]
+      ;; Forward sequential scan
+      (dotimes [i 2000]
+        (is (= (.charAt ^CharSequence (oc/string-rope s) i)
+               (.charAt s i))
+            (str "mismatch at index " i)))))
+  (testing "random access charAt"
+    (let [s  (apply str (map #(char (+ (int \a) (mod % 26))) (range 4000)))
+          sr (oc/string-rope s)
+          indices (shuffle (range 4000))]
+      ;; Random order — cache misses on every access
+      (doseq [i (take 500 indices)]
+        (is (= (.charAt ^CharSequence sr i) (.charAt s i))
+            (str "random access mismatch at " i)))))
+  (testing "cache invalidated by structural edits"
+    (let [sr1 (oc/string-rope (apply str (repeat 2000 "a")))]
+      ;; Access to populate cache
+      (.charAt ^CharSequence sr1 1000)
+      ;; Splice creates a NEW StringRope — old cache doesn't carry over
+      (let [sr2 (oc/rope-splice sr1 500 1500 "bbb")]
+        ;; 2000 - 1000 + 3 = 1003
+        (is (= 1003 (count sr2)))
+        ;; 0-499 = a, 500-502 = b, 503-1002 = a
+        (is (= \a (.charAt ^CharSequence sr2 0)))
+        (is (= \a (.charAt ^CharSequence sr2 499)))
+        (is (= \b (.charAt ^CharSequence sr2 500)))
+        (is (= \b (.charAt ^CharSequence sr2 502)))
+        (is (= \a (.charAt ^CharSequence sr2 503)))
+        (is (= \a (.charAt ^CharSequence sr2 1002)))))))

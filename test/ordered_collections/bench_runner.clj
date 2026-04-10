@@ -867,6 +867,174 @@
        :string-rope #(clojure.string/replace sr pat "*")})))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Byte Rope vs byte[] Benchmarks
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; ByteRope is a persistent, immutable byte sequence backed by a chunked
+;; weight-balanced tree. The mutable baseline is the raw byte[] with
+;; System.arraycopy — the fastest possible same-operation comparison on JVM.
+;; ByteRope's architectural advantages: O(log n) structural edits,
+;; persistent snapshots, structural sharing, thread safety by construction.
+
+(defn- ba-splice
+  "Optimal byte[] splice via System.arraycopy."
+  ^bytes [^bytes s ^long start ^long end ^bytes rep]
+  (let [si (int start)
+        ei (int end)
+        sl (alength s)
+        rl (int (if rep (alength rep) 0))
+        result (byte-array (+ (- sl (- ei si)) rl))]
+    (System/arraycopy s 0 result 0 si)
+    (when (pos? rl)
+      (System/arraycopy rep 0 result si rl))
+    (System/arraycopy s ei result (+ si rl) (- sl ei))
+    result))
+
+(defn- ba-concat
+  ^bytes [^bytes a ^bytes b]
+  (let [al (alength a)
+        bl (alength b)
+        result (byte-array (+ al bl))]
+    (System/arraycopy a 0 result 0 al)
+    (System/arraycopy b 0 result al bl)
+    result))
+
+(defn- random-bytes
+  "Generate a random byte array of length n."
+  ^bytes [^long n]
+  (let [rng (java.util.Random. 42)
+        b (byte-array n)]
+    (.nextBytes rng b)
+    b))
+
+(defn bench-byte-rope-construction [n]
+  (let [^bytes data (random-bytes n)]
+    (run-cases
+      {:byte-array #(java.util.Arrays/copyOf data n)
+       :byte-rope  #(core/byte-rope data)})))
+
+(defn bench-byte-rope-concat [n]
+  (let [^bytes b1 (random-bytes (quot n 4))
+        ^bytes b2 (random-bytes (quot n 4))
+        ^bytes b3 (random-bytes (quot n 4))
+        ^bytes b4 (random-bytes (- n (* 3 (quot n 4))))
+        br1 (core/byte-rope b1) br2 (core/byte-rope b2)
+        br3 (core/byte-rope b3) br4 (core/byte-rope b4)]
+    (run-cases
+      {:byte-array #(ba-concat (ba-concat (ba-concat b1 b2) b3) b4)
+       :byte-rope  #(core/byte-rope-concat br1 br2 br3 br4)})))
+
+(defn bench-byte-rope-splice [n]
+  (let [^bytes data (random-bytes n)
+        br  (core/byte-rope data)
+        mid (quot n 2)
+        lo  (max 0 (- mid 16))
+        hi  (min n (+ mid 16))
+        ^bytes rep (random-bytes 32)]
+    (run-cases
+      {:byte-array #(ba-splice data lo hi rep)
+       :byte-rope  #(core/rope-splice br lo hi rep)})))
+
+(defn bench-byte-rope-insert [n]
+  (let [^bytes data (random-bytes n)
+        br  (core/byte-rope data)
+        mid (quot n 2)
+        ^bytes ins (random-bytes 16)]
+    (run-cases
+      {:byte-array #(ba-splice data mid mid ins)
+       :byte-rope  #(core/rope-insert br mid ins)})))
+
+(defn bench-byte-rope-remove [n]
+  (let [^bytes data (random-bytes n)
+        br  (core/byte-rope data)
+        mid (quot n 2)
+        lo  (max 0 (- mid 16))
+        hi  (min n (+ mid 16))]
+    (run-cases
+      {:byte-array #(ba-splice data lo hi nil)
+       :byte-rope  #(core/rope-remove br lo hi)})))
+
+(defn bench-byte-rope-split [n]
+  (let [^bytes data (random-bytes n)
+        br  (core/byte-rope data)
+        mid (int (quot n 2))]
+    (run-cases
+      {:byte-array #(vector (java.util.Arrays/copyOfRange data 0 mid)
+                            (java.util.Arrays/copyOfRange data mid (alength data)))
+       :byte-rope  #(core/rope-split br mid)})))
+
+(defn bench-byte-rope-repeated-edits [n]
+  (let [^bytes data (random-bytes n)
+        br   (core/byte-rope data)
+        rng  (java.util.Random. 42)
+        nops 200
+        idxs (vec (repeatedly nops #(.nextInt rng (max 1 n))))
+        ^bytes ins (random-bytes 5)]
+    (run-cases
+      {:byte-array
+       #(loop [^bytes s data, i 0]
+          (if (< i nops)
+            (let [pos (rem (long (nth idxs i)) (long (alength s)))
+                  end (min (alength s) (+ pos 5))]
+              (recur (ba-splice s pos end ins) (unchecked-inc i)))
+            s))
+       :byte-rope
+       #(loop [r br, i 0]
+          (if (< i nops)
+            (let [pos (rem (long (nth idxs i)) (long (count r)))
+                  end (min (count r) (+ pos 5))]
+              (recur (core/rope-splice r pos end ins) (unchecked-inc i)))
+            r))})))
+
+(defn bench-byte-rope-nth [n & {:keys [num-ops] :or {num-ops 1000}}]
+  (let [^bytes data (random-bytes n)
+        br   (core/byte-rope data)
+        rng  (java.util.Random. 42)
+        idxs (int-array (repeatedly num-ops #(.nextInt rng (max 1 n))))]
+    (run-cases
+      {:byte-array #(areduce idxs i acc (long 0) (+ acc (long (aget data (aget idxs i)))))
+       :byte-rope  #(areduce idxs i acc (long 0) (+ acc (long (nth br (aget idxs i)))))})))
+
+(defn bench-byte-rope-reduce [n]
+  (let [^bytes data (random-bytes n)
+        br  (core/byte-rope data)]
+    (run-cases
+      {:byte-array #(let [len (alength data)]
+                      (loop [i (int 0), acc (long 0)]
+                        (if (< i len)
+                          (recur (unchecked-inc-int i)
+                                 (+ acc (bit-and (long (aget data i)) 0xff)))
+                          acc)))
+       :byte-rope  #(reduce + 0 br)})))
+
+(defn bench-byte-rope-fold [n]
+  (let [^bytes data (random-bytes n)
+        br  (core/byte-rope data)]
+    (run-cases
+      {:byte-array #(let [len (alength data)]
+                      (loop [i (int 0), acc (long 0)]
+                        (if (< i len)
+                          (recur (unchecked-inc-int i)
+                                 (+ acc (bit-and (long (aget data i)) 0xff)))
+                          acc)))
+       :byte-rope  #(r/fold + br)})))
+
+(defn bench-byte-rope-bytes [n]
+  (let [^bytes data (random-bytes n)
+        br  (core/byte-rope data)]
+    (run-cases
+      {:byte-array #(java.util.Arrays/copyOf data n)
+       :byte-rope  #(core/byte-rope-bytes br)})))
+
+(defn bench-byte-rope-digest [n]
+  (let [^bytes data (random-bytes n)
+        br  (core/byte-rope data)]
+    (run-cases
+      {:byte-array #(let [md (java.security.MessageDigest/getInstance "SHA-256")]
+                      (.digest md data))
+       :byte-rope  #(core/byte-rope-bytes (core/byte-rope-digest br "SHA-256"))})))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Suite Runners
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -899,7 +1067,11 @@
    [:string-rope-splice bench-string-rope-splice]
    [:string-rope-insert bench-string-rope-insert]
    [:string-rope-remove bench-string-rope-remove]
-   [:string-rope-repeated-edits bench-string-rope-repeated-edits]])
+   [:string-rope-repeated-edits bench-string-rope-repeated-edits]
+   [:byte-rope-splice bench-byte-rope-splice]
+   [:byte-rope-insert bench-byte-rope-insert]
+   [:byte-rope-remove bench-byte-rope-remove]
+   [:byte-rope-repeated-edits bench-byte-rope-repeated-edits]])
 
 (def ^:private readme-benchmark-specs
   [[:set-construction bench-set-construction]
@@ -973,7 +1145,23 @@
    [:string-rope-remove bench-string-rope-remove]
    {:key :string-rope-nth :fn bench-string-rope-nth :when #(<= % 500000)}
    [:string-rope-reduce bench-string-rope-reduce]
-   [:string-rope-repeated-edits bench-string-rope-repeated-edits]])
+   [:string-rope-str bench-string-rope-str]
+   [:string-rope-repeated-edits bench-string-rope-repeated-edits]
+   [:string-rope-re-find bench-string-rope-re-find]
+   [:string-rope-re-seq bench-string-rope-re-seq]
+   [:string-rope-re-replace bench-string-rope-re-replace]
+   [:byte-rope-construction bench-byte-rope-construction]
+   [:byte-rope-concat bench-byte-rope-concat]
+   [:byte-rope-split bench-byte-rope-split]
+   [:byte-rope-splice bench-byte-rope-splice]
+   [:byte-rope-insert bench-byte-rope-insert]
+   [:byte-rope-remove bench-byte-rope-remove]
+   {:key :byte-rope-nth :fn bench-byte-rope-nth :when #(<= % 500000)}
+   [:byte-rope-reduce bench-byte-rope-reduce]
+   [:byte-rope-fold bench-byte-rope-fold]
+   [:byte-rope-repeated-edits bench-byte-rope-repeated-edits]
+   [:byte-rope-bytes bench-byte-rope-bytes]
+   [:byte-rope-digest bench-byte-rope-digest]])
 
 (defn run-wins-benchmarks
   "Run benchmarks focused on where ordered-collections wins."

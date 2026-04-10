@@ -5,7 +5,8 @@
    the Clojure reader when it encounters tagged literals like #ordered/set.
 
    For use with clojure.edn/read-string, pass `readers` as the :readers option."
-  (:require [ordered-collections.core :as oc]))
+  (:require [ordered-collections.core :as oc]
+            [ordered-collections.types.byte-rope :as byte-rope]))
 
 (def ordered-set      oc/ordered-set)
 (def ordered-map      oc/ordered-map)
@@ -16,6 +17,9 @@
 (def ordered-multiset oc/ordered-multiset)
 (def rope             oc/rope)
 (def string-rope      oc/string-rope)
+;; Byte rope reader accepts a hex string (distinct from the byte-rope
+;; constructor, which UTF-8-encodes strings).
+(def byte-rope        byte-rope/read-byte-rope)
 
 (def readers
   "Map of tag symbols to reader functions.
@@ -30,4 +34,5 @@
    'priority/queue   priority-queue
    'multi/set        ordered-multiset
    'vec/rope         rope
-   'string/rope      string-rope})
+   'string/rope      string-rope
+   'byte/rope        byte-rope})

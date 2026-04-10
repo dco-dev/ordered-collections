@@ -34,6 +34,17 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Tree binding macro
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defmacro ^:private with-tree
+  "Bind tree/*t-join* to the allocator for the duration of body.
+  Every tree-mutating operation requires this binding."
+  [alloc & body]
+  `(binding [tree/*t-join* ~alloc] ~@body))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Flat-mode helpers
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -117,7 +128,8 @@
     (dec i)
     i))
 
-(declare ->string-rope ->TransientStringRope)
+(declare ->string-rope ->TransientStringRope ->StringRope*
+         coll->str coll->tree-root)
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -420,7 +432,7 @@
   (meta [_] _meta)
 
   clojure.lang.IObj
-  (withMeta [_ m] (StringRope. root alloc m nil 0 0))
+  (withMeta [_ m] (->StringRope* root alloc m))
 
   java.lang.CharSequence
   (charAt [_ i]
@@ -450,12 +462,12 @@
       (let [^String s root
             n (.length s)]
         (check-range! (long start) (long end) n)
-        (StringRope. (.substring s (int start) (int end)) alloc _meta nil 0 0))
+        (->StringRope* (.substring s (int start) (int end)) alloc _meta))
       (let [n (ropetree/rope-size root)]
         (check-range! (long start) (long end) n)
-        (binding [tree/*t-join* alloc]
-          (StringRope. (ropetree/rope-subvec-root root (long start) (long end))
-            alloc _meta nil 0 0)))))
+        (with-tree alloc
+          (->StringRope* (ropetree/rope-subvec-root root (long start) (long end))
+            alloc _meta)))))
   (toString [_]
     (cond
       (nil? root)     ""
@@ -539,16 +551,16 @@
           (let [sb (StringBuilder. (unchecked-inc-int (.length s)))]
             (.append sb s)
             (.append sb c)
-            (StringRope. (.toString sb) alloc _meta nil 0 0))
-          (binding [tree/*t-join* alloc]
-            (StringRope. (ropetree/rope-conj-right (ropetree/str->root s) c)
-              alloc _meta nil 0 0))))
+            (->StringRope* (.toString sb) alloc _meta))
+          (with-tree alloc
+            (->StringRope* (ropetree/rope-conj-right (ropetree/str->root s) c)
+              alloc _meta))))
       (if (nil? root)
-        (StringRope. (String/valueOf (char o)) alloc _meta nil 0 0)
-        (binding [tree/*t-join* alloc]
-          (StringRope. (ropetree/rope-conj-right root (char o)) alloc _meta nil 0 0)))))
+        (->StringRope* (String/valueOf (char o)) alloc _meta)
+        (with-tree alloc
+          (->StringRope* (ropetree/rope-conj-right root (char o)) alloc _meta)))))
   (empty [_]
-    (StringRope. nil alloc _meta nil 0 0))
+    (->StringRope* nil alloc _meta))
   (equiv [this o]
     (string-rope-equiv this o))
 
@@ -566,10 +578,10 @@
       (let [^String s root
             n (.length s)]
         (cond
-          (<= n 1) (StringRope. nil alloc _meta nil 0 0)
-          :else    (StringRope. (.substring s 0 (unchecked-dec-int n)) alloc _meta nil 0 0)))
-      (binding [tree/*t-join* alloc]
-        (StringRope. (ropetree/rope-pop-right root) alloc _meta nil 0 0))))
+          (<= n 1) (->StringRope* nil alloc _meta)
+          :else    (->StringRope* (.substring s 0 (unchecked-dec-int n)) alloc _meta)))
+      (with-tree alloc
+        (->StringRope* (ropetree/rope-pop-right root) alloc _meta))))
 
   clojure.lang.Seqable
   (seq [_]
@@ -655,9 +667,9 @@
             (.append sb s 0 (int i))
             (.append sb (char v))
             (.append sb s (unchecked-inc-int (int i)) (.length s))
-            (StringRope. (.toString sb) alloc _meta nil 0 0))
-          (binding [tree/*t-join* alloc]
-            (StringRope. (ropetree/rope-assoc root i (char v)) alloc _meta nil 0 0))))))
+            (->StringRope* (.toString sb) alloc _meta))
+          (with-tree alloc
+            (->StringRope* (ropetree/rope-assoc root i (char v)) alloc _meta))))))
 
   java.util.Collection
   (toArray [this]
@@ -712,141 +724,102 @@
 
   proto/PRope
   (rope-cat [this other]
-    (let [other-str  (cond
-                       (string? other)                other
-                       (instance? StringRope other)   nil
-                       :else (throw (IllegalArgumentException.
-                                      "StringRope rope-cat requires a StringRope or String")))
-          this-flat  (string? root)
-          other-flat (or other-str
-                         (string? (.-root ^StringRope other)))
-          ;; When both sides are flat and combined fits, just concatenate strings
-          combined   (when (and (or this-flat (nil? root))
-                                (or other-flat other-str))
-                       (let [s1 (if this-flat ^String root "")
-                             s2 (or other-str ^String (.-root ^StringRope other) "")
-                             n  (+ (.length ^String s1) (.length ^String s2))]
-                         (when (<= n +flat-threshold+)
-                           (str s1 s2))))]
-      (if combined
-        (StringRope. (when (pos? (.length ^String combined)) combined) alloc _meta nil 0 0)
-        ;; Fall back to tree concat
-        (let [other-root (cond
-                           other-str   (ropetree/str->root ^String other-str)
-                           :else       (ensure-tree-root
-                                         (.-root ^StringRope other) alloc))]
-          (binding [tree/*t-join* alloc]
-            (StringRope. (ropetree/rope-concat
-                           (ensure-tree-root root alloc)
-                           other-root)
-              alloc _meta nil 0 0))))))
+    (when-not (or (string? other) (instance? StringRope other))
+      (throw (IllegalArgumentException.
+               "StringRope rope-cat requires a StringRope or String")))
+    (let [^String s1 (cond (nil? root)     ""
+                           (string? root)  root
+                           :else           nil)
+          ^String s2 (if (string? other)
+                       other
+                       (let [r (.-root ^StringRope other)]
+                         (cond (nil? r)     ""
+                               (string? r)  r
+                               :else        nil)))]
+      ;; Fast path: both sides are flat strings and combined fits threshold
+      (if (and s1 s2 (<= (+ (.length s1) (.length s2)) +flat-threshold+))
+        (let [result (str s1 s2)]
+          (->StringRope* (when (pos? (.length result)) result) alloc _meta))
+        ;; Tree path
+        (with-tree alloc
+          (let [l (ensure-tree-root root alloc)
+                r (if (string? other)
+                    (ropetree/str->root ^String other)
+                    (ensure-tree-root (.-root ^StringRope other) alloc))]
+            (->StringRope* (ropetree/rope-concat l r) alloc _meta))))))
   (rope-split [_ i]
     (let [n (flat-size root)]
       (check-insert-index! n (long i))
       (if (string? root)
         (let [^String s root
               ii (int i)]
-          [(StringRope. (when (pos? ii) (.substring s 0 ii)) alloc _meta nil 0 0)
-           (StringRope. (when (< ii (.length s)) (.substring s ii)) alloc _meta nil 0 0)])
-        (binding [tree/*t-join* alloc]
+          [(->StringRope* (when (pos? ii) (.substring s 0 ii)) alloc _meta)
+           (->StringRope* (when (< ii (.length s)) (.substring s ii)) alloc _meta)])
+        (with-tree alloc
           (let [[l r] (ropetree/ensure-split-parts
                         (ropetree/rope-split-at root (long i)))]
-            [(StringRope. l alloc _meta nil 0 0) (StringRope. r alloc _meta nil 0 0)])))))
+            [(->StringRope* l alloc _meta) (->StringRope* r alloc _meta)])))))
   (rope-sub [_ start end]
     (let [n (flat-size root)]
       (check-range! (long start) (long end) n)
       (if (string? root)
         (let [^String s root
               result (.substring s (int start) (int end))]
-          (StringRope. (when (pos? (.length result)) result) alloc _meta nil 0 0))
-        (binding [tree/*t-join* alloc]
-          (StringRope. (ropetree/rope-subvec-root root (long start) (long end))
-            alloc _meta nil 0 0)))))
+          (->StringRope* (when (pos? (.length result)) result) alloc _meta))
+        (with-tree alloc
+          (->StringRope* (ropetree/rope-subvec-root root (long start) (long end))
+            alloc _meta)))))
   (rope-insert [this i coll]
-    (let [n (flat-size root)]
-      (check-insert-index! n (long i))
+    (let [n (flat-size root)
+          ii (long i)]
+      (check-insert-index! n ii)
       (if (string? root)
-        ;; Flat fast path: StringBuilder insert, check threshold
-        (let [^String s   (or ^String root "")
-              ^String ins (cond
-                            (string? coll) coll
-                            (instance? StringRope coll) (.toString ^StringRope coll)
-                            :else (str coll))
-              result (flat-splice s (long i) (long i) ins)]
-          (binding [tree/*t-join* alloc]
-            (StringRope. (make-root result alloc) alloc _meta nil 0 0)))
-        ;; Tree path
-        (let [try-fast? (or (string? coll) (instance? StringRope coll))
-              ins-len   (when try-fast?
-                          (if (string? coll)
-                            (.length ^String coll)
-                            (count coll)))]
-          (or (when (and try-fast?
-                         (pos? (long ins-len))
-                         (<= (long ins-len) ropetree/+target-chunk-size+))
-                (let [ins-chunk (if (string? coll)
-                                  coll
-                                  (.toString ^StringRope coll))]
-                  (when-let [new-root (ropetree/rope-splice-inplace
-                                        root (long i) (long i) ins-chunk alloc)]
-                    (StringRope. new-root alloc _meta nil 0 0))))
-              (binding [tree/*t-join* alloc]
-                (let [mid-root (cond
-                                 (instance? StringRope coll)
-                                 (ensure-tree-root (.-root ^StringRope coll) alloc)
-                                 (string? coll) (ropetree/str->root ^String coll)
-                                 :else (ropetree/str->root (str coll)))]
-                  (StringRope. (ropetree/rope-insert-root root (long i) mid-root)
-                    alloc _meta nil 0 0))))))))
+        (let [result (flat-splice (or ^String root "") ii ii (coll->str coll))]
+          (with-tree alloc
+            (->StringRope* (make-root result alloc) alloc _meta)))
+        (let [^String ins (coll->str coll)
+              ins-len (.length ins)]
+          (or (when (<= ins-len ropetree/+target-chunk-size+)
+                (when-let [new-root (ropetree/rope-splice-inplace
+                                      root ii ii (when (pos? ins-len) ins) alloc)]
+                  (->StringRope* new-root alloc _meta)))
+              (with-tree alloc
+                (->StringRope* (ropetree/rope-insert-root root ii
+                                 (coll->tree-root coll alloc))
+                  alloc _meta)))))))
   (rope-remove [this start end]
     (let [n (flat-size root)]
       (check-range! (long start) (long end) n)
       (if (string? root)
         (let [^String s root
               ^String result (flat-splice s (long start) (long end) nil)]
-          (StringRope. (when (pos? (.length result)) result) alloc _meta nil 0 0))
+          (->StringRope* (when (pos? (.length result)) result) alloc _meta))
         (or (when-let [new-root (ropetree/rope-splice-inplace
                                   root (long start) (long end) nil alloc)]
-              (StringRope. new-root alloc _meta nil 0 0))
-            (binding [tree/*t-join* alloc]
-              (StringRope. (ropetree/rope-remove-root root (long start) (long end))
-                alloc _meta nil 0 0))))))
+              (->StringRope* new-root alloc _meta))
+            (with-tree alloc
+              (->StringRope* (ropetree/rope-remove-root root (long start) (long end))
+                alloc _meta))))))
   (rope-splice [this start end coll]
-    (let [n (flat-size root)]
-      (check-range! (long start) (long end) n)
+    (let [n  (flat-size root)
+          si (long start)
+          ei (long end)]
+      (check-range! si ei n)
       (if (string? root)
-        ;; Flat fast path: StringBuilder splice, check threshold
-        (let [^String s   (or ^String root "")
-              ^String rep (cond
-                            (string? coll) coll
-                            (instance? StringRope coll) (.toString ^StringRope coll)
-                            :else (str coll))
-              result (flat-splice s (long start) (long end) rep)]
-          (binding [tree/*t-join* alloc]
-            (StringRope. (make-root result alloc) alloc _meta nil 0 0)))
-        ;; Tree path
-        (let [try-fast? (or (string? coll) (instance? StringRope coll))
-              rep-len   (when try-fast?
-                          (if (string? coll)
-                            (.length ^String coll)
-                            (count coll)))]
-          (or (when (and try-fast?
-                         (<= (long rep-len) ropetree/+target-chunk-size+))
-                (let [rep-chunk (when (pos? (long rep-len))
-                                  (if (string? coll)
-                                    coll
-                                    (.toString ^StringRope coll)))]
-                  (when-let [new-root (ropetree/rope-splice-inplace
-                                        root (long start) (long end) rep-chunk alloc)]
-                    (StringRope. new-root alloc _meta nil 0 0))))
-              (binding [tree/*t-join* alloc]
-                (let [mid-root (cond
-                                 (instance? StringRope coll)
-                                 (ensure-tree-root (.-root ^StringRope coll) alloc)
-                                 (string? coll) (ropetree/str->root ^String coll)
-                                 :else (ropetree/str->root (str coll)))]
-                  (StringRope. (ropetree/rope-splice-root root (long start) (long end) mid-root)
-                    alloc _meta nil 0 0))))))))
+        (let [result (flat-splice (or ^String root "") si ei (coll->str coll))]
+          (with-tree alloc
+            (->StringRope* (make-root result alloc) alloc _meta)))
+        (let [^String rep (coll->str coll)
+              rep-len (.length rep)]
+          (or (when (<= rep-len ropetree/+target-chunk-size+)
+                (when-let [new-root (ropetree/rope-splice-inplace
+                                      root si ei (when (pos? rep-len) rep) alloc)]
+                  (->StringRope* new-root alloc _meta)))
+              (with-tree alloc
+                (let [mid-root (when (pos? rep-len)
+                                 (coll->tree-root coll alloc))]
+                  (->StringRope* (ropetree/rope-splice-root root si ei mid-root)
+                    alloc _meta))))))))
   (rope-chunks [_]
     (cond
       (nil? root)     nil
@@ -869,6 +842,31 @@
     (.hashCode (.toString this)))
   (equals [this o]
     (string-rope-equiv this o)))
+
+
+(defn- ->StringRope*
+  "Construct a StringRope with fresh (empty) cursor cache.
+  Preferred over the raw 6-arg constructor to avoid repeating nil/0/0."
+  [root alloc meta]
+  (StringRope. root alloc meta nil 0 0))
+
+(defn- coll->str
+  "Coerce a splice/insert argument to a String."
+  ^String [coll]
+  (cond
+    (string? coll)               coll
+    (instance? StringRope coll)  (.toString ^StringRope coll)
+    :else                        (str coll)))
+
+(defn- coll->tree-root
+  "Coerce a splice/insert argument to a tree root for the multi-traversal
+  fallback. Preserves existing StringRope tree structure when possible."
+  [coll alloc]
+  (cond
+    (instance? StringRope coll)
+    (ensure-tree-root (.-root ^StringRope coll) alloc)
+    (string? coll) (ropetree/str->root ^String coll)
+    :else          (ropetree/str->root (str coll))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -952,14 +950,14 @@
   (persistent [_]
     (when-not edit (throw (IllegalAccessError. "Transient used after persistent! call")))
     (set! edit false)
-    (binding [tree/*t-join* alloc]
+    (with-tree alloc
       (let [tree-root (transient-string-final-root root chunks tail)
             ;; Demote to flat if the result is small enough
             final-root (if (and tree-root
                                 (<= (ropetree/rope-size tree-root) +flat-threshold+))
                          (ropetree/rope->str tree-root)
                          tree-root)]
-        (StringRope. final-root alloc _meta nil 0 0))))
+        (->StringRope* final-root alloc _meta))))
 
   clojure.lang.Counted
   (count [_]
@@ -1012,19 +1010,19 @@
     (string-rope)                        ;=> #string/rope \"\"
     (string-rope \"hello world\")          ;=> #string/rope \"hello world\"
     (string-rope (slurp \"big-file.txt\")) ;=> efficient chunked representation"
-  ([] (StringRope. nil ropetree/string-rope-node-create {} nil 0 0))
+  ([] (->StringRope* nil ropetree/string-rope-node-create {}))
   ([s] (let [^String text (str s)]
          (cond
            (zero? (.length text))
-           (StringRope. nil ropetree/string-rope-node-create {} nil 0 0)
+           (->StringRope* nil ropetree/string-rope-node-create {})
 
            (<= (.length text) +flat-threshold+)
-           (StringRope. text ropetree/string-rope-node-create {} nil 0 0)
+           (->StringRope* text ropetree/string-rope-node-create {})
 
            :else
-           (binding [tree/*t-join* ropetree/string-rope-node-create]
-             (StringRope. (ropetree/str->root text)
-               ropetree/string-rope-node-create {} nil 0 0))))))
+           (with-tree ropetree/string-rope-node-create
+             (->StringRope* (ropetree/str->root text)
+               ropetree/string-rope-node-create {}))))))
 
 (defn string-rope-concat
   "Concatenate string ropes or strings.
@@ -1036,7 +1034,7 @@
   ([left right]
    (proto/rope-cat (->string-rope left) (->string-rope right)))
   ([left right & more]
-   (binding [tree/*t-join* ropetree/string-rope-node-create]
+   (with-tree ropetree/string-rope-node-create
      (let [alloc ropetree/string-rope-node-create
            all   (list* left right more)
            chunks (into []
@@ -1048,10 +1046,8 @@
                                   (string? rt)  [rt]
                                   :else         (ropetree/root->chunks rt)))))
                     all)]
-       (StringRope. (ropetree/chunks->root-csi chunks)
-         alloc
-         (or (meta left) {})
-         nil 0 0)))))
+       (->StringRope* (ropetree/chunks->root-csi chunks)
+         alloc (or (meta left) {}))))))
 
 (defn- ->string-rope
   "Coerce x to a StringRope."
