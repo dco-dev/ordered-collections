@@ -295,10 +295,16 @@
 (defn normalize-root
   "Full O(n) rechunk of a rope tree so every chunk satisfies CSI.
   Note: materializes all chunks to elements and reassembles as vectors.
-  For string ropes, use chunks->root-csi on root->chunks instead."
+  For string ropes, use chunks->root-csi on root->chunks instead.
+
+  Accepts a flat-mode vector root as well, in which case it is rebuilt
+  into a balanced tree via `coll->root`."
   [root]
-  (if (leaf? root)
-    nil
+  (cond
+    (leaf? root) nil
+    (instance? clojure.lang.APersistentVector root)
+    (coll->root root)
+    :else
     (chunks->root
       (rechunk-balanced (vec (mapcat seq (root->chunks root)))))))
 
@@ -1177,6 +1183,10 @@
   - every chunk except the rightmost has size >= min
   Returns true if CSI holds, false otherwise.
 
+  A flat-mode root (a raw PersistentVector that some rope variants use
+  as a single-chunk optimization) is trivially valid when its size fits
+  in `[0, target]`.
+
   Reads the currently bound `*target-chunk-size*` and `*min-chunk-size*`,
   so callers testing a particular rope variant should invoke this from
   inside that variant's `with-tree` binding (or the 3-arity form that
@@ -1184,8 +1194,15 @@
   ([root]
    (invariant-valid? root (long *target-chunk-size*) (long *min-chunk-size*)))
   ([root ^long target ^long minsz]
-   (if (leaf? root)
-     true
+   (cond
+     (leaf? root) true
+
+     ;; Flat-mode root: generic Rope stores small ropes as a bare
+     ;; APersistentVector. Always valid as long as size ≤ target.
+     (instance? clojure.lang.APersistentVector root)
+     (<= (.count ^clojure.lang.Counted root) target)
+
+     :else
      (let [chunks (root->chunks root)
            sizes  (mapv #(long (chunk-length %)) chunks)]
        (and

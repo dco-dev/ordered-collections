@@ -743,10 +743,12 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn- rope-tree-healthy?
-  "Check that the rope root satisfies both CSI and WBT balance."
+  "Check that the rope root satisfies both CSI and WBT balance.
+  Flat-mode roots (bare APersistentVector) are trivially valid."
   [root]
   (and (ropetree/invariant-valid? root)
        (or (nil? root)
+           (instance? clojure.lang.APersistentVector root)
            (ordered-collections.kernel.tree/node-healthy? root))))
 
 (defspec prop-multi-chunk-edit-sequences 50
