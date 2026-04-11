@@ -10,6 +10,7 @@
   (:require [criterium.core :as crit]
             [clojure.core.reducers :as r]
             [clojure.data.avl :as avl]
+            [clojure.edn :as edn]
             [clojure.set :as cset]
             [clojure.string :as str]
             [clojure.java.io :as io]
@@ -1289,6 +1290,148 @@
       (print-summary-node "    " bench-results))
     (println)))
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Auto-Compare Against Prior Run
+;;
+;; After writing the fresh EDN to disk, look for the most-recent
+;; existing result file in bench-results/ that predates this run. If
+;; one exists, flat-walk both and diff matching (size, group, variant)
+;; tuples, printing a compact section with any notable regressions
+;; and improvements. Self-contained: no dependency on the bb report
+;; tool — runs from the same JVM process that just finished the bench.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def ^:private ^:const +regression-threshold+ 1.10)
+(def ^:private ^:const +improvement-threshold+ 0.90)
+(def ^:private ^:const +compare-top-n+ 15)
+
+(defn- prior-edn-file
+  "Return the absolute path of the most-recent `.edn` file in
+  bench-results/ whose filename sorts before the given `current` file
+  (which must also live in bench-results/), or nil if none exists.
+  Filenames are timestamped, so lexical sort == chronological sort."
+  [current]
+  (let [dir (io/file "bench-results")
+        current-name (.getName ^java.io.File (io/file current))]
+    (when (.isDirectory dir)
+      (let [prior (->> (.listFiles dir)
+                       (map (fn [^java.io.File f] (.getName f)))
+                       (filter #(.endsWith ^String % ".edn"))
+                       (filter #(neg? (compare % current-name)))
+                       sort
+                       last)]
+        (when prior
+          (.getAbsolutePath ^java.io.File (io/file dir prior)))))))
+
+(defn- walk-leaves
+  "Walk a nested benchmark-result map and yield a flat seq of
+  {:size :group :variant :mean-ns} entries, one per leaf measurement."
+  [benchmarks]
+  (letfn [(walk [size path node]
+            (cond
+              (and (map? node) (contains? node :mean-ns))
+              [{:size size
+                :group (first path)
+                :variant (last path)
+                :mean-ns (double (:mean-ns node))}]
+
+              (map? node)
+              (mapcat (fn [[k v]] (walk size (conj path k) v)) node)
+
+              :else nil))]
+    (mapcat (fn [[size groups]]
+              (mapcat (fn [[group node]] (walk size [group] node)) groups))
+            benchmarks)))
+
+(defn- load-bench-edn [path]
+  (try
+    (edn/read-string (slurp path))
+    (catch Exception _ nil)))
+
+(defn- delta-row [{:keys [size group variant mean-ns]} prior-map]
+  (when-let [old (get prior-map [size group variant])]
+    (let [new-ns (double mean-ns)
+          old-ns (double old)
+          ratio  (/ new-ns old-ns)]
+      {:size size
+       :group group
+       :variant variant
+       :old-ns old-ns
+       :new-ns new-ns
+       :ratio ratio
+       :delta-pct (* 100.0 (dec ratio))})))
+
+(defn- fmt-time [^double ns]
+  (cond
+    (>= ns 1e9) (format "%.2fs" (/ ns 1e9))
+    (>= ns 1e6) (format "%.2fms" (/ ns 1e6))
+    (>= ns 1e3) (format "%.2fµs" (/ ns 1e3))
+    :else       (format "%.0fns" ns)))
+
+(defn- print-delta-table [title rows]
+  (println title)
+  (println "  -------------------------------------------------------------------------------------------------")
+  (println (format "  %6s  %-32s %-22s %12s %12s %10s"
+                   "N" "group" "variant" "old" "new" "delta"))
+  (println "  -------------------------------------------------------------------------------------------------")
+  (doseq [{:keys [size group variant old-ns new-ns delta-pct]} rows]
+    (println (format "  %6d  %-32s %-22s %12s %12s %+9.1f%%"
+                     size (name group) (name variant)
+                     (fmt-time old-ns) (fmt-time new-ns) delta-pct)))
+  (println))
+
+(defn print-comparison-vs-prior
+  "If a prior bench-results EDN exists for comparison, walk both files,
+  match leaf measurements by (size, group, variant), and print
+  regressions (slower ≥10%) and improvements (faster ≥10%) side-by-side."
+  [current-file]
+  (if-let [prior-file (prior-edn-file current-file)]
+    (let [current (load-bench-edn current-file)
+          prior   (load-bench-edn prior-file)]
+      (if-not (and current prior (:benchmarks current) (:benchmarks prior))
+        (do (println)
+            (println "(No prior EDN loaded — skipping comparison.)"))
+        (let [current-rows (walk-leaves (:benchmarks current))
+              prior-rows   (walk-leaves (:benchmarks prior))
+              prior-map    (into {} (map (juxt (juxt :size :group :variant) :mean-ns))
+                                 prior-rows)
+              deltas       (keep #(delta-row % prior-map) current-rows)
+              regressions  (->> deltas
+                                (filter #(>= (:ratio %) +regression-threshold+))
+                                (sort-by :ratio >)
+                                (take +compare-top-n+))
+              improvements (->> deltas
+                                (filter #(<= (:ratio %) +improvement-threshold+))
+                                (sort-by :ratio)
+                                (take +compare-top-n+))]
+          (println)
+          (println "========================================================================")
+          (println "  Comparison vs Previous Run")
+          (println "========================================================================")
+          (println)
+          (println (str "  Baseline: " prior-file))
+          (println (str "  Compared:  " (count deltas) " matching benchmark cells."))
+          (println)
+          (if (seq regressions)
+            (print-delta-table
+              (format "  Regressions (≥ %.0f%% slower), top %d by magnitude:"
+                      (* 100.0 (dec +regression-threshold+)) +compare-top-n+)
+              regressions)
+            (println "  No significant regressions (≥10% slower).\n"))
+          (if (seq improvements)
+            (print-delta-table
+              (format "  Improvements (≥ %.0f%% faster), top %d by magnitude:"
+                      (* 100.0 (- 1.0 +improvement-threshold+)) +compare-top-n+)
+              improvements)
+            (println "  No significant improvements (≥10% faster).\n"))
+          (println (str "  Use `lein bench-report --file " current-file
+                        " --baseline " prior-file "` for the full"))
+          (println (str "  comparison (category breakdown, headline tables, etc.)."))
+          (println))))
+    (do (println)
+        (println "(No prior bench-results EDN found — skipping comparison.)"))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Main Entry Point
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1335,7 +1478,8 @@
 
         (let [results (runner (:sizes opts))]
           (print-summary results)
-          (write-results results output-file opts started-at))
+          (write-results results output-file opts started-at)
+          (print-comparison-vs-prior output-file))
 
         (println)
         (println "Benchmark suite complete.")))
