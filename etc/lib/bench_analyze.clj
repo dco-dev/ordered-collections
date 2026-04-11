@@ -292,6 +292,111 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Category Summary — per-category aggregated stats
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- median
+  [xs]
+  (let [sorted (sort xs)
+        n      (count sorted)]
+    (when (pos? n)
+      (nth sorted (quot n 2)))))
+
+(defn- geomean
+  "Geometric mean — the right average for speedup ratios because
+   the arithmetic mean over-weights the large wins."
+  [xs]
+  (let [clean (remove (fn [x] (or (nil? x) (not (pos? x)))) xs)
+        n     (count clean)]
+    (when (pos? n)
+      (Math/exp (/ (reduce + (map #(Math/log (double %)) clean)) n)))))
+
+(defn category-summary
+  "Aggregate the scorecard by category and return per-category stats.
+   Each entry reports case counts, median/geomean speedup, best win,
+   and worst loss within the category. Useful for a top-level
+   'Performance by Category' section in the report."
+  [scorecard]
+  (->> scorecard
+       (group-by :category)
+       (map (fn [[category rows]]
+              (let [speedups  (map :speedup rows)
+                    wins      (filter #(= :win (:status %)) rows)
+                    losses    (filter #(= :loss (:status %)) rows)
+                    parity    (filter #(= :parity (:status %)) rows)
+                    best      (when (seq wins) (apply max-key :speedup wins))
+                    worst     (when (seq losses) (apply min-key :speedup losses))]
+                {:category  category
+                 :total     (count rows)
+                 :wins      (count wins)
+                 :parity    (count parity)
+                 :losses    (count losses)
+                 :median    (median speedups)
+                 :geomean   (geomean speedups)
+                 :best-win  (:speedup best)
+                 :best-win-group (:group best)
+                 :worst-loss (:speedup worst)
+                 :worst-loss-group (:group worst)})))
+       (sort-by (juxt (fn [{:keys [category]}]
+                        (.indexOf category-order category))))
+       vec))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Rope Family Summary — cross-variant comparison for structural ops
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def ^:private rope-family-ops
+  "Operations where all three rope variants (rope, string-rope,
+   byte-rope) have matching benchmark groups, laid out side-by-side
+   for a quick cross-variant glance."
+  [{:label "Concat"           :rope "rope-concat"          :string "string-rope-concat"         :byte "byte-rope-concat"}
+   {:label "Split"            :rope nil                    :string "string-rope-split"          :byte "byte-rope-split"}
+   {:label "Splice"           :rope "rope-splice"          :string "string-rope-splice"         :byte "byte-rope-splice"}
+   {:label "Insert"           :rope nil                    :string "string-rope-insert"         :byte "byte-rope-insert"}
+   {:label "Remove"           :rope nil                    :string "string-rope-remove"         :byte "byte-rope-remove"}
+   {:label "200 Random Edits" :rope "rope-repeated-edits"  :string "string-rope-repeated-edits" :byte "byte-rope-repeated-edits"}
+   {:label "Random nth"       :rope "rope-nth"             :string "string-rope-nth"            :byte "byte-rope-nth"}
+   {:label "Reduce"           :rope "rope-reduce"          :string "string-rope-reduce"         :byte "byte-rope-reduce"}])
+
+(defn- rope-family-variant-baseline
+  [variant group-name]
+  (case variant
+    :rope        {:oc :rope :peer :vector}
+    :string-rope {:oc :string-rope :peer :string}
+    :byte-rope   {:oc :byte-rope :peer :byte-array}))
+
+(defn rope-family-summary
+  "For each structural op, collect per-variant speedup vs the natural
+   baseline at the largest benchmarked size. Returns rows with keys
+   :label, :rope-speedup, :string-rope-speedup, :byte-rope-speedup.
+   Missing cells are nil (e.g. generic rope has no 'insert' group)."
+  [rows sizes]
+  (let [by-key  (group-by (juxt :size :group :variant) rows)
+        max-n   (apply max sizes)
+        lookup  (fn [size group variant]
+                  (:mean-ns (first (by-key [size group (keyword variant)]))))
+        speedup (fn [variant group-name]
+                  (when group-name
+                    (let [{:keys [oc peer]} (rope-family-variant-baseline variant group-name)
+                          oc-ns   (lookup max-n (keyword group-name) oc)
+                          peer-ns (lookup max-n (keyword group-name) peer)]
+                      (when (and oc-ns peer-ns (pos? (double oc-ns)))
+                        (/ (double peer-ns) (double oc-ns))))))]
+    (->> rope-family-ops
+         (map (fn [{:keys [label rope string byte]}]
+                {:label               label
+                 :size                max-n
+                 :rope-speedup        (speedup :rope rope)
+                 :string-rope-speedup (speedup :string-rope string)
+                 :byte-rope-speedup   (speedup :byte-rope byte)}))
+         ;; Only include rows that have at least one variant speedup
+         (filter (fn [{:keys [rope-speedup string-rope-speedup byte-rope-speedup]}]
+                   (some some? [rope-speedup string-rope-speedup byte-rope-speedup])))
+         vec)))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Regressions (baseline comparison)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
