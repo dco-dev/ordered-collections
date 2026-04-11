@@ -119,6 +119,13 @@ size because structural editing is O(log n) vs O(n). Parallel fold beats vectors
 via tree-based fork-join decomposition. Random nth is slower (O(log n) vs O(1))
 — an inherent tradeoff of tree-backed indexing.
 
+> These numbers are all for tree-mode ropes (above the 1024-element
+> flat threshold). Below that threshold the rope stores its content as
+> a bare `PersistentVector` directly and every read dispatches to
+> vector operations with zero indirection — read performance is
+> essentially identical to a raw vector. See **Flat Mode: Zero-Overhead
+> Small Ropes** below.
+
 
 ## Rope Design in This Library
 
@@ -236,6 +243,61 @@ That right-edge exception keeps append efficient, but it also means structural
 operations must sometimes repair chunk boundaries. In particular, concat, split,
 slice, and splice can move a former right-edge runt into the interior, where it
 must be merged and rechunked back into a valid shape.
+
+
+## Flat Mode: Zero-Overhead Small Ropes
+
+All three rope variants apply the same **flat-mode optimization**: when a
+rope's element count is at or below the per-variant flat threshold (1024
+by default), the rope skips the tree wrapper entirely and stores its
+content as a bare concrete collection in its `root` field — a
+`PersistentVector` for the generic rope, a `java.lang.String` for the
+string rope, a `byte[]` for the byte rope.
+
+This is just good engineering rather than clever algorithms: a
+1024-element rope does not need an outer tree node, an augmented
+subtree element count, and a chunk-protocol dispatch layer just to
+read one element. Below the threshold every operation dispatches
+straight to the native type:
+
+| Variant      | Below threshold         | Above threshold             |
+|---           |---                      |---                          |
+| `rope`       | `PersistentVector`      | chunked WBT of vectors      |
+| `string-rope`| `java.lang.String`      | chunked WBT of strings      |
+| `byte-rope`  | `byte[]`                | chunked WBT of byte arrays  |
+
+Concretely:
+
+- **Reads** (`nth`, `seq`, `reduce`, `charAt`, indexed access) go
+  directly to the underlying type. No tree descent, no chunk protocol
+  call, no per-op indirection.
+- **Structural edits** (`rope-insert`, `rope-splice`, `rope-cat`, etc.)
+  use the native type's own efficient operations (`subvec` + `into` for
+  vectors, `StringBuilder` for strings, `System.arraycopy` for byte
+  arrays). If the result would exceed the threshold, the rope
+  transparently **promotes** to the chunked tree form.
+- **Transients** always build in tree form internally, but at
+  `persistent!` time the final result is **demoted** back to flat form
+  if it fits under the threshold.
+- **Memory overhead** for a small rope is essentially identical to the
+  underlying type — the flat-mode rope is just the bare collection
+  plus the deftype field headers (alloc, meta, cursor cache).
+  Measured with `clj-memory-meter`, a 1024-element rope is within 0.1
+  bytes/element of a raw `PersistentVector`.
+
+The flat threshold for each variant is tuned independently and can
+diverge as each variant's performance profile demands, but currently
+all three use 1024 — that happens to coincide with the
+`+target-chunk-size+`, so "small enough to live in a single chunk"
+and "small enough to stay flat" are the same regime.
+
+The asymmetry worth noting: on the generic rope, flat-mode reads are
+*not* O(1) — `PersistentVector.nth` is O(log₃₂ n), a trie-level
+lookup. They are, however, as fast as reads get on the JVM for
+arbitrary Clojure values, and they skip the outer rope-tree
+indirection entirely. On the specialized variants, flat-mode
+`charAt` and unsigned-byte indexing are genuinely O(1) because
+`String` and `byte[]` are contiguous.
 
 
 ## API

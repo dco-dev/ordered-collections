@@ -556,6 +556,11 @@ split, splice, insert, and remove. Backed by a weight-balanced tree of chunk
 vectors. Implements `IPersistentVector` (`(vector? rope)` is true),
 `java.util.List`, `java.util.RandomAccess`, `Comparable`, and `r/fold`.
 
+Small ropes (≤ 1024 elements) are stored as a raw `PersistentVector`
+internally, skipping the tree wrapper entirely. Reads dispatch straight
+to the vector with zero indirection; edits that grow past the threshold
+transparently promote to chunked tree form.
+
 ### Constructors
 
 - `rope`
@@ -583,13 +588,13 @@ vectors. Implements `IPersistentVector` (`(vector? rope)` is true),
 |---|---|---|
 | `conj` | `[rope x]` | Append to end. |
 | `assoc` | `[rope i x]` | Replace element at index (or append if `i = count`). |
-| `nth` | `[rope i]` `[rope i not-found]` | Positional access. O(log n). |
+| `nth` | `[rope i]` `[rope i not-found]` | Positional access. O(log n) on tree mode; direct `PersistentVector.nth` on flat mode. |
 | `get` | `[rope i]` `[rope i not-found]` | Same as `nth`. |
 | `peek` | `[rope]` | Last element. |
 | `pop` | `[rope]` | Remove last element. |
 | `seq` / `rseq` | `[rope]` | Forward / reverse traversal. |
 | `reduce` | `[f rope]` `[f init rope]` | Chunk-aware reduction with `reduced` support. |
-| `r/fold` | `[n combinef reducef rope]` | Parallel fork-join fold. |
+| `r/fold` | `[n combinef reducef rope]` | Parallel fork-join fold. (Sequential reduce on flat-mode ropes since they are already small.) |
 | `compare` | `[rope1 rope2]` | Lexicographic comparison. |
 | `count` | `[rope]` | O(1). |
 

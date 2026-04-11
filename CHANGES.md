@@ -1,5 +1,97 @@
 # Changelog
 
+## [0.2.1-SNAPSHOT] - unreleased
+
+### New Collection Types
+
+- **StringRope** (`string-rope`) — persistent chunked text sequence backed by
+  `java.lang.String` chunks. Implements `java.lang.CharSequence` so it drops
+  into `re-find`/`re-seq`/`re-matches`, `clojure.string`, and any Java API
+  expecting text. Equality with `String` is content-based and hash-compatible.
+  `#string/rope "…"` tagged literal with EDN round-trip. Constructor:
+  `string-rope` / `string-rope-concat`. At 100K+ characters, up to
+  ~35x faster than `String` on repeated structural edits.
+- **ByteRope** (`byte-rope`) — persistent chunked binary sequence backed by
+  `byte[]` chunks. Unsigned byte semantics (0–255 as long). Unsigned
+  lexicographic `Comparable` via `Arrays.compareUnsigned`. `#byte/rope "hex"`
+  tagged literal. Constructor: `byte-rope` / `byte-rope-concat`. Extras:
+  `byte-rope-bytes`, `byte-rope-hex`, `byte-rope-write`,
+  `byte-rope-input-stream`, `byte-rope-get-byte`/`-short`/`-int`/`-long`
+  (plus `-le` variants), `byte-rope-index-of`, and a streaming
+  `byte-rope-digest` that feeds chunks through `java.security.MessageDigest`
+  without materialization.
+
+### Rope Family Improvements
+
+- **Flat-mode optimization** for all three rope variants (`rope`,
+  `string-rope`, `byte-rope`). When a rope's element count is at or below
+  the per-variant flat threshold (1024 elements, characters, or bytes),
+  the rope stores its content as a bare concrete collection
+  (`PersistentVector`, `java.lang.String`, or `byte[]`) directly in the
+  root field, skipping the tree wrapper entirely. Reads dispatch straight
+  to the native type with zero indirection overhead; edits that grow the
+  rope past the threshold transparently promote to chunked tree form;
+  transients demote back to flat form at `persistent!` time when the
+  result fits. Memory for small ropes is essentially identical to the
+  natural baseline (1.00x vs `PersistentVector` / `String` / `byte[]`).
+- **Per-variant Chunk Size Invariant (CSI)** — each rope variant now
+  declares its own `+target-chunk-size+` / `+min-chunk-size+` constants
+  and binds them via its `with-tree` macro into the kernel's new
+  `*target-chunk-size*` / `*min-chunk-size*` dynamic vars. Tuned via
+  `lein bench-rope-tuning`: all three variants default to 1024/512
+  (up from the historical 256/128). At 500K elements, generic Rope
+  gains +41% nth, +38% split, and 5x concat; StringRope and ByteRope
+  improve on every measured operation.
+- **`kernel/chunk.clj`** — extracted from `kernel/rope.clj`. Holds the
+  `PRopeChunk` protocol extensions for the three chunk backends
+  (`APersistentVector`, `String`, `byte[]`) as a standalone kernel
+  submodule. `kernel/rope.clj` drops from 1237 to 1155 lines and is now
+  purely the rope tree algebra.
+- **StringRope internals refactor** — `with-tree` macro replaces 16+
+  copies of the `(binding [*t-join* alloc] ...)` form; `->StringRope*`
+  helper replaces 35+ copies of the 6-arg constructor; `coll->str` and
+  `coll->tree-root` coercion helpers deduplicate scattered dispatch
+  logic in the PRope method bodies.
+- **`rope-splice-inplace`** fused single-chunk splice path avoids an
+  intermediate `chunk-splice` allocation on the overflow path via
+  `chunk-splice-split`.
+- **Cursor cache** on StringRope and ByteRope uses direct
+  `^:volatile-mutable ^int` fields instead of a boxed `Object[]`.
+
+### Benchmarks and Tooling
+
+- **`lein bench-rope-tuning`** fully rewritten to sweep chunk sizes
+  across all three rope variants (`Rope` vs `Vector`, `StringRope` vs
+  `String`, `ByteRope` vs `byte[]`). Reports per-operation speedups and
+  a geomean score for ranking. Supports
+  `--variant rope|string-rope|byte-rope`.
+- **`lein bench`** (`bench_runner.clj`) full suite gains N=1000 and
+  N=5000 cardinalities alongside the existing 10K/100K/500K. The 1K
+  column exercises flat-mode for all three rope variants; the 5K
+  column exercises the smallest tree-mode regime.
+- **`lein bench-simple`** gains a `:rope` category (alongside the
+  existing `:string-rope` and new `:byte-rope` categories) and adds
+  N=5000 to the shared size defaults.
+- **Memory test** (`memory_test.clj`) gains `string-rope-memory` and
+  `byte-rope-memory` deftests plus a new rope family section in the
+  summary report table, showing all three variants against their
+  natural baselines.
+
+### Documentation
+
+- [Cookbook](doc/cookbook.md) restructured with six rope recipes at the
+  front (text editor, regex on StringRope, bulk sequence assembly, binary
+  protocol, streaming digest, undo history). Duplicate section
+  numbering cleaned up; existing collection recipes renumbered.
+- [Ropes](doc/ropes.md) gains a "Chunk Abstraction: One Kernel, Many
+  Backends" section explaining `PRopeChunk` and `kernel/chunk.clj`, a
+  "Specialized Ropes" section with per-variant design and examples,
+  and a variant-picker table. API section now covers all three
+  variants with the shared `PRope` surface up front.
+- [Collections API](doc/collections-api.md) gains full StringRope and
+  ByteRope sections with constructors, interfaces, and per-variant
+  operations.
+
 ## [0.2.0] - 2026-04-08
 
 ### New Collection Types
