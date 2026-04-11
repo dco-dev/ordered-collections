@@ -36,7 +36,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (def sizes-default [100000])
-(def sizes-full    [10000 100000 500000])
+(def sizes-full    [1000 5000 10000 100000 500000])
 
 (defn timestamp []
   (.format (LocalDateTime/now)

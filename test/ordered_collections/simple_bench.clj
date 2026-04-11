@@ -662,7 +662,7 @@
 ;; Rope (Vector) Benchmarks
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def ^:private rope-sizes [1000 10000 100000])
+(def ^:private rope-sizes [1000 5000 10000 100000])
 
 (defn bench-rope-concat
   "Benchmark concatenating rope pieces vs into vector."
@@ -778,7 +778,7 @@
 ;; Byte Rope Benchmarks
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def ^:private byte-rope-sizes [1000 10000 100000])
+(def ^:private byte-rope-sizes [1000 5000 10000 100000])
 
 (defn- bench-ba-random
   ^bytes [^long n]
@@ -914,7 +914,7 @@
 ;; String Rope vs String Structural Editing
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def ^:private string-rope-sizes [1000 4000 8000])
+(def ^:private string-rope-sizes [1000 5000 10000])
 
 (defn- random-text
   "Generate a random ASCII text of length n."
@@ -1194,9 +1194,9 @@
 ;; Size Presets
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def sizes-quick   [100 1000 10000])
-(def sizes-default [100 1000 10000 100000])
-(def sizes-full    [100 1000 10000 100000 1000000])
+(def sizes-quick   [100 1000 5000 10000])
+(def sizes-default [100 1000 5000 10000 100000])
+(def sizes-full    [100 1000 5000 10000 100000 1000000])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Benchmark Categories

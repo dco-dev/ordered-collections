@@ -391,7 +391,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (def default-targets [64 128 256 512 1024])
-(def default-sizes   [10000 100000 500000])
+(def default-sizes   [1000 5000 10000 100000 500000])
 
 (defn- run-variant [variant n target opts]
   (print (format "  %-12s N=%7d target=%4d " (name variant) n target))
