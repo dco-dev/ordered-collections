@@ -262,7 +262,7 @@
   java.io.Serializable
 
   INodeCollection
-  (getAllocator [_] nil)
+  (getAllocator [_] tree/node-create-weight-balanced)
   (getRoot [_] root)
 
   IOrderedCollection
@@ -273,7 +273,7 @@
   (isSimilar [_ _] false)
 
   IBalancedCollection
-  (getStitch [_] nil)
+  (getStitch [_] tree/node-stitch)
 
   clojure.lang.IMeta
   (meta [_] _meta)
