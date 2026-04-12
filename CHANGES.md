@@ -34,6 +34,9 @@
   transients demote back to flat form at `persistent!` time when the
   result fits. Memory for small ropes is essentially identical to the
   natural baseline (1.00x vs `PersistentVector` / `String` / `byte[]`).
+  StringRope and ByteRope had this from day one; the generic Rope
+  gained it late in the 0.2.1 cycle so all three variants now share the
+  same optimization pattern.
 - **Per-variant Chunk Size Invariant (CSI)** — each rope variant now
   declares its own `+target-chunk-size+` / `+min-chunk-size+` constants
   and binds them via its `with-tree` macro into the kernel's new
@@ -52,11 +55,38 @@
   helper replaces 35+ copies of the 6-arg constructor; `coll->str` and
   `coll->tree-root` coercion helpers deduplicate scattered dispatch
   logic in the PRope method bodies.
+- **Monomorphic hot paths for `nth` and `reduce`** on all three rope
+  variants. Each variant's deftype now inlines the tree walk directly,
+  replacing the generic kernel's protocol-dispatched `rope-nth` /
+  `rope-chunk-at` / `rope-reduce` with concrete chunk-type calls
+  (`alength`/`aget` for byte[], `.length`/`.charAt` for String,
+  `.count`/`.nth` for vector). Eliminates per-tree-level `PRopeChunk`
+  protocol dispatch (~9 dispatches per `nth` at N=500K), the
+  `[chunk offset]` tuple allocation that `rope-chunk-at` returned on
+  every call, and per-chunk `chunk-reduce-init` dispatch on every leaf
+  during `reduce`.
+  Measured at N=500K (1000 random nth, full reduce):
+  - Rope `nth`: 106 → 58 µs (**1.8x faster**, 0.09x → 0.16x vs vector)
+  - StringRope `nth`: 120 → 50 µs (**2.4x faster**, 0.013x → 0.030x vs String)
+  - ByteRope `nth`: 145 → 62 µs (**2.3x faster**, 0.003x → 0.015x vs byte[])
+  - StringRope `reduce`: 1.81 → 1.07 ms (**1.7x faster**, 0.31x → 0.52x vs String)
+  - ByteRope `reduce`: 3.53 → 1.91 ms (**1.8x faster**)
+  - No structural-op regression: splice, concat, insert, remove, and
+    repeated-edits all within ±3% of prior run.
+- **Removed cursor cache from StringRope and ByteRope.** The volatile-mutable
+  `_cc_chunk`/`_cc_start`/`_cc_end` fields introduced torn-read races
+  under concurrent access (three volatile writes are not atomic as a group)
+  and caused cache thrashing when two threads did sequential access on
+  the same rope instance — violating the thread-safety guarantees
+  expected of persistent data structures. The monomorphic tree walk is
+  fast enough (~50–70 ns per `nth` at N=500K) that the cache's benefit
+  on sequential access was not worth the correctness cost. If sequential
+  `charAt` throughput becomes a bottleneck for regex-heavy workloads, an
+  explicit cursor wrapper (opt-in, not shared) may be added in a future
+  release.
 - **`rope-splice-inplace`** fused single-chunk splice path avoids an
   intermediate `chunk-splice` allocation on the overflow path via
   `chunk-splice-split`.
-- **Cursor cache** on StringRope and ByteRope uses direct
-  `^:volatile-mutable ^int` fields instead of a boxed `Object[]`.
 
 ### Benchmarks and Tooling
 
@@ -75,7 +105,32 @@
 - **Memory test** (`memory_test.clj`) gains `string-rope-memory` and
   `byte-rope-memory` deftests plus a new rope family section in the
   summary report table, showing all three variants against their
-  natural baselines.
+  natural baselines. The `specialized-collection-memory` deftest
+  extends to cover range-map, segment-tree, and fuzzy-map (previously
+  only interval-set/-map, multiset, priority-queue, and fuzzy-set).
+- **`lein bench-report`** gains three new sections: *Performance by
+  Category* (aggregated wins/parity/losses per category with geomean
+  speedup and best/worst case), *Rope Family at Scale* (side-by-side
+  speedups for all three rope variants on structural ops), and
+  *Significant Wins* (parallel to the existing Significant Losses
+  section — the significant-wins analyzer was always computed but
+  previously not rendered). All existing sections — Headline
+  Performance, Parity, Significant Losses, Full Scorecard,
+  Regressions, Improvements — render identically.
+- **`lein bench` auto-compare** — after writing a fresh
+  `bench-results/<timestamp>.edn`, the runner looks for the
+  most-recent prior EDN in the same directory, flat-walks both files,
+  matches leaf measurements by `(size, group, variant)`, and prints a
+  compact Regressions / Improvements section with timing deltas.
+  Self-contained (no dependency on the `bb` report tool); suggests
+  `lein bench-report --baseline` for the full comparison.
+- **Main bench suite coverage parity** — `bench_runner.clj` now
+  benchmarks range-map, segment-tree, priority-queue, ordered-multiset,
+  fuzzy-set, and fuzzy-map alongside the existing set / map / rope
+  coverage. Previously these types were only exercised by specialized
+  scripts (`lein bench-range-map`) or not at all, which meant the main
+  `lein bench --full` pipeline and `bench-report` had no visibility
+  into their performance.
 
 ### Documentation
 

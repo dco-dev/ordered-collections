@@ -873,6 +873,136 @@ the cost of tens of kilobytes. The same pattern works for StringRope
 
 ---
 
+## 21. Non-Overlapping Ranges (Range Map)
+
+**Problem:** Map non-overlapping half-open ranges `[lo, hi)` to values and
+query by point. Inserting a new range should automatically carve out
+whatever it overlaps with existing ranges. Classic use cases: pricing
+tiers, version-gated feature flags, IP subnet ownership, memory-mapped
+region tables.
+
+```clojure
+;; Customer tier based on cumulative purchase amount
+(def tiers
+  (-> (oc/range-map)
+      (assoc [0 100]      :bronze)
+      (assoc [100 500]    :silver)
+      (assoc [500 5000]   :gold)
+      (assoc [5000 25000] :platinum)))
+
+(tiers 75)        ;; => :bronze     (point lookup)
+(tiers 250)       ;; => :silver
+(tiers 5000)      ;; => :platinum
+(tiers 30000)     ;; => nil         (outside all ranges)
+
+;; Which range does a point belong to?
+(oc/get-entry tiers 250)
+;; => [[100 500] :silver]
+
+;; Insert a flash-sale range — bronze and silver are automatically
+;; carved out so the new range sits cleanly in the middle.
+(def with-sale (assoc tiers [50 200] :flash))
+
+(oc/ranges with-sale)
+;; => ([[0 50]      :bronze]     ← auto-trimmed
+;;     [[50 200]    :flash]      ← inserted
+;;     [[200 500]   :silver]     ← auto-trimmed
+;;     [[500 5000]  :gold]
+;;     [[5000 25000] :platinum])
+
+(with-sale 75)    ;; => :flash    (used to be :bronze)
+(with-sale 600)   ;; => :gold     (unchanged)
+
+;; What ranges are unallocated?
+(oc/gaps tiers)
+;; => ()         (contiguous from 0 to 25000)
+
+(oc/gaps (-> (oc/range-map)
+             (assoc [0 100] :a)
+             (assoc [500 1000] :b)))
+;; => ([100 500])
+
+;; Coalescing: adjacent ranges with the same value merge automatically.
+(-> (oc/range-map)
+    (oc/assoc-coalescing [0 50]   :a)
+    (oc/assoc-coalescing [50 100] :a)   ; adjacent & same value → merged
+    (oc/assoc-coalescing [100 150] :b)
+    oc/ranges)
+;; => ([[0 100] :a] [[100 150] :b])
+
+;; Range removal clears a region entirely, leaving a gap.
+(oc/ranges (oc/range-map (-> tiers (oc/range-remove [100 500]))))
+;; => ([[0 100] :bronze] [[500 5000] :gold] [[5000 25000] :platinum])
+```
+
+**Why ordered-collections?** Range-map is a persistent version of
+Guava's `TreeRangeMap` — overlap detection is O(log n + k), point
+lookup is O(log n), and the carve-out-on-insert semantics mean you
+never have to manually split overlapping ranges. The persistent
+structure gives you free snapshots of pricing history or feature
+rollouts.
+
+---
+
+## 22. Availability Windows (Interval Set)
+
+**Problem:** Track a set of half-open time intervals (maintenance
+windows, busy periods, quiet hours, event schedules) and answer "is
+the current time inside any of them?". Unlike an interval-map, you
+don't have per-interval values — you just want overlap membership.
+
+```clojure
+;; Service maintenance windows — a set of intervals (no values).
+;; Scalar values are treated as point intervals.
+(def maintenance
+  (oc/interval-set [[100 130]      ; Mon 01:00-01:30
+                    [700 730]      ; Mon 07:00-07:30
+                    [1200 1215]    ; Mon 12:00-12:15 (deploy)
+                    [2200 2230]])) ; Mon 22:00-22:30
+
+;; Point query — is time t inside any maintenance window?
+(defn maintenance-now? [t]
+  (boolean (seq (oc/overlapping maintenance t))))
+
+(maintenance-now? 105)    ;; => true   (inside [100 130])
+(maintenance-now? 600)    ;; => false
+(maintenance-now? 1210)   ;; => true   (inside [1200 1215])
+
+;; Range query — which windows overlap a time range?
+(oc/overlapping maintenance [115 720])
+;; => ([100 130] [700 730])
+
+;; Set algebra on intervals
+(def planned
+  (oc/interval-set [[100 130] [700 730] [1200 1215]]))
+
+(def ad-hoc
+  (oc/interval-set [[800 815] [1205 1210] [1800 1830]]))
+
+(oc/union planned ad-hoc)
+;; => all planned + ad-hoc windows
+
+(oc/intersection planned ad-hoc)
+;; => #{[1200 1215]}  ← the one overlap (structurally: 1205-1210 is a subset)
+
+;; When does the next maintenance end?
+(defn next-free-slot [iset now]
+  (when-let [[_ hi] (first (oc/overlapping iset now))]
+    hi))
+
+(next-free-slot maintenance 1205)   ;; => 1215
+(next-free-slot maintenance 1500)   ;; => nil   (not in a window)
+```
+
+**Why ordered-collections?** Interval-set gives you O(log n + k)
+overlap queries via the interval-tree augmentation, plus set algebra
+(`union`, `intersection`, `difference`) over intervals as elements.
+When you care about "what's happening" and not "what values are
+attached", interval-set is lighter than interval-map and supports
+the same spatial-query operations.
+
+---
+
 ## Performance Tips
 
 1. **Use `reduce` over `seq`** - Direct reduce uses optimized IReduceInit path

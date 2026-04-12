@@ -653,7 +653,7 @@ the same public functions documented for Rope:
 | Operation | Signature(s) | Notes |
 |---|---|---|
 | `count` | `[sr]` | O(1). |
-| `nth` | `[sr i]` `[sr i not-found]` | Returns a `Character`. O(log n) on tree mode, O(1) on flat mode, O(1) amortized on tree via cursor cache. |
+| `nth` | `[sr i]` `[sr i not-found]` | Returns a `Character`. O(log n) on tree mode, O(1) on flat mode. |
 | `get` / IFn | `[sr i]` `[sr i not-found]` | Same as `nth`. |
 | `conj` | `[sr c]` | Append a single character. |
 | `assoc` | `[sr i c]` | Replace character at index (or append if `i = count`). |
@@ -780,7 +780,7 @@ From the shared `PRope` protocol:
 | Operation | Signature(s) | Notes |
 |---|---|---|
 | `count` | `[br]` | O(1). |
-| `nth` | `[br i]` `[br i not-found]` | Returns an unsigned long in `[0, 255]`. O(log n) on tree mode, O(1) on flat mode, O(1) amortized on tree via cursor cache. |
+| `nth` | `[br i]` `[br i not-found]` | Returns an unsigned long in `[0, 255]`. O(log n) on tree mode, O(1) on flat mode. |
 | `get` / IFn | `[br i]` `[br i not-found]` | Same as `nth`. |
 | `conj` | `[br b]` | Append a single byte (accepts an integer in `[0, 255]`). |
 | `assoc` | `[br i b]` | Replace byte at index (or append if `i = count`). |

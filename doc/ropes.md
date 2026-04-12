@@ -215,7 +215,7 @@ the recipe is:
 5. Expose the public API in `core.clj`.
 
 The shared-kernel approach means every optimization the kernel gains —
-`rope-splice-inplace`, cursor caches, parallel fold, transient
+`rope-splice-inplace`, monomorphic hot paths, parallel fold, transient
 construction — is inherited by all variants at once.
 
 
@@ -281,7 +281,7 @@ Concretely:
   if it fits under the threshold.
 - **Memory overhead** for a small rope is essentially identical to the
   underlying type — the flat-mode rope is just the bare collection
-  plus the deftype field headers (alloc, meta, cursor cache).
+  plus the deftype field headers (alloc, meta).
   Measured with `clj-memory-meter`, a 1024-element rope is within 0.1
   bytes/element of a raw `PersistentVector`.
 
@@ -356,6 +356,28 @@ semantics:
 - Works with `java.io.*` APIs that accept `CharSequence`
 
 ### ByteRope
+
+ByteRope is essentially a **persistent, structure-sharing memory** — a
+model of a contiguous byte region that supports O(log n) structural
+editing (splice, insert, remove), zero-cost immutable snapshots (every
+version persists via path-copying), automatic coalescing of adjacent
+chunks (the CSI invariant merges undersized neighbors), and garbage
+collection of unreachable versions by the JVM. You get the mental model
+of a mutable byte buffer with the safety properties of a persistent data
+structure.
+
+This makes ByteRope useful far beyond simple binary blobs:
+- **Binary protocol construction** — build packets by splicing fields
+  at offsets, roll back on error by keeping the prior version
+- **Undo/redo** — each edit produces a new ByteRope; old versions are
+  retained as long as referenced, discarded by GC when not
+- **Diffing and patching** — apply a patch to a snapshot without
+  copying the unmodified regions (structure sharing)
+- **Streaming** — `byte-rope-input-stream` and `byte-rope-write` let
+  you feed chunks through Java I/O without materializing the full
+  contents
+
+API surface:
 
 - `byte-rope` — constructor (from `byte[]`, another ByteRope, `String` (UTF-8), `InputStream`, seq of unsigned longs)
 - `byte-rope-concat` — variadic, same 1/2/3+ semantics
