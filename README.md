@@ -85,9 +85,13 @@ hood — and in the new things you can do.
 
 Across the measured workloads, `ordered-collections` is faster than
 both `clojure.core/sorted-set` and `clojure.data.avl` at every
-cardinality  Set algebra is the standout, with 28-57x wins at 500K.
-Even against unordered `clojure.core/set`the benchmarks still show
-roughly 4-19x wins.
+cardinality. Set algebra is the standout, with 28-57x wins at 500K.
+Even against unordered `clojure.core/set` the benchmarks still show
+roughly 4-20x wins.
+
+![Set Algebra Scaling](doc/charts/set-algebra-scaling.png)
+
+![Rope Structural Editing](doc/charts/rope-editing-scaling.png)
 
 ### Rope vs PersistentVector
 

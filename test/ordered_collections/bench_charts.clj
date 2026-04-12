@@ -16,7 +16,7 @@
             CategoryChart CategoryChartBuilder CategorySeries CategorySeries$CategorySeriesRenderStyle
             BitmapEncoder BitmapEncoder$BitmapFormat]
            [org.knowm.xchart.style Styler$LegendPosition
-                                   CategoryStyler AxesChartStyler]
+                                   XYStyler CategoryStyler]
            [java.awt Color Font BasicStroke]
            [java.io File])
   (:gen-class))
@@ -81,7 +81,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn- style-xy! [^XYChart chart & {:keys [log-x log-y y-label title]}]
-  (let [styler (.getStyler chart)]
+  (let [^XYStyler styler (.getStyler chart)]
     (.setChartTitleFont styler +title-font+)
     (.setAxisTickLabelsFont styler +label-font+)
     (.setLegendFont styler +label-font+)
@@ -228,7 +228,7 @@
                :title (str "Best Headline Win per Collection Type (N=" max-size ")")
                :y-label "Speedup (x)")
     (.setXAxisTitle chart "")
-    (let [styler (.getStyler chart)]
+    (let [^XYStyler styler (.getStyler chart)]
       (.setLegendPosition styler Styler$LegendPosition/InsideNW)
       (.setXAxisTicksVisible styler false)
       (.setXAxisMin styler -0.5)
@@ -281,7 +281,7 @@
                  :title (str "Rope vs PersistentVector — Full Profile (N=" max-size ")")
                  :y-label "Speedup (x, log scale)")
       (.setXAxisTitle xychart "")
-      (let [styler (.getStyler xychart)]
+      (let [^XYStyler styler (.getStyler xychart)]
         (.setXAxisTicksVisible styler false)
         (.setXAxisMin styler -0.5)
         (.setXAxisMax styler (double (- n 0.5))))
