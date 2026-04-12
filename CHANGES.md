@@ -88,6 +88,29 @@
   intermediate `chunk-splice` allocation on the overflow path via
   `chunk-splice-split`.
 
+### Bug Fixes
+
+- **Primitive node specialization preserved across mutations.**
+  `conj`/`disjoin` on `OrderedSet` and `assoc`/`without` on
+  `OrderedMap` were passing the generic `SimpleNode` constructor
+  instead of the collection's stored allocator. After a single
+  `conj` on a `long-ordered-set`, the root silently degraded from
+  `LongKeyNode` to `SimpleNode`, losing unboxed-key performance.
+  Fixed by threading `alloc` through all `node-add`/`node-remove`
+  call sites. `ordered-merge-with` also propagated nil alloc/stitch
+  into the result; fixed.
+- **PriorityQueue and OrderedMultiset** `getAllocator` and `getStitch`
+  returned nil instead of the generic constructor, violating the
+  `INodeCollection`/`IBalancedCollection` contract.
+- **Empty StringRope** `charAt` and `nth` dereferenced nil root
+  instead of throwing bounds exceptions.
+- **StringRope `valAt`** threw `ClassCastException` on non-integer
+  keys (e.g., `(get sr :x)`). Added `integer?` guard.
+- **Empty StringRope/ByteRope `r/fold`** crashed instead of returning
+  `(combinef)`.
+- **ByteRope `InputStream.read(buf, off, 0)`** returned -1 at EOF
+  instead of 0 per `InputStream` contract.
+
 ### Benchmarks and Tooling
 
 - **`lein bench-rope-tuning`** fully rewritten to sweep chunk sizes
@@ -131,6 +154,21 @@
   scripts (`lein bench-range-map`) or not at all, which meant the main
   `lein bench --full` pipeline and `bench-report` had no visibility
   into their performance.
+- **`lein bench-charts`** generates 7 PNG charts in `doc/charts/` from
+  the latest benchmark EDN via XChart. Charts: set-algebra scaling,
+  rope editing scaling, collection winners (dot plot), rope operations
+  profile (win/loss), rope vs vector absolute time (diverging lines),
+  StringRope crossover, ByteRope crossover.
+- **`lein bench-report` auto-baseline** — when `--baseline` is not
+  specified, the report automatically selects the prior timestamped
+  EDN, so Regressions and Improvements sections render by default.
+  Headline sections now include ordered-set, ordered-map,
+  long-specialized, and string-specialized vs their competitors.
+- **Rope tuner scoring** — `lein bench-rope-tuning` now uses
+  structural-editing geomean (splice, split, concat) as the primary
+  score, with the equal-weight geomean shown as a secondary `all`
+  column. The old equal-weight geomean was misleadingly driven by
+  concat scaling.
 
 ### Documentation
 
