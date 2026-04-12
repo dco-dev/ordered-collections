@@ -18,8 +18,24 @@
      lein bench-rope-tuning --variant string-rope
      lein bench-rope-tuning --variant byte-rope
 
-   Optimal chunk size is typically the one that maximizes the
-   geometric mean of the per-operation speedup vs the baseline."
+   The report shows two scores per configuration:
+
+     'score'  — geometric mean over splice, split, and concat only.
+                These are the structural-editing operations that define
+                the rope's value proposition. Splice and split are
+                chunk-size-insensitive at scale (tree walk dominates),
+                so this score is mainly driven by concat.
+
+     'all'    — geometric mean over all six measured operations
+                (construct, nth, reduce, split, splice, concat).
+                Useful as a sanity check but weights operations like
+                nth and construct that are not the reason users choose
+                a rope over a vector.
+
+   Note: the tuner does NOT measure repeated-edits (200 random
+   splices), insert, or remove — the headline workloads. From the
+   single-splice data, these are expected to be chunk-size-insensitive
+   at scale, but this has not been verified for targets > 1024."
   (:require [ordered-collections.bench-utils :as bu :refer [has-flag?]]
             [ordered-collections.kernel.rope :as ropetree]
             [ordered-collections.kernel.chunk]
@@ -434,8 +450,17 @@
   (when stats (bu/format-ns (* 1000 (:median stats)))))
 
 (defn- score
-  "Geometric mean of the per-operation speedup ratios. Higher is better.
-  Used to rank chunk-size candidates."
+  "Geometric mean of the structural-editing speedup ratios (splice, split,
+  concat). These are the operations that define the rope's value proposition.
+  Higher is better. Used to rank chunk-size candidates."
+  [result]
+  (geomean
+    (keep #(ratio (get result %)) [:splice :split :concat])))
+
+(defn- score-all
+  "Geometric mean over ALL measured operations. Useful as a sanity check
+  but weights ops like nth and construct that are not why users choose
+  a rope. See docstring for the two-score rationale."
   [result]
   (geomean
     (keep #(ratio (get result %)) [:construct :nth :reduce :split :splice :concat])))
@@ -457,11 +482,11 @@
   (let [{:keys [n]} (first size-results)]
     (println)
     (printf "  N = %,d   (baseline: %s)%n" n (baseline-name variant))
-    (println "  ┌────────┬────────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬────────┐")
-    (println "  │ target │ chunks │ construct│    nth   │  reduce  │  split   │  splice  │  concat  │ score  │")
-    (println "  ├────────┼────────┼──────────┼──────────┼──────────┼──────────┼──────────┼──────────┼────────┤")
+    (println "  ┌────────┬────────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬────────┬────────┐")
+    (println "  │ target │ chunks │ construct│    nth   │  reduce  │  split   │  splice  │  concat  │ score  │  all   │")
+    (println "  ├────────┼────────┼──────────┼──────────┼──────────┼──────────┼──────────┼──────────┼────────┼────────┤")
     (doseq [r (sort-by :target size-results)]
-      (printf "  │  %4d  │  %4d  │  %7s │  %7s │  %7s │  %7s │  %7s │  %7s │ %6.2f │%n"
+      (printf "  │  %4d  │  %4d  │  %7s │  %7s │  %7s │  %7s │  %7s │  %7s │ %6.2f │ %6.2f │%n"
               (:target r)
               (:chunks r)
               (fmt-ratio (ratio (:construct r)))
@@ -470,8 +495,9 @@
               (fmt-ratio (ratio (:split r)))
               (fmt-ratio (ratio (:splice r)))
               (fmt-ratio (ratio (:concat r)))
-              (double (score r))))
-    (println "  └────────┴────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴────────┘")
+              (double (score r))
+              (double (score-all r))))
+    (println "  └────────┴────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴────────┴────────┘")
     (println (str "  baselines: "
                   "construct=" (fmt-us (:baseline (:construct (first size-results))))
                   "  nth=" (fmt-us (:baseline (:nth (first size-results))))
@@ -484,11 +510,17 @@
   "Print the best (highest-score) chunk size for each N across the sweep."
   [results]
   (println)
-  (println "  ── Best chunk size per N (by geomean of per-op speedups) ──")
+  (println "  ── Best chunk size per N ──")
+  (println "  'score' = geomean of structural ops (splice, split, concat)")
+  (println "  'all'   = geomean of all ops (construct, nth, reduce, split, splice, concat)")
+  (println)
   (doseq [[n size-results] (sort-by key (group-by :n results))]
-    (let [ranked (sort-by score > size-results)
-          best   (first ranked)]
-      (printf "    N=%,7d → target=%4d  score=%.2f%n" n (:target best) (double (score best))))))
+    (let [by-score    (first (sort-by score > size-results))
+          by-all      (first (sort-by score-all > size-results))]
+      (printf "    N=%,7d → by score: target=%4d (%.2f)    by all: target=%4d (%.2f)%n"
+              n
+              (:target by-score) (double (score by-score))
+              (:target by-all)   (double (score-all by-all))))))
 
 (defn print-sweep-results
   [results]

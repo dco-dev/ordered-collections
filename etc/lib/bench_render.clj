@@ -149,10 +149,7 @@
           (doseq [{:keys [label sizes]} section-rows]
             (let [cells (mapv (fn [entry]
                                 (if entry
-                                  (let [s (:speedup entry)]
-                                    (if (>= s 1.0)
-                                      (format "**%.1fx**" (double s))
-                                      (format "%.1fx" (double s))))
+                                  (format "%.1fx" (double (:speedup entry)))
                                   "—"))
                               sizes)]
               (apply report/table-row cols (into [label] cells)))))))))
@@ -256,8 +253,8 @@
 (defn- fmt-speedup-cell [s]
   (cond
     (nil? s)     "—"
-    (>= s 10.0)  (format "**%.0fx**" (double s))
-    (>= s 1.0)   (format "**%.1fx**" (double s))
+    (>= s 10.0)  (format "%.0fx" (double s))
+    (>= s 1.0)   (format "%.1fx" (double s))
     (>= s 0.1)   (format "%.2fx" (double s))
     (>= s 0.01)  (format "%.3fx" (double s))
     :else        (format "%.4fx" (double s))))

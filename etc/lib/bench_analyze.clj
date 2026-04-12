@@ -23,21 +23,30 @@
 
 (def category-order
   [:set-algebra :construction :lookup :iteration :fold :split
-   :equality :rank :string :interval :rope :string-rope :other])
+   :equality :rank :string :interval
+   :range-map :segment-tree :priority-queue :multiset :fuzzy
+   :rope :string-rope :byte-rope :other])
 
 (def ^:private category-patterns
-  [[:set-algebra   #"union|intersection|difference"]
-   [:construction  #"construction"]
-   [:lookup        #"lookup"]
-   [:iteration     #"iteration"]
-   [:fold          #"fold|reduce"]
-   [:split         #"split"]
-   [:equality      #"equal|different|size-different"]
-   [:rank          #"rank"]
-   [:string-rope   #"^string-rope"]
-   [:string        #"string"]
-   [:interval      #"interval"]
-   [:rope          #"rope"]])
+  ;; Specific patterns first — classify-group returns the first match.
+  [[:set-algebra    #"union|intersection|difference"]
+   [:range-map      #"^range-map"]
+   [:segment-tree   #"^segment-tree"]
+   [:priority-queue #"^priority-queue"]
+   [:multiset       #"^multiset"]
+   [:fuzzy          #"^fuzzy-"]
+   [:string-rope    #"^string-rope"]
+   [:byte-rope      #"^byte-rope"]
+   [:construction   #"construction"]
+   [:lookup         #"lookup"]
+   [:iteration      #"iteration"]
+   [:fold           #"fold|reduce"]
+   [:split          #"split"]
+   [:equality       #"equal|different|size-different"]
+   [:rank           #"rank"]
+   [:string         #"string"]
+   [:interval       #"interval"]
+   [:rope           #"rope"]])
 
 (defn classify-group
   [group]
@@ -172,11 +181,35 @@
    {:pattern #"^set-union$"        :oc :ordered-set :peer :clojure-set :label "Union"        :section "Set Algebra vs clojure.core/set"}
    {:pattern #"^set-intersection$" :oc :ordered-set :peer :clojure-set :label "Intersection" :section "Set Algebra vs clojure.core/set"}
    {:pattern #"^set-difference$"   :oc :ordered-set :peer :clojure-set :label "Difference"   :section "Set Algebra vs clojure.core/set"}
-   ;; Other operations
-   {:pattern #"^set-construction$" :oc :ordered-set :peer :sorted-set  :label "Construction" :section "Other Operations"}
-   {:pattern #"^set-lookup$"       :oc :ordered-set :peer :sorted-set  :label "Lookup"       :section "Other Operations"}
-   {:pattern #"^split$"            :oc :ordered-set :peer :data-avl    :label "Split"        :section "Other Operations"}
-   {:pattern #"^set-fold$"         :oc :ordered-set-fold :peer :sorted-set-fold :label "Fold" :section "Other Operations"}
+   ;; Ordered Set vs competitors
+   {:pattern #"^set-construction$"  :oc :ordered-set      :peer :sorted-set       :label "Construction"  :section "Ordered Set vs sorted-set"}
+   {:pattern #"^set-lookup$"        :oc :ordered-set      :peer :sorted-set       :label "Lookup"        :section "Ordered Set vs sorted-set"}
+   {:pattern #"^set-iteration$"     :oc :ordered-set      :peer :sorted-set       :label "Iteration"     :section "Ordered Set vs sorted-set"}
+   {:pattern #"^set-fold$"          :oc :ordered-set-fold :peer :sorted-set-fold  :label "Fold"          :section "Ordered Set vs sorted-set"}
+   {:pattern #"^split$"             :oc :ordered-set      :peer :data-avl         :label "Split"         :section "Ordered Set vs sorted-set"}
+   {:pattern #"^set-construction$"  :oc :ordered-set      :peer :data-avl         :label "Construction"  :section "Ordered Set vs data.avl"}
+   {:pattern #"^set-lookup$"        :oc :ordered-set      :peer :data-avl         :label "Lookup"        :section "Ordered Set vs data.avl"}
+   {:pattern #"^set-iteration$"     :oc :ordered-set      :peer :data-avl         :label "Iteration"     :section "Ordered Set vs data.avl"}
+   ;; Ordered Map vs competitors
+   {:pattern #"^map-construction$"  :oc :ordered-map      :peer :sorted-map       :label "Construction"  :section "Ordered Map vs sorted-map"}
+   {:pattern #"^map-lookup$"        :oc :ordered-map      :peer :sorted-map       :label "Lookup"        :section "Ordered Map vs sorted-map"}
+   {:pattern #"^map-iteration$"     :oc :ordered-map      :peer :sorted-map       :label "Iteration"     :section "Ordered Map vs sorted-map"}
+   {:pattern #"^map-fold$"          :oc :ordered-map-reduce :peer :sorted-map-reduce :label "Reduce"     :section "Ordered Map vs sorted-map"}
+   {:pattern #"^map-construction$"  :oc :ordered-map      :peer :data-avl         :label "Construction"  :section "Ordered Map vs data.avl"}
+   {:pattern #"^map-lookup$"        :oc :ordered-map      :peer :data-avl         :label "Lookup"        :section "Ordered Map vs data.avl"}
+   {:pattern #"^map-iteration$"     :oc :ordered-map      :peer :data-avl         :label "Iteration"     :section "Ordered Map vs data.avl"}
+   ;; Long-specialized
+   {:pattern #"^long-construction$" :oc :long-ordered     :peer :sorted-set       :label "Construction"  :section "Long-Specialized vs sorted-set"}
+   {:pattern #"^long-lookup$"       :oc :long-ordered     :peer :sorted-set       :label "Lookup"        :section "Long-Specialized vs sorted-set"}
+   {:pattern #"^long-union$"        :oc :long-ordered     :peer :sorted-set       :label "Union"         :section "Long-Specialized vs sorted-set"}
+   {:pattern #"^long-intersection$" :oc :long-ordered     :peer :sorted-set       :label "Intersection"  :section "Long-Specialized vs sorted-set"}
+   {:pattern #"^long-difference$"   :oc :long-ordered     :peer :sorted-set       :label "Difference"    :section "Long-Specialized vs sorted-set"}
+   ;; String-specialized
+   {:pattern #"^string-set-construction$" :oc :string-ordered :peer :sorted-set-by :label "Construction" :section "String-Specialized vs sorted-set-by"}
+   {:pattern #"^string-set-lookup$"       :oc :string-ordered :peer :sorted-set-by :label "Lookup"       :section "String-Specialized vs sorted-set-by"}
+   {:pattern #"^string-set-union$"        :oc :string-ordered :peer :sorted-set-by :label "Union"        :section "String-Specialized vs sorted-set-by"}
+   {:pattern #"^string-set-intersection$" :oc :string-ordered :peer :sorted-set-by :label "Intersection" :section "String-Specialized vs sorted-set-by"}
+   {:pattern #"^string-set-difference$"   :oc :string-ordered :peer :sorted-set-by :label "Difference"   :section "String-Specialized vs sorted-set-by"}
    ;; Rope vs PersistentVector (matches bench_runner groups)
    {:pattern #"^rope-repeated-edits$"  :oc :rope   :peer :vector  :label "200 Random Edits"  :section "Rope vs PersistentVector"}
    {:pattern #"^rope-splice$"          :oc :rope   :peer :vector  :label "Single Splice"     :section "Rope vs PersistentVector"}
@@ -219,7 +252,30 @@
    {:pattern #"^byte-rope-fold$"            :oc :byte-rope :peer :byte-array :label "Fold (sum bytes)"   :section "ByteRope vs byte[]"}
    {:pattern #"^byte-rope-construction$"    :oc :byte-rope :peer :byte-array :label "Construction"       :section "ByteRope vs byte[]"}
    {:pattern #"^byte-rope-bytes$"           :oc :byte-rope :peer :byte-array :label "Materialization"    :section "ByteRope vs byte[]"}
-   {:pattern #"^byte-rope-digest$"          :oc :byte-rope :peer :byte-array :label "SHA-256"            :section "ByteRope vs byte[]"}])
+   {:pattern #"^byte-rope-digest$"          :oc :byte-rope :peer :byte-array :label "SHA-256"            :section "ByteRope vs byte[]"}
+   ;; Range Map vs Guava TreeRangeMap
+   {:pattern #"^range-map-construction$"    :oc :range-map :peer :guava-range-map :label "Construction"   :section "Range Map vs Guava TreeRangeMap"}
+   {:pattern #"^range-map-lookup$"          :oc :range-map :peer :guava-range-map :label "Point Lookup"   :section "Range Map vs Guava TreeRangeMap"}
+   {:pattern #"^range-map-carve-out$"       :oc :range-map :peer :guava-range-map :label "Carve-out Insert" :section "Range Map vs Guava TreeRangeMap"}
+   {:pattern #"^range-map-iteration$"       :oc :range-map :peer :guava-range-map :label "Iteration"      :section "Range Map vs Guava TreeRangeMap"}
+   ;; Segment Tree vs sorted-map range reduction
+   {:pattern #"^segment-tree-construction$" :oc :segment-tree :peer :sorted-map :label "Construction"     :section "Segment Tree vs sorted-map"}
+   {:pattern #"^segment-tree-query$"        :oc :segment-tree :peer :sorted-map :label "Range Query"      :section "Segment Tree vs sorted-map"}
+   {:pattern #"^segment-tree-update$"       :oc :segment-tree :peer :sorted-map :label "Point Update"     :section "Segment Tree vs sorted-map"}
+   ;; Priority Queue vs sorted-set-by of [priority seqnum value] tuples
+   {:pattern #"^priority-queue-construction$" :oc :priority-queue :peer :sorted-set-by :label "Construction" :section "Priority Queue vs sorted-set-by"}
+   {:pattern #"^priority-queue-push$"       :oc :priority-queue :peer :sorted-set-by :label "Push"         :section "Priority Queue vs sorted-set-by"}
+   {:pattern #"^priority-queue-pop-min$"    :oc :priority-queue :peer :sorted-set-by :label "Pop-min"      :section "Priority Queue vs sorted-set-by"}
+   ;; Ordered Multiset vs sorted-map counts
+   {:pattern #"^multiset-construction$"     :oc :ordered-multiset :peer :sorted-map-counts :label "Construction" :section "Ordered Multiset vs sorted-map counts"}
+   {:pattern #"^multiset-multiplicity$"     :oc :ordered-multiset :peer :sorted-map-counts :label "Multiplicity" :section "Ordered Multiset vs sorted-map counts"}
+   {:pattern #"^multiset-iteration$"        :oc :ordered-multiset :peer :sorted-map-counts :label "Iteration"    :section "Ordered Multiset vs sorted-map counts"}
+   ;; Fuzzy Set vs sorted-set + manual floor/ceiling
+   {:pattern #"^fuzzy-set-construction$"    :oc :fuzzy-set :peer :sorted-set :label "Construction"    :section "Fuzzy Set vs sorted-set"}
+   {:pattern #"^fuzzy-set-nearest$"         :oc :fuzzy-set :peer :sorted-set :label "Nearest Lookup"  :section "Fuzzy Set vs sorted-set"}
+   ;; Fuzzy Map vs sorted-map + manual floor/ceiling
+   {:pattern #"^fuzzy-map-construction$"    :oc :fuzzy-map :peer :sorted-map :label "Construction"    :section "Fuzzy Map vs sorted-map"}
+   {:pattern #"^fuzzy-map-nearest$"         :oc :fuzzy-map :peer :sorted-map :label "Nearest Lookup"  :section "Fuzzy Map vs sorted-map"}])
 
 (defn headline-wins
   "Extract headline speedups pivoted by size, with explicit OC variant and peer.
