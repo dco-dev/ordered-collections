@@ -307,9 +307,9 @@
       (identical? cmp order/string-compare) (tree/node-contains-string? root k)
       :else (tree/node-contains? root k cmp)))
   (disjoin [this k]
-    (new OrderedSet (tree/node-remove root k cmp tree/node-create-weight-balanced) cmp alloc stitch _meta))
+    (new OrderedSet (tree/node-remove root k cmp alloc) cmp alloc stitch _meta))
   (cons [this k]
-    (new OrderedSet (tree/node-add root k k cmp tree/node-create-weight-balanced) cmp alloc stitch _meta))
+    (new OrderedSet (tree/node-add root k k cmp alloc) cmp alloc stitch _meta))
 
   Object
   (toString [this]

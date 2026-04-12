@@ -126,7 +126,7 @@
                    :else (tree/node-find root k cmp))]
       (node/-kv n)))
   (assoc [this k v]
-    (OrderedMap. (tree/node-add root k v cmp tree/node-create-weight-balanced) cmp alloc stitch _meta))
+    (OrderedMap. (tree/node-add root k v cmp alloc) cmp alloc stitch _meta))
   (empty [this]
     (OrderedMap. (node/leaf) cmp alloc stitch _meta))
 
@@ -195,11 +195,11 @@
 
   clojure.lang.IPersistentMap
   (assocEx [this k v]
-    (if-let [new-root (tree/node-add-if-absent root k v cmp tree/node-create-weight-balanced)]
+    (if-let [new-root (tree/node-add-if-absent root k v cmp alloc)]
       (OrderedMap. new-root cmp alloc stitch _meta)
       (throw (Exception. "Key or value already present"))))
   (without [this k]
-    (OrderedMap. (tree/node-remove root k cmp tree/node-create-weight-balanced) cmp alloc stitch _meta))
+    (OrderedMap. (tree/node-remove root k cmp alloc) cmp alloc stitch _meta))
 
   java.util.SortedMap
   (comparator [_]
@@ -340,7 +340,7 @@
 
   proto/PExclusiveAssoc
   (assoc-new [this k v]
-    (if-let [new-root (tree/node-add-if-absent root k v cmp tree/node-create-weight-balanced)]
+    (if-let [new-root (tree/node-add-if-absent root k v cmp alloc)]
       (OrderedMap. new-root cmp alloc stitch _meta)
       this)))
 
@@ -373,15 +373,18 @@
                     ^INodeCollection m2c m2
                     root1 (.getRoot m1c)
                     root2 (.getRoot m2c)
-                    cmp (.getCmp ^IOrderedCollection m1)
+                    cmp   (.getCmp ^IOrderedCollection m1)
+                    alloc (.getAllocator m1c)
+                    stitch (.getStitch ^IBalancedCollection m1)
                     use-parallel? (>= (+ (tree/node-size root1) (tree/node-size root2))
                                       tree/+parallel-merge-root-threshold+)]
-                (binding [order/*compare* cmp]
+                (binding [order/*compare* cmp
+                          tree/*t-join*   alloc]
                   (->OrderedMap
                     (if use-parallel?
                       (tree/node-map-merge-parallel root1 root2 merge-fn)
                       (tree/node-map-merge root1 root2 merge-fn))
-                    cmp nil nil {})))
+                    cmp alloc stitch {})))
               ;; Fallback: use sequential assoc
               (reduce-kv (fn [m k v]
                            (if-let [existing (get m k)]
