@@ -89,10 +89,6 @@ cardinality. Set algebra is the standout, with 28-57x wins at 500K.
 Even against unordered `clojure.core/set` the benchmarks still show
 roughly 4-20x wins.
 
-![Set Algebra Scaling](doc/charts/set-algebra-scaling.png)
-
-![Rope Structural Editing](doc/charts/rope-editing-scaling.png)
-
 ### Rope vs PersistentVector
 
 | Workload | N=10K | N=100K | N=500K |

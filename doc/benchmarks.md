@@ -11,22 +11,6 @@ per-category geomean aggregation, rope family cross-variant comparison,
 significant wins/losses, full scorecard, and regressions/improvements
 vs the prior run.
 
-## Charts
-
-Run `lein bench-charts` to generate PNG charts in `charts/` from the
-latest benchmark EDN. Seven charts are produced:
-
-| Chart | Story |
-|-------|-------|
-| [set-algebra-scaling](charts/set-algebra-scaling.png) | Set algebra speedup vs sorted-set, growing with N |
-| [rope-editing-scaling](charts/rope-editing-scaling.png) | Repeated-edits speedup for all three rope variants |
-| [collection-winners](charts/collection-winners.png) | Best headline win per collection type at N=500K |
-| [rope-operations-profile](charts/rope-operations-profile.png) | Full win/loss profile for rope vs vector |
-| [rope-vs-vector-absolute](charts/rope-vs-vector-absolute.png) | Diverging O(log n) vs O(n) absolute times |
-| [string-rope-crossover](charts/string-rope-crossover.png) | StringRope per-operation crossover vs String |
-| [byte-rope-crossover](charts/byte-rope-crossover.png) | ByteRope per-operation crossover vs byte[] |
-
-
 ## Infrastructure
 
 ### Design
