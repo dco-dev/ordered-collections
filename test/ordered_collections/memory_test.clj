@@ -115,20 +115,27 @@
     (let [n 10000
           data (vec (shuffle (range n)))
           intervals (vec (for [i (range n)] [(* i 2) (+ (* i 2) (rand-int 10))]))
+          range-entries (vec (for [i (range n)] [[(* i 10) (+ (* i 10) 10)] (keyword (str "v" i))]))
 
           ;; Build collections
           interval-set (oc/interval-set intervals)
           interval-map (oc/interval-map (map #(vector % :val) intervals))
+          range-map    (oc/range-map range-entries)
+          segment-tree (oc/sum-tree (into {} (map #(vector % (long %)) data)))
           multiset     (oc/ordered-multiset (concat data data)) ; duplicates
           priority-q   (oc/priority-queue (map #(vector % %) data))
-          fuzzy        (oc/fuzzy-set data)
+          fuzzy-set    (oc/fuzzy-set data)
+          fuzzy-map    (oc/fuzzy-map (zipmap data (map str data)))
 
           ;; Measure
           iset-bpe (bytes-per-element interval-set n)
           imap-bpe (bytes-per-element interval-map n)
+          rmap-bpe (bytes-per-element range-map n)
+          segt-bpe (bytes-per-element segment-tree n)
           mset-bpe (bytes-per-element multiset (* 2 n))
           pq-bpe   (bytes-per-element priority-q n)
-          fuzz-bpe (bytes-per-element fuzzy n)]
+          fset-bpe (bytes-per-element fuzzy-set n)
+          fmap-bpe (bytes-per-element fuzzy-map n)]
 
       (println)
       (println (format "=== Specialized Collections at N=%,d ===" n))
@@ -136,15 +143,24 @@
                        iset-bpe (format-bytes (measure-bytes interval-set))))
       (println (format "  interval-map:    %5.1f bytes/interval  (total: %s)"
                        imap-bpe (format-bytes (measure-bytes interval-map))))
-      (println (format "  ordered-multiset:%5.1f bytes/elem  (total: %s)"
+      (println (format "  range-map:       %5.1f bytes/range     (total: %s)"
+                       rmap-bpe (format-bytes (measure-bytes range-map))))
+      (println (format "  segment-tree:    %5.1f bytes/entry     (total: %s)"
+                       segt-bpe (format-bytes (measure-bytes segment-tree))))
+      (println (format "  ordered-multiset:%5.1f bytes/elem      (total: %s)"
                        mset-bpe (format-bytes (measure-bytes multiset))))
-      (println (format "  priority-queue:  %5.1f bytes/elem  (total: %s)"
+      (println (format "  priority-queue:  %5.1f bytes/elem      (total: %s)"
                        pq-bpe (format-bytes (measure-bytes priority-q))))
-      (println (format "  fuzzy-set:       %5.1f bytes/elem  (total: %s)"
-                       fuzz-bpe (format-bytes (measure-bytes fuzzy))))
+      (println (format "  fuzzy-set:       %5.1f bytes/elem      (total: %s)"
+                       fset-bpe (format-bytes (measure-bytes fuzzy-set))))
+      (println (format "  fuzzy-map:       %5.1f bytes/entry     (total: %s)"
+                       fmap-bpe (format-bytes (measure-bytes fuzzy-map))))
 
       ;; Sanity checks
-      (is (< iset-bpe 200) "interval-set should use < 200 bytes/interval"))))
+      (is (< iset-bpe 200) "interval-set should use < 200 bytes/interval")
+      (is (< rmap-bpe 300) "range-map should use < 300 bytes/range")
+      (is (< segt-bpe 300) "segment-tree should use < 300 bytes/entry")
+      (is (< fmap-bpe 300) "fuzzy-map should use < 300 bytes/entry"))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Node Structure Analysis
