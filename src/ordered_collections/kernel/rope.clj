@@ -44,7 +44,9 @@
             [ordered-collections.parallel :as par])
   (:import  [clojure.lang Murmur3 SeqIterator Util]))
 
-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Rope Invariants
+;;
 ;; Library-wide default CSI values. Kept as plain defs so external code
 ;; (tests, benchmarks) can reference them. Internal kernel code reads
 ;; from the dynamic vars below, which each rope variant binds inside
@@ -56,6 +58,8 @@
 ;; The generic rope, string rope, and byte rope all benefit from larger
 ;; chunks at 100K+ element counts. See each types/*_rope.clj file for
 ;; the per-variant rationale.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (def +target-chunk-size+ 1024)
 (def +min-chunk-size+    512)
 

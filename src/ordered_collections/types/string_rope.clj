@@ -150,6 +150,35 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Monomorphic tree reduce (same rationale as byte_rope.clj)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- string-rope-tree-reduce
+  "Reduce `f` over every character in the string-rope tree rooted at `n`.
+  Monomorphic — assumes chunks are String. Returns acc or Reduced."
+  [f acc n]
+  (if (leaf? n)
+    acc
+    (let [l        (-l n)
+          acc-left (if (leaf? l) acc (string-rope-tree-reduce f acc l))]
+      (if (reduced? acc-left)
+        acc-left
+        (let [^String ck (-k n)
+              len        (.length ck)
+              acc-chunk
+              (loop [i (int 0), acc acc-left]
+                (if (< i len)
+                  (let [ret (f acc (Character/valueOf (.charAt ck (unchecked-int i))))]
+                    (if (reduced? ret)
+                      ret
+                      (recur (unchecked-inc-int i) ret)))
+                  acc))]
+          (if (reduced? acc-chunk)
+            acc-chunk
+            (string-rope-tree-reduce f acc-chunk (-r n))))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; StringRopeSeq — forward seq over String chunks using .charAt
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -432,13 +461,7 @@
 ;; StringRope
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(deftype StringRope [root alloc _meta
-                     ^:volatile-mutable ^String  _cc_chunk
-                     ^:volatile-mutable ^int     _cc_start
-                     ^:volatile-mutable ^int     _cc_end]
-  ;; Chunk cursor cache for O(1) amortized sequential charAt (regex, compare).
-  ;; _cc_chunk: cached chunk string (nil = no cache)
-  ;; _cc_start/_cc_end: global index range [start, end) of cached chunk
+(deftype StringRope [root alloc _meta]
 
   java.io.Serializable
 
@@ -452,24 +475,24 @@
   (withMeta [_ m] (->StringRope* root alloc m))
 
   java.lang.CharSequence
+  ;; Monomorphic charAt — inlines the tree walk with direct `.length`/`.charAt`
+  ;; on the known String chunks, bypassing PRopeChunk protocol dispatch.
   (charAt [_ i]
     (if (string? root)
       (.charAt ^String root (int i))
-      (let [ii (int i)
-            n  (ropetree/rope-size root)]
-        (when-not (valid-index? n (long ii))
-          (throw (StringIndexOutOfBoundsException. ii)))
-        (if (and _cc_chunk (>= ii _cc_start) (< ii _cc_end))
-          ;; Cache hit
-          (.charAt _cc_chunk (unchecked-subtract-int ii _cc_start))
-          ;; Cache miss — find chunk and cache it
-          (let [[chunk offset] (ropetree/rope-chunk-at root (long ii))
-                ^String ck chunk
-                co (int offset)]
-            (set! _cc_chunk ck)
-            (set! _cc_start co)
-            (set! _cc_end (unchecked-add-int co (.length ck)))
-            (.charAt ck (unchecked-subtract-int ii co)))))))
+      (let [ii (long i)]
+        (when-not (valid-index? (long (-v root)) ii)
+          (throw (StringIndexOutOfBoundsException. (int i))))
+        (loop [nd root, j ii]
+          (let [l  (-l nd)
+                ls (if (leaf? l) 0 (long (-v l)))
+                ^String ck (-k nd)
+                cs (long (.length ck))
+                rs (+ ls cs)]
+            (cond
+              (< j ls) (recur l j)
+              (< j rs) (.charAt ck (unchecked-int (- j ls)))
+              :else    (recur (-r nd) (- j rs))))))))
   (length [_]
     (if (string? root)
       (.length ^String root)
@@ -516,29 +539,31 @@
     (flat-size root))
 
   clojure.lang.Indexed
+  ;; Monomorphic nth — same tree walk as charAt, returns Character (boxed)
+  ;; per the Indexed contract.
   (nth [_ i]
-    (if (string? root)
-      (let [^String s root
-            ii (long i)]
-        (if (valid-index? (.length s) ii)
-          (Character/valueOf (.charAt s (int ii)))
-          (throw (IndexOutOfBoundsException.))))
-      (let [n (ropetree/rope-size root)]
-        (if (valid-index? n (long i))
-          (let [c (ropetree/rope-nth root (long i))]
-            (if (instance? Character c) c (Character/valueOf (char c))))
-          (throw (IndexOutOfBoundsException.))))))
-  (nth [_ i not-found]
-    (if (string? root)
-      (let [^String s root]
-        (if (and (integer? i) (valid-index? (.length s) (long i)))
-          (Character/valueOf (.charAt s (int i)))
-          not-found))
-      (let [n (ropetree/rope-size root)]
-        (if (and (integer? i) (valid-index? n (long i)))
-          (let [c (ropetree/rope-nth root (long i))]
-            (if (instance? Character c) c (Character/valueOf (char c))))
-          not-found))))
+    (let [ii (long i)]
+      (if (string? root)
+        (let [^String s root]
+          (if (valid-index? (.length s) ii)
+            (Character/valueOf (.charAt s (unchecked-int ii)))
+            (throw (IndexOutOfBoundsException.))))
+        (do (when-not (valid-index? (long (-v root)) ii)
+              (throw (IndexOutOfBoundsException.)))
+            (loop [nd root, j ii]
+              (let [l  (-l nd)
+                    ls (if (leaf? l) 0 (long (-v l)))
+                    ^String ck (-k nd)
+                    cs (long (.length ck))
+                    rs (+ ls cs)]
+                (cond
+                  (< j ls) (recur l j)
+                  (< j rs) (Character/valueOf (.charAt ck (unchecked-int (- j ls))))
+                  :else    (recur (-r nd) (- j rs)))))))))
+  (nth [this i not-found]
+    (if (and (integer? i) (valid-index? (flat-size root) (long i)))
+      (.nth this (int i))
+      not-found))
 
   clojure.lang.ILookup
   (valAt [this k]
@@ -626,7 +651,8 @@
                 @ret
                 (recur (unchecked-inc-int i) ret)))
             acc)))
-      (ropetree/rope-reduce f init root)))
+      (let [result (string-rope-tree-reduce f init root)]
+        (if (reduced? result) @result result))))
 
   IReduce
   (reduce [_ f]
@@ -642,7 +668,24 @@
                   @ret
                   (recur (unchecked-inc-int i) ret)))
               acc))))
-      (ropetree/rope-reduce f root)))
+      ;; Tree mode: seed from first char of leftmost chunk, then walk the rest.
+      (let [^ordered_collections.kernel.node.INode least (tree/node-least root)
+            ^String first-chunk (-k least)
+            first-char (Character/valueOf (.charAt first-chunk 0))
+            rest-root  (tree/node-remove-least root)
+            rest-of-first-chunk-acc
+            (let [len (.length first-chunk)]
+              (loop [i (int 1), acc first-char]
+                (if (< i len)
+                  (let [ret (f acc (Character/valueOf (.charAt first-chunk (unchecked-int i))))]
+                    (if (reduced? ret) ret (recur (unchecked-inc-int i) ret)))
+                  acc)))]
+        (if (reduced? rest-of-first-chunk-acc)
+          @rest-of-first-chunk-acc
+          (let [result (if (leaf? rest-root)
+                         rest-of-first-chunk-acc
+                         (string-rope-tree-reduce f rest-of-first-chunk-acc rest-root))]
+            (if (reduced? result) @result result))))))
 
   cp/CollReduce
   (coll-reduce [this f]
@@ -862,10 +905,9 @@
 
 
 (defn- ->StringRope*
-  "Construct a StringRope with fresh (empty) cursor cache.
-  Preferred over the raw 6-arg constructor to avoid repeating nil/0/0."
+  "Construct a StringRope."
   [root alloc meta]
-  (StringRope. root alloc meta nil 0 0))
+  (StringRope. root alloc meta))
 
 (defn- coll->str
   "Coerce a splice/insert argument to a String."

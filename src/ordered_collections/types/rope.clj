@@ -4,7 +4,8 @@
   (:require [clojure.core.protocols :as cp]
             [clojure.core.reducers :as r]
             [ordered-collections.protocol :as proto]
-            [ordered-collections.kernel.node :as node]
+            [ordered-collections.kernel.node :as node
+             :refer [leaf? -k -v -l -r]]
             [ordered-collections.kernel.tree :as tree]
             [ordered-collections.kernel.rope :as ropetree])
   (:import  [clojure.lang RT Murmur3 MapEntry Indexed Util
@@ -264,20 +265,33 @@
     (flat-size root))
 
   Indexed
+  ;; Monomorphic nth — inlines the tree walk so we can replace the kernel's
+  ;; protocol-dispatched `chunk-length` and `chunk-nth` with direct calls
+  ;; on `Counted` and `Indexed` interfaces. APersistentVector is the only
+  ;; chunk type for generic Rope, so the type is known statically.
   (nth [_ i]
-    (let [n (flat-size root)]
-      (when-not (valid-index? n i)
+    (let [ii (long i)
+          n  (flat-size root)]
+      (when-not (valid-index? n ii)
         (throw (IndexOutOfBoundsException.)))
       (if (flat? root)
-        (.nth ^clojure.lang.Indexed root (int i))
-        (ropetree/rope-nth root (long i)))))
-  (nth [_ i not-found]
-    (let [n (flat-size root)]
-      (if (and (integer? i) (valid-index? n i))
-        (if (flat? root)
-          (.nth ^clojure.lang.Indexed root (int i))
-          (ropetree/rope-nth root (long i)))
-        not-found)))
+        ;; Flat mode: direct .nth on the backing PersistentVector/SubVector.
+        (.nth ^clojure.lang.Indexed root (unchecked-int ii))
+        ;; Tree mode: inline monomorphic walk using Counted + Indexed.
+        (loop [nd root, j ii]
+          (let [l  (-l nd)
+                ls (if (leaf? l) 0 (long (-v l)))
+                ck (-k nd)
+                cs (long (.count ^clojure.lang.Counted ck))
+                rs (+ ls cs)]
+            (cond
+              (< j ls) (recur l j)
+              (< j rs) (.nth ^clojure.lang.Indexed ck (unchecked-int (- j ls)))
+              :else    (recur (-r nd) (- j rs))))))))
+  (nth [this i not-found]
+    (if (and (integer? i) (valid-index? (flat-size root) (long i)))
+      (.nth this (int i))
+      not-found))
 
   clojure.lang.ILookup
   (valAt [this k]

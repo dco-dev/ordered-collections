@@ -480,10 +480,10 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Cursor Cache Stress
+;; charAt Stress (sequential + random access across chunk boundaries)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(deftest cursor-cache-stress
+(deftest char-at-stress
   (testing "sequential charAt across chunk boundaries"
     (let [s  (apply str (map #(char (+ (int \a) (mod % 26))) (range 2000)))
           sr (oc/string-rope s)]
@@ -496,15 +496,13 @@
     (let [s  (apply str (map #(char (+ (int \a) (mod % 26))) (range 4000)))
           sr (oc/string-rope s)
           indices (shuffle (range 4000))]
-      ;; Random order — cache misses on every access
+      ;; Random order — every access walks the tree
       (doseq [i (take 500 indices)]
         (is (= (.charAt ^CharSequence sr i) (.charAt s i))
             (str "random access mismatch at " i)))))
-  (testing "cache invalidated by structural edits"
+  (testing "charAt correct after structural edits"
     (let [sr1 (oc/string-rope (apply str (repeat 2000 "a")))]
-      ;; Access to populate cache
-      (.charAt ^CharSequence sr1 1000)
-      ;; Splice creates a NEW StringRope — old cache doesn't carry over
+      ;; Splice creates a NEW StringRope
       (let [sr2 (oc/rope-splice sr1 500 1500 "bbb")]
         ;; 2000 - 1000 + 3 = 1003
         (is (= 1003 (count sr2)))

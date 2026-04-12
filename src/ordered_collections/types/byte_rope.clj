@@ -156,6 +156,46 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Monomorphic tree reduce
+;;
+;; The generic kernel `rope-reduce` dispatches through `PRopeChunk/chunk-reduce-init`
+;; for every leaf, which dispatches through `PRopeChunk/chunk-nth` for every
+;; element. For a 500K-byte rope that's ~489 outer dispatches + 500K inner
+;; dispatches. Replacing these with a direct byte[] loop is the single biggest
+;; reduce speedup we can make — the inner loop is then a tight `aget` chain
+;; the JIT can vectorize.
+;;
+;; Walks the tree in order: left subtree, chunk, right subtree. Returns acc
+;; (possibly wrapped in Reduced). Caller unwraps.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- byte-rope-tree-reduce
+  "Reduce `f` over every byte in the rope tree rooted at `n` with starting
+  accumulator `acc`. Monomorphic — assumes chunks are byte[]. Returns either
+  the final acc or a `clojure.lang.Reduced` wrapping an early-exit value."
+  [f acc n]
+  (if (leaf? n)
+    acc
+    (let [l        (-l n)
+          acc-left (if (leaf? l) acc (byte-rope-tree-reduce f acc l))]
+      (if (reduced? acc-left)
+        acc-left
+        (let [^bytes ck (-k n)
+              len       (alength ck)
+              acc-chunk
+              (loop [i (int 0), acc acc-left]
+                (if (< i len)
+                  (let [ret (f acc (bit-and (long (aget ck i)) 0xFF))]
+                    (if (reduced? ret)
+                      ret
+                      (recur (unchecked-inc-int i) ret)))
+                  acc))]
+          (if (reduced? acc-chunk)
+            acc-chunk
+            (byte-rope-tree-reduce f acc-chunk (-r n))))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ByteRopeSeq — forward seq over byte[] chunks, yielding unsigned longs
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -445,13 +485,7 @@
 ;; ByteRope
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(deftype ByteRope [root alloc _meta
-                   ^:volatile-mutable ^bytes _cc_chunk
-                   ^:volatile-mutable ^int   _cc_start
-                   ^:volatile-mutable ^int   _cc_end]
-  ;; Cursor cache for O(1) amortized sequential nth on tree-mode ropes.
-  ;; _cc_chunk: cached chunk (nil = no cache)
-  ;; _cc_start/_cc_end: global index range [start, end) of cached chunk
+(deftype ByteRope [root alloc _meta]
 
   java.io.Serializable
 
@@ -475,6 +509,9 @@
     (flat-size root))
 
   clojure.lang.Indexed
+  ;; Monomorphic nth — inlines the tree walk with direct `alength`/`aget`
+  ;; on the known byte[] chunks, bypassing the PRopeChunk protocol dispatch
+  ;; that the generic kernel `rope-nth` incurs at every tree level.
   (nth [_ i]
     (let [ii (long i)
           n  (flat-size root)]
@@ -482,17 +519,16 @@
         (throw (IndexOutOfBoundsException.)))
       (if (byte-array? root)
         (bit-and (long (aget ^bytes root (unchecked-int ii))) 0xFF)
-        (if (and _cc_chunk (>= ii _cc_start) (< ii _cc_end))
-          ;; Cache hit
-          (bit-and (long (aget _cc_chunk (unchecked-subtract-int (int ii) _cc_start))) 0xFF)
-          ;; Cache miss — find chunk and cache it
-          (let [[chunk offset] (ropetree/rope-chunk-at root ii)
-                ^bytes ck chunk
-                co (int offset)]
-            (set! _cc_chunk ck)
-            (set! _cc_start co)
-            (set! _cc_end (unchecked-add-int co (alength ck)))
-            (bit-and (long (aget ck (unchecked-subtract-int (int ii) co))) 0xFF))))))
+        (loop [nd root, j ii]
+          (let [l  (-l nd)
+                ls (if (leaf? l) 0 (long (-v l)))
+                ^bytes ck (-k nd)
+                cs (long (alength ck))
+                rs (+ ls cs)]
+            (cond
+              (< j ls) (recur l j)
+              (< j rs) (bit-and (long (aget ck (unchecked-int (- j ls)))) 0xFF)
+              :else    (recur (-r nd) (- j rs))))))))
   (nth [this i not-found]
     (let [ii (long i)
           n  (flat-size root)]
@@ -607,7 +643,8 @@
             acc)))
 
       :else
-      (ropetree/rope-reduce f init root)))
+      (let [result (byte-rope-tree-reduce f init root)]
+        (if (reduced? result) @result result))))
 
   IReduce
   (reduce [this f]
@@ -629,7 +666,27 @@
               acc))))
 
       :else
-      (ropetree/rope-reduce f root)))
+      ;; Seed the accumulator with the first byte, then reduce the rest.
+      (let [^ordered_collections.kernel.node.INode least (tree/node-least root)
+            ^bytes first-chunk (-k least)
+            first-byte (Long/valueOf (bit-and (long (aget first-chunk 0)) 0xFF))
+            rest-root  (tree/node-remove-least root)
+            ;; Pre-consume the rest of the first chunk before recursing.
+            rest-of-first-chunk-acc
+            (let [len (alength first-chunk)]
+              (loop [i (int 1), acc first-byte]
+                (if (< i len)
+                  (let [ret (f acc (bit-and (long (aget first-chunk i)) 0xFF))]
+                    (if (reduced? ret)
+                      ret
+                      (recur (unchecked-inc-int i) ret)))
+                  acc)))]
+        (if (reduced? rest-of-first-chunk-acc)
+          @rest-of-first-chunk-acc
+          (let [result (if (leaf? rest-root)
+                         rest-of-first-chunk-acc
+                         (byte-rope-tree-reduce f rest-of-first-chunk-acc rest-root))]
+            (if (reduced? result) @result result))))))
 
   cp/CollReduce
   (coll-reduce [this f]
@@ -894,9 +951,9 @@
 
 
 (defn- ->ByteRope*
-  "Construct a ByteRope with fresh (empty) cursor cache."
+  "Construct a ByteRope."
   [root alloc meta]
-  (ByteRope. root alloc meta nil 0 0))
+  (ByteRope. root alloc meta))
 
 (defn- coll->bytes
   "Coerce a splice/insert argument to a byte[]."
