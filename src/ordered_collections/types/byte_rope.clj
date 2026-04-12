@@ -696,9 +696,10 @@
 
   r/CollFold
   (coll-fold [this n combinef reducef]
-    (if (byte-array? root)
-      (.reduce ^IReduceInit this reducef (combinef))
-      (ropetree/rope-fold root (long n) combinef reducef)))
+    (cond
+      (nil? root)        (combinef)
+      (byte-array? root) (.reduce ^IReduceInit this reducef (combinef))
+      :else              (ropetree/rope-fold root (long n) combinef reducef)))
 
   clojure.lang.IHashEq
   (hasheq [_]
@@ -1274,14 +1275,17 @@
            (.read ^InputStream this buf 0 (alength buf))))
         ([buf off len]
          (let [^bytes buf buf
-               p (aget pos 0)]
-           (if (>= p n)
-             -1
-             (let [remaining (unchecked-subtract-int n p)
-                   want      (min (int len) remaining)]
-               (System/arraycopy data p buf (int off) want)
-               (aset pos 0 (unchecked-add-int p want))
-               want))))))))
+               len (int len)]
+           (if (zero? len)
+             0
+             (let [p (aget pos 0)]
+               (if (>= p n)
+                 -1
+                 (let [remaining (unchecked-subtract-int n p)
+                       want      (min len remaining)]
+                   (System/arraycopy data p buf (int off) want)
+                   (aset pos 0 (unchecked-add-int p want))
+                   want))))))))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

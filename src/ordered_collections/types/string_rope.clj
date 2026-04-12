@@ -478,11 +478,12 @@
   ;; Monomorphic charAt — inlines the tree walk with direct `.length`/`.charAt`
   ;; on the known String chunks, bypassing PRopeChunk protocol dispatch.
   (charAt [_ i]
-    (if (string? root)
-      (.charAt ^String root (int i))
-      (let [ii (long i)]
-        (when-not (valid-index? (long (-v root)) ii)
-          (throw (StringIndexOutOfBoundsException. (int i))))
+    (let [ii (long i)
+          n  (flat-size root)]
+      (when-not (valid-index? n ii)
+        (throw (StringIndexOutOfBoundsException. (int i))))
+      (if (string? root)
+        (.charAt ^String root (int i))
         (loop [nd root, j ii]
           (let [l  (-l nd)
                 ls (if (leaf? l) 0 (long (-v l)))
@@ -494,9 +495,7 @@
               (< j rs) (.charAt ck (unchecked-int (- j ls)))
               :else    (recur (-r nd) (- j rs))))))))
   (length [_]
-    (if (string? root)
-      (.length ^String root)
-      (ropetree/rope-size root)))
+    (flat-size root))
   (subSequence [_ start end]
     (if (string? root)
       (let [^String s root
@@ -542,24 +541,22 @@
   ;; Monomorphic nth — same tree walk as charAt, returns Character (boxed)
   ;; per the Indexed contract.
   (nth [_ i]
-    (let [ii (long i)]
+    (let [ii (long i)
+          n  (flat-size root)]
+      (when-not (valid-index? n ii)
+        (throw (IndexOutOfBoundsException.)))
       (if (string? root)
-        (let [^String s root]
-          (if (valid-index? (.length s) ii)
-            (Character/valueOf (.charAt s (unchecked-int ii)))
-            (throw (IndexOutOfBoundsException.))))
-        (do (when-not (valid-index? (long (-v root)) ii)
-              (throw (IndexOutOfBoundsException.)))
-            (loop [nd root, j ii]
-              (let [l  (-l nd)
-                    ls (if (leaf? l) 0 (long (-v l)))
-                    ^String ck (-k nd)
-                    cs (long (.length ck))
-                    rs (+ ls cs)]
-                (cond
-                  (< j ls) (recur l j)
-                  (< j rs) (Character/valueOf (.charAt ck (unchecked-int (- j ls))))
-                  :else    (recur (-r nd) (- j rs)))))))))
+        (Character/valueOf (.charAt ^String root (unchecked-int ii)))
+        (loop [nd root, j ii]
+          (let [l  (-l nd)
+                ls (if (leaf? l) 0 (long (-v l)))
+                ^String ck (-k nd)
+                cs (long (.length ck))
+                rs (+ ls cs)]
+            (cond
+              (< j ls) (recur l j)
+              (< j rs) (Character/valueOf (.charAt ck (unchecked-int (- j ls))))
+              :else    (recur (-r nd) (- j rs))))))))
   (nth [this i not-found]
     (if (and (integer? i) (valid-index? (flat-size root) (long i)))
       (.nth this (int i))
@@ -567,9 +564,13 @@
 
   clojure.lang.ILookup
   (valAt [this k]
-    (.nth this (int k) nil))
+    (if (integer? k)
+      (.nth this (int k) nil)
+      nil))
   (valAt [this k not-found]
-    (.nth this (int k) not-found))
+    (if (integer? k)
+      (.nth this (int k) not-found)
+      not-found))
 
   clojure.lang.IFn
   (invoke [this k]
@@ -695,10 +696,10 @@
 
   r/CollFold
   (coll-fold [this n combinef reducef]
-    (if (string? root)
-      ;; Flat strings are small enough that fold = reduce
-      (.reduce ^IReduceInit this reducef (combinef))
-      (ropetree/rope-fold root (long n) combinef reducef)))
+    (cond
+      (nil? root)    (combinef)
+      (string? root) (.reduce ^IReduceInit this reducef (combinef))
+      :else          (ropetree/rope-fold root (long n) combinef reducef)))
 
   clojure.lang.IHashEq
   (hasheq [_]
