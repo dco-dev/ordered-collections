@@ -85,30 +85,30 @@ hood — and in the new things you can do.
 
 Across the measured workloads, `ordered-collections` is faster than
 both `clojure.core/sorted-set` and `clojure.data.avl` at every
-cardinality. Set algebra is the standout, with 28-57x wins at 500K.
+cardinality. Set algebra is the standout, with 28-75x wins at 500K.
 Even against unordered `clojure.core/set` the benchmarks still show
-roughly 4-20x wins.
+roughly 4-34x wins.
 
 ### Rope vs PersistentVector
 
 | Workload | N=10K | N=100K | N=500K |
 |---|---:|---:|---:|
-| 200 random edits | **25x** | **256x** | **1268x** |
-| Single splice | **102x** | **766x** | **891x** |
-| Concat pieces | **25x** | **30x** | **29x** |
-| Reduce (sum) | **1.4x** | **1.4x** | **1.4x** |
-| Fold (sum) | **1.3x** | **1.3x** | **1.4x** |
+| 200 random edits | **26x** | **257x** | **1261x** |
+| Single splice | **108x** | **742x** | **862x** |
+| Concat pieces | **27x** | **42x** | **41x** |
+| Reduce (sum) | **1.3x** | **1.5x** | **1.3x** |
+| Fold (sum) | **1.2x** | **1.3x** | **1.6x** |
 | Random nth (1000) | 0.2x | 0.2x | 0.2x |
 
 ### StringRope vs String
 
 | Workload | N=10K | N=100K | N=500K |
 |---|---:|---:|---:|
-| 200 random edits | **5.6x** | **39x** | **136x** |
-| Single splice | **6.3x** | **46x** | **373x** |
-| Single insert | **6.0x** | **42x** | **152x** |
-| Single remove | **6.9x** | **47x** | **442x** |
-| Concat halves | **2.5x** | **21x** | **29x** |
+| 200 random edits | **6.1x** | **40x** | **135x** |
+| Single splice | **6.8x** | **48x** | **419x** |
+| Single insert | **6.6x** | **44x** | **162x** |
+| Single remove | **7.4x** | **51x** | **451x** |
+| Concat halves | **2.5x** | **22x** | **31x** |
 | Reduce (sum chars) | 0.5x | 0.5x | 0.5x |
 | `re-find` / `re-seq` | 0.1x | 0.1-0.2x | 0.1-0.2x |
 
@@ -116,10 +116,10 @@ roughly 4-20x wins.
 
 | Workload | N=10K | N=100K | N=500K |
 |---|---:|---:|---:|
-| 200 random edits | **1.9x** | **14x** | **46x** |
-| Single splice | **2.5x** | **11x** | **116x** |
-| Single remove | **2.7x** | **12x** | **122x** |
-| Split at midpoint | 0.3x | **1.9x** | **6.7x** |
+| 200 random edits | **2.0x** | **14x** | **47x** |
+| Single splice | **2.6x** | **12x** | **107x** |
+| Single remove | **3.2x** | **13x** | **129x** |
+| Split at midpoint | 0.4x | **1.8x** | **6.9x** |
 | SHA-256 digest | 0.9x | 1.0x | 1.0x |
 
 The rope family wins decisively on structural editing at scale; the advantage
@@ -135,42 +135,42 @@ additional tree walk. See [Ropes](doc/ropes.md) for the full tutorial.
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **12.6x** | **23.6x** | **56.9x** |
-| Intersection | **8.9x** | **17.7x** | **38.6x** |
-| Difference | **9.5x** | **24.2x** | **54.1x** |
+| Union | **13.7x** | **28.1x** | **75.0x** |
+| Intersection | **9.4x** | **20.4x** | **50.5x** |
+| Difference | **10.4x** | **27.1x** | **67.5x** |
 
 #### vs clojure.data.avl
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **9.4x** | **18.8x** | **41.9x** |
-| Intersection | **6.9x** | **13.3x** | **28.0x** |
-| Difference | **7.0x** | **14.0x** | **32.0x** |
+| Union | **10.0x** | **22.0x** | **54.6x** |
+| Intersection | **7.2x** | **15.7x** | **36.9x** |
+| Difference | **7.8x** | **16.6x** | **39.0x** |
 
 #### vs clojure.core/set
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **3.7x** | **6.7x** | **16.3x** |
-| Intersection | **3.7x** | **6.5x** | **13.7x** |
-| Difference | **4.4x** | **8.8x** | **19.8x** |
+| Union | **3.7x** | **7.5x** | **20.6x** |
+| Intersection | **3.6x** | **7.2x** | **21.0x** |
+| Difference | **4.6x** | **9.9x** | **33.9x** |
 
 ### Specialized collections
 
 | Collection | Operation | N=10K | N=100K | N=500K |
 |------------|-----------|------:|-------:|-------:|
-| Segment Tree vs sorted-map | Range query | **74x** | **496x** | **2807x** |
-| Priority Queue vs sorted-set-by | Push | **2.7x** | **3.7x** | **4.4x** |
-| Range Map vs Guava TreeRangeMap | Carve-out | **1.9x** | **2.1x** | **2.5x** |
+| Segment Tree vs sorted-map | Range query | **67x** | **506x** | **2785x** |
+| Priority Queue vs sorted-set-by | Push | **2.7x** | **3.3x** | **3.7x** |
+| Range Map vs Guava TreeRangeMap | Carve-out | **1.9x** | **2.1x** | **2.6x** |
 
 ### Other operations
 
 | Operation | vs sorted-set | vs data.avl |
 |-----------|---------------|-------------|
-| Construction | **2.2x / 2.4x / 3.0x** | **1.3x / 1.3x / 1.6x** |
-| Lookup | 1.1x / 1.1x / 1.1x | 1.0x / 1.0x / 1.0x |
-| Split | — | **4.8x / 5.8x / 5.9x** |
-| Fold | **2.5x / 4.1x / 3.5x** | **5.0x / 5.0x / 7.2x** |
+| Construction | **2.2x / 2.5x / 3.1x** | **1.3x / 1.4x / 1.6x** |
+| Lookup | 1.3x / 1.3x / 1.4x | 1.0x / 1.0x / 1.0x |
+| Split | — | **5.2x / 6.3x / 6.3x** |
+| Fold | **2.4x / 4.0x / 3.6x** | **4.6x / 5.1x / 7.5x** |
 
 *Benchmarked on Apple M2 (aarch64), OpenJDK 25.0.2, Clojure 1.12.4. See [report.txt](doc/report.txt) for full results and [benchmarks.md](doc/benchmarks.md) for methodology.*
 
