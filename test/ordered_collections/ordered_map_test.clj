@@ -7,6 +7,7 @@
             [ordered-collections.core :refer [general-compare
                                                        ordered-map ordered-map-by
                                                        ordered-map-with
+                                                       long-ordered-map
                                                        ordered-merge-with assoc-new]]
             [ordered-collections.test-utils :as tu])
   (:import  [java.util UUID]))
@@ -171,7 +172,16 @@
 
   (testing "single map"
     (let [m (ordered-map [[1 :a] [2 :b]])]
-      (is (= m (ordered-merge-with (fn [k a b] b) m))))))
+      (is (= m (ordered-merge-with (fn [k a b] b) m)))))
+
+  (testing "long-ordered-map preserves specialization through merge"
+    (let [m1 (long-ordered-map {1 :a 2 :b})
+          m2 (long-ordered-map {2 :B 3 :c})
+          merged (ordered-merge-with (fn [k a b] b) m1 m2)
+          root (.-root ^ordered_collections.types.ordered_map.OrderedMap merged)]
+      (is (= {1 :a 2 :B 3 :c} merged))
+      (is (instance? ordered_collections.kernel.node.LongKeyNode root)
+          "merge result should preserve LongKeyNode specialization"))))
 
 (defspec prop-merge-with-addition-is-commutative 100
   (prop/for-all [kvs1 tu/gen-int-map-entries

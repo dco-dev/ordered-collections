@@ -31,7 +31,21 @@
     (is (nil? (seq sr)))
     (is (nil? (rseq sr)))
     (is (nil? (peek sr)))
-    (is (thrown? IllegalStateException (pop sr)))))
+    (is (thrown? IllegalStateException (pop sr)))
+    ;; Regression: empty charAt/nth must throw, not NPE on nil root
+    (is (thrown? StringIndexOutOfBoundsException (.charAt ^CharSequence sr 0)))
+    (is (thrown? IndexOutOfBoundsException (nth sr 0)))
+    (is (= :nope (nth sr 0 :nope)))
+    ;; Regression: empty fold must return (combinef), not crash
+    (is (= 0 (r/fold + sr)))))
+
+(deftest string-rope-non-integer-keys
+  (let [sr (oc/string-rope "abc")]
+    ;; Regression: get/valAt must return nil for non-integer keys, not throw
+    (is (nil? (get sr :x)))
+    (is (nil? (get sr nil)))
+    (is (= :nf (get sr :x :nf)))
+    (is (= :nf (get sr "hello" :nf)))))
 
 (deftest string-rope-single-char
   (let [sr (oc/string-rope "x")]
@@ -413,6 +427,41 @@
            (= (re-matches #"\w+" s) (re-matches #"\w+" sr))
            (= (str/replace s #"[aeiou]" "*")
               (str/replace sr #"[aeiou]" "*"))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Surrogate Pair Safety
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest surrogate-pair-chunk-boundary
+  (testing "surrogate pair at chunk boundary is not split"
+    ;; Place a supplementary character (2 code units) right at the 1024
+    ;; char boundary. Without the fix, the high surrogate ends up as the
+    ;; last char of chunk 0 and the low surrogate as the first of chunk 1.
+    (let [prefix (apply str (repeat 1023 "a"))
+          emoji  "\uD83C\uDF89"  ;; U+1F389 (🎉)
+          suffix "bbb"
+          s      (str prefix emoji suffix)
+          sr     (oc/string-rope s)
+          root   (.-root ^ordered_collections.types.string_rope.StringRope sr)
+          chunks (ropetree/root->chunks root)]
+      (is (= s (str sr)) "toString round-trip")
+      (is (= (count s) (count sr)) "length preserved")
+      ;; No chunk should end with a lone high surrogate
+      (doseq [^String c chunks]
+        (when (pos? (.length c))
+          (is (not (Character/isHighSurrogate (.charAt c (dec (.length c)))))
+              (str "chunk ends with lone high surrogate: " (subs c (max 0 (- (.length c) 3)))))))
+      ;; No chunk should start with a lone low surrogate
+      (doseq [^String c chunks]
+        (when (pos? (.length c))
+          (is (not (Character/isLowSurrogate (.charAt c 0)))
+              "chunk starts with lone low surrogate")))))
+  (testing "string of all supplementary characters"
+    (let [emojis (apply str (repeat 600 "\uD83D\uDE00"))  ;; 600 × 😀 = 1200 code units
+          sr     (oc/string-rope emojis)]
+      (is (= emojis (str sr)))
+      (is (= 1200 (count sr))))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

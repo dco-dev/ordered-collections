@@ -446,3 +446,35 @@
     (is (= [[:a 1] [:b 2] [:c 3]] (vec m)))
     (is (= 2 (m :b)))
     (is (= [[:a 1] [:b 2] [:c 3] [:d 4]] (vec (assoc m :d 4))))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Primitive specialization preservation
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(deftest long-specialization-preserved-through-mutations
+  (let [s  (long-ordered-set [1 2 3])
+        s+ (conj s 4)
+        s- (disj s 2)]
+    (testing "conj preserves LongKeyNode"
+      (is (instance? ordered_collections.kernel.node.LongKeyNode
+                     (.-root ^ordered_collections.types.ordered_set.OrderedSet s+))))
+    (testing "disj preserves LongKeyNode"
+      (is (instance? ordered_collections.kernel.node.LongKeyNode
+                     (.-root ^ordered_collections.types.ordered_set.OrderedSet s-))))
+    (testing "values are correct"
+      (is (= #{1 2 3 4} (set s+)))
+      (is (= #{1 3} (set s-)))))
+
+  (let [m  (long-ordered-map {1 :a 2 :b 3 :c})
+        m+ (assoc m 4 :d)
+        m- (dissoc m 2)]
+    (testing "assoc preserves LongKeyNode"
+      (is (instance? ordered_collections.kernel.node.LongKeyNode
+                     (.-root ^ordered_collections.types.ordered_map.OrderedMap m+))))
+    (testing "dissoc preserves LongKeyNode"
+      (is (instance? ordered_collections.kernel.node.LongKeyNode
+                     (.-root ^ordered_collections.types.ordered_map.OrderedMap m-))))
+    (testing "values are correct"
+      (is (= :d (m+ 4)))
+      (is (nil? (m- 2))))))

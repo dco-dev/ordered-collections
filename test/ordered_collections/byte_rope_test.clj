@@ -24,6 +24,28 @@
 ;; Construction
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(deftest byte-rope-empty-contract
+  (let [br (oc/byte-rope)]
+    (testing "empty nth throws IOOB, not NPE"
+      (is (thrown? IndexOutOfBoundsException (nth br 0)))
+      (is (= :nope (nth br 0 :nope))))
+    (testing "empty fold returns (combinef)"
+      (is (= 0 (r/fold + br))))
+    (testing "empty reduce with init returns init"
+      (is (= 42 (reduce + 42 br))))))
+
+(deftest byte-rope-input-stream-zero-read
+  (let [br  (oc/byte-rope [1 2 3])
+        ins (oc/byte-rope-input-stream br)]
+    (testing "read(buf, off, 0) returns 0 mid-stream"
+      (is (= 0 (.read ins (byte-array 10) 0 0))))
+    (testing "exhaust stream"
+      (is (= 3 (.read ins (byte-array 10) 0 10))))
+    (testing "read(buf, off, 0) returns 0 at EOF"
+      (is (= 0 (.read ins (byte-array 10) 0 0))))
+    (testing "read(buf, off, n) returns -1 at EOF"
+      (is (= -1 (.read ins (byte-array 10) 0 5))))))
+
 (deftest byte-rope-construction
   (testing "empty"
     (let [br (oc/byte-rope)]
