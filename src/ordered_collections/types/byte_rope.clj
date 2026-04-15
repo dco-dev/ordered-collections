@@ -272,18 +272,16 @@
 
   IReduce
   (reduce [this f]
-    (if enum
-      (let [acc (bit-and (long (aget chunk (unchecked-int i))) 0xFF)
-            next-i (unchecked-inc i)]
-        (if (< next-i (alength chunk))
-          (.reduce ^IReduceInit
-            (ByteRopeSeq. enum chunk next-i nil nil) f acc)
-          (if-let [e' (tree/node-enum-rest enum)]
-            (let [chunk' ^bytes (-k (tree/node-enum-first e'))]
-              (.reduce ^IReduceInit
-                (ByteRopeSeq. e' chunk' 0 nil nil) f acc))
-            acc)))
-      (f)))
+    (let [acc (bit-and (long (aget chunk (unchecked-int i))) 0xFF)
+          next-i (unchecked-inc i)]
+      (if (< next-i (alength chunk))
+        (.reduce ^IReduceInit
+          (ByteRopeSeq. enum chunk next-i nil nil) f acc)
+        (if-let [e' (and enum (tree/node-enum-rest enum))]
+          (let [chunk' ^bytes (-k (tree/node-enum-first e'))]
+            (.reduce ^IReduceInit
+              (ByteRopeSeq. e' chunk' 0 nil nil) f acc))
+          acc))))
 
   clojure.lang.IHashEq
   (hasheq [this]
@@ -372,17 +370,15 @@
 
   IReduce
   (reduce [this f]
-    (if enum
-      (let [acc (bit-and (long (aget chunk (unchecked-int i))) 0xFF)]
-        (if (pos? i)
-          (.reduce ^IReduceInit
-            (ByteRopeSeqReverse. enum chunk (unchecked-dec i) nil nil) f acc)
-          (if-let [e' (tree/node-enum-prior enum)]
-            (let [chunk' ^bytes (-k (tree/node-enum-first e'))]
-              (.reduce ^IReduceInit
-                (ByteRopeSeqReverse. e' chunk' (dec (alength chunk')) nil nil) f acc))
-            acc)))
-      (f)))
+    (let [acc (bit-and (long (aget chunk (unchecked-int i))) 0xFF)]
+      (if (pos? i)
+        (.reduce ^IReduceInit
+          (ByteRopeSeqReverse. enum chunk (unchecked-dec i) nil nil) f acc)
+        (if-let [e' (and enum (tree/node-enum-prior enum))]
+          (let [chunk' ^bytes (-k (tree/node-enum-first e'))]
+            (.reduce ^IReduceInit
+              (ByteRopeSeqReverse. e' chunk' (dec (alength chunk')) nil nil) f acc))
+          acc))))
 
   clojure.lang.IHashEq
   (hasheq [this]
@@ -1275,7 +1271,11 @@
            (.read ^InputStream this buf 0 (alength buf))))
         ([buf off len]
          (let [^bytes buf buf
+               off (int off)
                len (int len)]
+           ;; InputStream contract: validate bounds before reading.
+           (when (or (neg? off) (neg? len) (> (+ off len) (alength buf)))
+             (throw (IndexOutOfBoundsException.)))
            (if (zero? len)
              0
              (let [p (aget pos 0)]
@@ -1283,7 +1283,7 @@
                  -1
                  (let [remaining (unchecked-subtract-int n p)
                        want      (min len remaining)]
-                   (System/arraycopy data p buf (int off) want)
+                   (System/arraycopy data p buf off want)
                    (aset pos 0 (unchecked-add-int p want))
                    want))))))))))
 

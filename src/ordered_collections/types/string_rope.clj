@@ -255,18 +255,16 @@
 
   IReduce
   (reduce [this f]
-    (if enum
-      (let [acc (Character/valueOf (.charAt chunk (unchecked-int i)))
-            next-i (unchecked-inc i)]
-        (if (< next-i (.length chunk))
-          (.reduce ^IReduceInit
-            (StringRopeSeq. enum chunk next-i nil nil) f acc)
-          (if-let [e' (tree/node-enum-rest enum)]
-            (let [chunk' ^String (-k (tree/node-enum-first e'))]
-              (.reduce ^IReduceInit
-                (StringRopeSeq. e' chunk' 0 nil nil) f acc))
-            acc)))
-      (f)))
+    (let [acc (Character/valueOf (.charAt chunk (unchecked-int i)))
+          next-i (unchecked-inc i)]
+      (if (< next-i (.length chunk))
+        (.reduce ^IReduceInit
+          (StringRopeSeq. enum chunk next-i nil nil) f acc)
+        (if-let [e' (and enum (tree/node-enum-rest enum))]
+          (let [chunk' ^String (-k (tree/node-enum-first e'))]
+            (.reduce ^IReduceInit
+              (StringRopeSeq. e' chunk' 0 nil nil) f acc))
+          acc))))
 
   clojure.lang.IHashEq
   (hasheq [this]
@@ -355,17 +353,15 @@
 
   IReduce
   (reduce [this f]
-    (if enum
-      (let [acc (Character/valueOf (.charAt chunk (unchecked-int i)))]
-        (if (pos? i)
-          (.reduce ^IReduceInit
-            (StringRopeSeqReverse. enum chunk (unchecked-dec i) nil nil) f acc)
-          (if-let [e' (tree/node-enum-prior enum)]
-            (let [chunk' ^String (-k (tree/node-enum-first e'))]
-              (.reduce ^IReduceInit
-                (StringRopeSeqReverse. e' chunk' (dec (.length chunk')) nil nil) f acc))
-            acc)))
-      (f)))
+    (let [acc (Character/valueOf (.charAt chunk (unchecked-int i)))]
+      (if (pos? i)
+        (.reduce ^IReduceInit
+          (StringRopeSeqReverse. enum chunk (unchecked-dec i) nil nil) f acc)
+        (if-let [e' (and enum (tree/node-enum-prior enum))]
+          (let [chunk' ^String (-k (tree/node-enum-first e'))]
+            (.reduce ^IReduceInit
+              (StringRopeSeqReverse. e' chunk' (dec (.length chunk')) nil nil) f acc))
+          acc))))
 
   clojure.lang.IHashEq
   (hasheq [this]
@@ -501,7 +497,8 @@
       (let [^String s root
             n (.length s)]
         (check-range! (long start) (long end) n)
-        (->StringRope* (.substring s (int start) (int end)) alloc _meta))
+        (let [sub (.substring s (int start) (int end))]
+          (->StringRope* (when (pos? (.length sub)) sub) alloc _meta)))
       (let [n (ropetree/rope-size root)]
         (check-range! (long start) (long end) n)
         (with-tree alloc
@@ -657,7 +654,9 @@
 
   IReduce
   (reduce [_ f]
-    (if (string? root)
+    (cond
+      (nil? root) (f)
+      (string? root)
       (let [^String s root
             len (.length s)]
         (if (zero? len)
@@ -669,6 +668,7 @@
                   @ret
                   (recur (unchecked-inc-int i) ret)))
               acc))))
+      :else
       ;; Tree mode: seed from first char of leftmost chunk, then walk the rest.
       (let [^ordered_collections.kernel.node.INode least (tree/node-least root)
             ^String first-chunk (-k least)
