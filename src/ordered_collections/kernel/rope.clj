@@ -157,7 +157,8 @@
 
 (defn str->root
   "Build a rope tree from a String, partitioned into substring chunks.
-  Uses the currently bound `*target-chunk-size*`."
+  Uses the currently bound `*target-chunk-size*`. Split points are
+  adjusted to avoid breaking UTF-16 surrogate pairs at chunk boundaries."
   [^String s]
   (let [n (.length s)
         target (long *target-chunk-size*)]
@@ -166,7 +167,13 @@
         (loop [pos 0, acc (transient [])]
           (if (>= pos n)
             (persistent! acc)
-            (let [end (min n (+ pos target))]
+            (let [end (min n (+ pos target))
+                  ;; Don't split between a high and low surrogate.
+                  end (if (and (< end n)
+                              (pos? end)
+                              (Character/isHighSurrogate (.charAt s (unchecked-dec-int end))))
+                        (unchecked-dec-int end)
+                        end)]
               (recur end (conj! acc (.substring s pos end))))))))))
 
 (defn bytes->root
