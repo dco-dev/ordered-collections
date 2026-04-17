@@ -65,9 +65,9 @@ versions available for free.
 
 **Why StringRope?** String edits in the middle are O(n) because every
 character after the cut must be shifted. A StringRope does each edit in
-O(log n). At 100K characters with 200 random edits, StringRope is **~35x
-faster than plain String**; at 500K characters it is orders of magnitude
-better. `StringRope` implements `java.lang.CharSequence`, so it drops
+O(log n). At 100K characters with 200 random edits, StringRope is **~38x
+faster than plain String**; at 500K characters the gap grows to **~130x**.
+`StringRope` implements `java.lang.CharSequence`, so it drops
 into any Java API expecting text, and `(str sr)` materializes back to a
 regular Java `String` whenever you need one.
 

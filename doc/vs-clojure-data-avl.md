@@ -58,8 +58,8 @@ The core operations are the same, with one syntax difference: ordered-collection
 
 ## What you gain
 
-- **Parallel set operations** — about 7-42x faster union/intersection/difference in the current Criterium run
-- **Parallel fold** — `r/fold` uses tree-based fork-join and is about 6-9x faster than data.avl on large reductions
+- **Parallel set operations** — about 7-51x faster union/intersection/difference in the current Criterium run
+- **Parallel fold** — `r/fold` uses tree-based fork-join and is about 3-5x faster than data.avl on large reductions
 - **Fast endpoint access** — `java.util.SortedSet.last()` is O(log n); data.avl falls back to seq traversal for `last`
 - **`median`, `percentile`, `slice`** — positional operations beyond nth/rank
 - **Specialized collections** — interval trees, segment trees, range maps, fuzzy lookup, priority queues, multisets

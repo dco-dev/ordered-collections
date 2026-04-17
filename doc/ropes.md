@@ -106,18 +106,18 @@ The better question is:
 
 | Workload | N=10K | N=100K | N=500K |
 |---|---:|---:|---:|
-| 200 random edits | **43x** | **498x** | **1968x** |
-| Single splice | **6x** | **116x** | **584x** |
-| Concat many pieces | **3.4x** | **5.4x** | **9.5x** |
-| Chunk iteration | **58x** | **83x** | **117x** |
-| Fold (sum) | **5.6x** | **1.5x** | **1.3x** |
-| Reduce (sum) | 0.4x | **1.7x** | **1.3x** |
-| Random nth (1000) | 0.7x | 0.5x | 0.4x |
+| 200 random edits | **26x** | **261x** | **1237x** |
+| Single splice | **106x** | **762x** | **863x** |
+| Concat many pieces | **29x** | **39x** | **36x** |
+| Chunk iteration | 1.0x | 1.0x | 1.0x |
+| Fold (sum) | **1.2x** | **1.4x** | **1.6x** |
+| Reduce (sum) | **1.4x** | **1.5x** | **1.4x** |
+| Random nth (1000) | 0.2x | 0.2x | 0.2x |
 
-The rope wins on 6 of 7 workloads at scale. The advantage grows with collection
-size because structural editing is O(log n) vs O(n). Parallel fold beats vectors
-via tree-based fork-join decomposition. Random nth is slower (O(log n) vs O(1))
-— an inherent tradeoff of tree-backed indexing.
+The rope wins decisively on structural editing at scale — the advantage grows
+with collection size because structural editing is O(log n) vs O(n). Parallel
+fold beats vectors via tree-based fork-join decomposition. Random nth is
+slower (O(log n) vs O(1)) — an inherent tradeoff of tree-backed indexing.
 
 > These numbers are all for tree-mode ropes (above the 1024-element
 > flat threshold). Below that threshold the rope stores its content as
@@ -833,11 +833,12 @@ Key properties:
 
 Performance vs `java.lang.String` (structural editing workloads):
 
-| Workload | N=1K | N=10K | N=100K |
+| Workload | N=10K | N=100K | N=500K |
 |---|---:|---:|---:|
-| 200 random edits | **3x** | **14x** | **35x** |
-| Single splice | 2x | **18x** | **153x** |
-| Random nth | 0.3x | 0.2x | 0.1x |
+| 200 random edits | **5.7x** | **38x** | **130x** |
+| Single splice | **5.9x** | **42x** | **349x** |
+| Single remove | **7.1x** | **44x** | **412x** |
+| Random nth | 0.1x | 0.0x | 0.0x |
 
 Random-access reads are slower than `String` (O(log n) vs O(1)) but
 bounded; structural edits scale indefinitely while `String` edits are
@@ -888,15 +889,17 @@ Key properties:
 
 Performance vs `byte[]` (structural editing workloads):
 
-| Workload | N=1K | N=10K | N=100K |
+| Workload | N=10K | N=100K | N=500K |
 |---|---:|---:|---:|
-| 200 random edits | 0.25x | 0.4x | **3.3x** |
-| Single splice at midpoint | 0.3x | 0.2x | ~1x |
-| Random nth | 1x | 0.5x | 0.3x |
+| 200 random edits | **2.0x** | **14x** | **46x** |
+| Single splice at midpoint | **2.7x** | **11x** | **110x** |
+| Single remove | **2.8x** | **10x** | **128x** |
+| Split at midpoint | 0.3x | **1.8x** | **7.1x** |
+| Random nth | 0.0x | 0.0x | 0.0x |
 
 Small-scale byte-array operations win because `System/arraycopy` is
 absurdly fast. The rope takes over at the scale where persistent edits
-matter — roughly 100K+ bytes with repeated splicing. For single reads
+matter — roughly 10K+ bytes with repeated splicing. For single reads
 or small buffers, stay with `byte[]`. For binary-protocol assembly,
 streaming digests, or any workload with many edits on a large buffer,
 use `ByteRope`.
