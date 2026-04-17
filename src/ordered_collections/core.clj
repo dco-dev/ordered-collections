@@ -18,6 +18,8 @@
             [ordered-collections.types.priority-queue      :as pq]
             [ordered-collections.types.range-map           :as rmap]
             [ordered-collections.types.rope               :as rope]
+            [ordered-collections.types.string-rope       :as string-rope]
+            [ordered-collections.types.byte-rope         :as byte-rope]
             [ordered-collections.types.segment-tree        :as segtree]
             [ordered-collections.protocol                  :as proto]
             [ordered-collections.util                      :refer [defalias]])
@@ -1012,9 +1014,9 @@
 
    Examples:
      (rope-concat (rope [1 2 3]) (rope [4 5 6]))
-     ;=> #ordered/rope [1 2 3 4 5 6]
+     ;=> #vec/rope [1 2 3 4 5 6]
      (rope-concat (rope [1 2]) (rope [3 4]) (rope [5 6]))
-     ;=> #ordered/rope [1 2 3 4 5 6]"
+     ;=> #vec/rope [1 2 3 4 5 6]"
   rope/rope-concat)
 
 (defalias rope-split
@@ -1022,7 +1024,7 @@
 
    Examples:
      (rope-split (rope (range 10)) 4)
-     ;=> [#ordered/rope [0 1 2 3] #ordered/rope [4 5 6 7 8 9]]"
+     ;=> [#vec/rope [0 1 2 3] #vec/rope [4 5 6 7 8 9]]"
   proto/rope-split)
 
 (defalias rope-sub
@@ -1031,7 +1033,7 @@
 
    Examples:
      (rope-sub (rope (range 100)) 20 30)
-     ;=> #ordered/rope [20 21 22 23 24 25 26 27 28 29]"
+     ;=> #vec/rope [20 21 22 23 24 25 26 27 28 29]"
   proto/rope-sub)
 
 (defalias rope-insert
@@ -1039,7 +1041,7 @@
 
    Examples:
      (rope-insert (rope [0 1 2 3]) 2 [:a :b])
-     ;=> #ordered/rope [0 1 :a :b 2 3]"
+     ;=> #vec/rope [0 1 :a :b 2 3]"
   proto/rope-insert)
 
 (defalias rope-remove
@@ -1047,7 +1049,7 @@
 
    Examples:
      (rope-remove (rope (range 10)) 3 7)
-     ;=> #ordered/rope [0 1 2 7 8 9]"
+     ;=> #vec/rope [0 1 2 7 8 9]"
   proto/rope-remove)
 
 (defalias rope-splice
@@ -1055,7 +1057,7 @@
 
    Examples:
      (rope-splice (rope (range 10)) 2 5 [:x :y])
-     ;=> #ordered/rope [0 1 :x :y 5 6 7 8 9]"
+     ;=> #vec/rope [0 1 :x :y 5 6 7 8 9]"
   proto/rope-splice)
 
 (defalias rope-chunks
@@ -1078,3 +1080,113 @@
      (rope-str (rope (seq \"hello world\")))
      ;=> \"hello world\""
   proto/rope-str)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; String Rope
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defalias string-rope
+  "Create a persistent string rope for structural text editing.
+   Backed by a chunked weight-balanced tree with String chunks:
+   O(log n) concat, split, splice, insert, and remove. Competitive at
+   all sizes, dominant at scale.
+
+   Implements CharSequence for seamless Java interop (regex, clojure.string,
+   java.io, etc.). String equality: (= (string-rope \"x\") \"x\") is true.
+
+   Examples:
+     (string-rope \"hello world\")
+     (string-rope (slurp \"big-file.txt\"))
+     (str (string-rope \"hello\"))  ;=> \"hello\""
+  string-rope/string-rope)
+
+(defalias string-rope-concat
+  "Concatenate string ropes or strings.
+   Two arguments: O(log n) binary tree join.
+   Three or more: O(total chunks) bulk construction.
+
+   Examples:
+     (string-rope-concat (string-rope \"hello \") (string-rope \"world\"))
+     ;=> #string/rope \"hello world\""
+  string-rope/string-rope-concat)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Byte Rope
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defalias byte-rope
+  "Create a persistent byte rope for structural editing of binary data.
+   Backed by a chunked weight-balanced tree with byte[] chunks:
+   O(log n) concat, split, splice, insert, and remove. Unsigned byte
+   semantics — elements are longs in [0, 255].
+
+   Accepts nil, byte[] (defensively copied), String (UTF-8 encoded),
+   InputStream (fully consumed), another ByteRope, or any sequential
+   collection of unsigned byte values.
+
+   Examples:
+     (byte-rope)                          ;=> #byte/rope \"\"
+     (byte-rope (byte-array [1 2 3]))     ;=> #byte/rope \"010203\"
+     (byte-rope [0 127 255])              ;=> #byte/rope \"007fff\"
+     (byte-rope \"hello\")                  ;=> #byte/rope \"68656c6c6f\""
+  byte-rope/byte-rope)
+
+(defalias byte-rope-concat
+  "Concatenate byte ropes or byte arrays.
+   Two arguments: O(log n) binary tree join.
+   Three or more: O(total chunks) bulk construction."
+  byte-rope/byte-rope-concat)
+
+(defalias byte-rope-bytes
+  "Materialize a byte rope to a defensively-copied byte[]."
+  byte-rope/byte-rope-bytes)
+
+(defalias byte-rope-hex
+  "Return the byte rope's contents as a lowercase hex string."
+  byte-rope/byte-rope-hex)
+
+(defalias byte-rope-write
+  "Stream a byte rope's contents to an OutputStream, chunk by chunk."
+  byte-rope/byte-rope-write)
+
+(defalias byte-rope-input-stream
+  "Return a java.io.InputStream that reads over the byte rope's contents."
+  byte-rope/byte-rope-input-stream)
+
+(defalias byte-rope-get-byte
+  "Return the unsigned byte value (long in [0, 255]) at offset."
+  byte-rope/byte-rope-get-byte)
+
+(defalias byte-rope-get-short
+  "Return a big-endian unsigned 16-bit integer at offset."
+  byte-rope/byte-rope-get-short)
+
+(defalias byte-rope-get-short-le
+  "Return a little-endian unsigned 16-bit integer at offset."
+  byte-rope/byte-rope-get-short-le)
+
+(defalias byte-rope-get-int
+  "Return a big-endian signed 32-bit integer at offset."
+  byte-rope/byte-rope-get-int)
+
+(defalias byte-rope-get-int-le
+  "Return a little-endian signed 32-bit integer at offset."
+  byte-rope/byte-rope-get-int-le)
+
+(defalias byte-rope-get-long
+  "Return a big-endian signed 64-bit integer at offset."
+  byte-rope/byte-rope-get-long)
+
+(defalias byte-rope-get-long-le
+  "Return a little-endian signed 64-bit integer at offset."
+  byte-rope/byte-rope-get-long-le)
+
+(defalias byte-rope-index-of
+  "Return the first index of the given unsigned byte value, or -1."
+  byte-rope/byte-rope-index-of)
+
+(defalias byte-rope-digest
+  "Compute a cryptographic digest (SHA-256, SHA-1, MD5, etc.) of the byte
+  rope's contents by streaming chunks through java.security.MessageDigest.
+  Returns a byte rope of the digest."
+  byte-rope/byte-rope-digest)

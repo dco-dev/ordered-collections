@@ -197,7 +197,11 @@
 
   java.util.List
   (indexOf [_ x]
-    (or (tree/node-rank root x cmp) -1))
+    (or (cond
+          (identical? cmp order/long-compare)   (tree/node-rank-long root (long x))
+          (identical? cmp order/string-compare) (tree/node-rank-string root x)
+          :else                                 (tree/node-rank root x cmp))
+        -1))
   (lastIndexOf [this x]
     (.indexOf this x))
 
@@ -205,7 +209,7 @@
   (size [_]
     (tree/node-size root))
   (iterator [this]
-    (clojure.lang.SeqIterator. (seq this)))
+    (tree/node-iterator root node/-k))
   (containsAll [this s]
     (with-compare this
       (cond
@@ -307,9 +311,9 @@
       (identical? cmp order/string-compare) (tree/node-contains-string? root k)
       :else (tree/node-contains? root k cmp)))
   (disjoin [this k]
-    (new OrderedSet (tree/node-remove root k cmp tree/node-create-weight-balanced) cmp alloc stitch _meta))
+    (new OrderedSet (tree/node-remove root k cmp alloc) cmp alloc stitch _meta))
   (cons [this k]
-    (new OrderedSet (tree/node-add root k k cmp tree/node-create-weight-balanced) cmp alloc stitch _meta))
+    (new OrderedSet (tree/node-add root k k cmp alloc) cmp alloc stitch _meta))
 
   Object
   (toString [this]
@@ -376,7 +380,11 @@
 
   PRanked
   (rank-of [_ x]
-    (or (tree/node-rank root x cmp) -1))
+    (or (cond
+          (identical? cmp order/long-compare)   (tree/node-rank-long root (long x))
+          (identical? cmp order/string-compare) (tree/node-rank-string root x)
+          :else                                 (tree/node-rank root x cmp))
+        -1))
   (slice [_ start end]
     (let [n (tree/node-size root)
           start (max 0 (long start))

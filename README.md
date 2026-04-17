@@ -14,8 +14,8 @@ you could solve efficiently:
 
 </td></tr></table>
 
-- **Ropes** — concat, split, splice, insert: **10–5000x** faster than Clojure vector at scale
-- **Sets and Maps** work exactly as you're used to, but do more, up to **50x** faster
+- **Ropes** — concat, split, splice, insert: **10–1300x** faster than native baselines at scale, in three flavors: generic, `StringRope` (CharSequence), and `ByteRope` (unsigned bytes)
+- **Sets and Maps** work exactly as you're used to, but do more, up to **60x** faster
 - **Interval maps** for overlap queries ("what's scheduled at 3pm?")
 - **Range maps** for non-overlapping regions ("which subnet owns this IP?")
 - **Segment trees** for range aggregation ("total sales from day 10 to 50?")
@@ -34,7 +34,8 @@ foundation for splitting, joining, and parallel operations.
 - [Cookbook](doc/cookbook.md) — Practical patterns: leaderboards, time-series, scheduling, queues, multisets, and more
 - [Collections API](doc/collections-api.md) — Collection-by-collection constructor and operation reference
 - [Ropes](doc/ropes.md) — Rope tutorial, use cases, and design
-- [Benchmarks](doc/benchmarks.md) — Detailed performance measurements
+- [Benchmark Report](doc/report.txt) — Current performance numbers (auto-generated)
+- [Benchmark Methodology](doc/benchmarks.md) — Infrastructure, interpretation, and how to run
 - [Competitive Analysis](doc/competitive-analysis.md) — Comparison with other libraries
 - [vs clojure.data.avl](doc/vs-clojure-data-avl.md) — For data.avl users considering a switch
 - [Algorithms](doc/algorithms.md) — Tree structure, rotations, split/join, interval augmentation
@@ -55,12 +56,12 @@ hood — and in the new things you can do.
 
 ;; Ropes — O(log n) split, splice, concat
 
-(def r (oc/rope [:a :b :c :d :e]))     ;=> #ordered/rope [:a :b :c :d:e]
+(def r (oc/rope [:a :b :c :d :e]))     ;=> #vec/rope [:a :b :c :d:e]
 
 (apply oc/rope-concat
-   (reverse (oc/rope-split r 2)))      ;=> #ordered/rope [:c :d :e :a :b]
+   (reverse (oc/rope-split r 2)))      ;=> #vec/rope [:c :d :e :a :b]
 
-(oc/rope-insert r 2 [:x :y])           ;=> #ordered/rope [:a :b :x :y :c :d :e]
+(oc/rope-insert r 2 [:x :y])           ;=> #vec/rope [:a :b :x :y :c :d :e]
 
 ;; Sets
 
@@ -84,27 +85,9 @@ hood — and in the new things you can do.
 
 Across the measured workloads, `ordered-collections` is faster than
 both `clojure.core/sorted-set` and `clojure.data.avl` at every
-cardinality  Set algebra is the standout, with 28-57x wins at 500K.
-Even against unordered `clojure.core/set`the benchmarks still show
-roughly 4-19x wins.
-
-### Rope vs PersistentVector
-
-| Workload | N=10K | N=100K | N=500K |
-|---|---:|---:|---:|
-| 200 random edits | **43x** | **498x** | **1968x** |
-| Single splice | **6x** | **116x** | **584x** |
-| Concat many pieces | **3.4x** | **5.4x** | **9.5x** |
-| Chunk iteration | **58x** | **83x** | **117x** |
-| Fold (sum) | **5.6x** | **1.5x** | **1.3x** |
-| Reduce (sum) | 0.4x | **1.7x** | **1.3x** |
-| Random nth (1000) | 0.7x | 0.5x | 0.4x |
-
-The rope wins on 6 of 7 workloads at scale and the advantage grows with
-collection size. Concat improves with N because the rope collects chunks in
-O(k) while the vector copies O(n) elements. Reduce beats vectors at N ≥ 100K
-thanks to 256-element chunk locality. Random access is slower (O(log n) vs
-O(1)) but bounded. See [Ropes](doc/ropes.md) for the full tutorial.
+cardinality. Set algebra is the standout, with 18-60x wins at 500K.
+Even against unordered `clojure.core/set` the benchmarks still show
+roughly 4-28x wins.
 
 ### Set algebra
 
@@ -112,43 +95,62 @@ O(1)) but bounded. See [Ropes](doc/ropes.md) for the full tutorial.
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **15.4x** | **26.4x** | **56.6x** |
-| Intersection | **9.0x** | **17.0x** | **36.2x** |
-| Difference | **9.6x** | **22.1x** | **50.2x** |
+| Union | **12.9x** | **23.4x** | **59.6x** |
+| Intersection | **9.3x** | **15.5x** | **34.6x** |
+| Difference | **10.8x** | **24.3x** | **54.7x** |
 
 #### vs clojure.data.avl
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **10.9x** | **20.5x** | **42.1x** |
-| Intersection | **7.2x** | **13.0x** | **28.1x** |
-| Difference | **7.2x** | **12.7x** | **32.0x** |
+| Union | **9.7x** | **20.0x** | **51.3x** |
+| Intersection | **6.9x** | **13.1x** | **29.9x** |
+| Difference | **7.9x** | **15.0x** | **37.2x** |
 
 #### vs clojure.core/set
 
 | Operation | N=10K | N=100K | N=500K |
 |-----------|------:|-------:|-------:|
-| Union | **4.2x** | **7.2x** | **16.3x** |
-| Intersection | **3.8x** | **6.1x** | **12.9x** |
-| Difference | **4.4x** | **7.6x** | **18.6x** |
+| Union | **3.7x** | **7.2x** | **20.5x** |
+| Intersection | **3.5x** | **6.6x** | **17.8x** |
+| Difference | **4.6x** | **9.8x** | **28.4x** |
 
-### Set equality
-
-| | vs hash-set | vs sorted-set | vs data.avl |
-|--|------------:|--------------:|------------:|
-| N=10K | **2.8x** | **12.0x** | **14.1x** |
-| N=100K | **2.3x** | **9.3x** | **9.5x** |
-
-### Other operations
+#### Other operations
 
 | Operation | vs sorted-set | vs data.avl |
 |-----------|---------------|-------------|
-| Construction | **3.0x / 2.8x / 3.1x** | **1.5x / 1.3x / 1.7x** |
-| Lookup | 1.1x / 1.1x / 1.1x | 1.0x / 1.0x / 1.0x |
-| Split | — | **6.8x / 7.2x / 7.8x** |
-| Fold | **2.5x / 4.1x / 4.1x** | **5.8x / 5.9x / 8.8x** |
+| Construction | **2.1x / 2.4x / 2.8x** | **1.1x / 1.2x / 1.5x** |
+| Lookup | 1.1x / 1.0x / 0.9x | 1.0x / 0.9x / 0.9x |
+| Split | — | **4.9x / 6.1x / 6.8x** |
+| Fold | **2.5x / 4.0x / 3.5x** | **3.1x / 5.4x / 4.8x** |
 
-*Benchmarked on a 2023 MacBook Pro (M2). See [Benchmarks](doc/benchmarks.md) for full results.*
+### Rope vs PersistentVector
+
+| Workload | N=1K | N=5K | N=10K | N=100K | N=500K |
+|---|---:|---:|---:|---:|---:|
+| 200 random edits | **4.7x** | **14x** | **26x** | **261x** | **1237x** |
+| Single splice | **4.8x** | **13x** | **106x** | **762x** | **863x** |
+| Concat pieces | **169x** | **22x** | **29x** | **39x** | **36x** |
+| Reduce (sum) | **1.0x** | **1.7x** | **1.4x** | **1.5x** | **1.3x** |
+| Fold (sum) | **2.9x** | **1.4x** | **1.2x** | **1.3x** | **1.6x** |
+| Random nth (1000) | 0.5x | 0.2x | 0.2x | 0.2x | 0.2x |
+
+### StringRope vs String
+
+| Workload | N=1K | N=5K | N=10K | N=100K | N=500K |
+|---|---:|---:|---:|---:|---:|
+| 200 random edits | 0.6x | **2.6x** | **5.7x** | **38x** | **130x** |
+| Single splice | 0.4x | **3.2x** | **5.9x** | **42x** | **349x** |
+| Single insert | 0.4x | **2.7x** | **6.2x** | **40x** | **154x** |
+| Single remove | **1.5x** | **3.6x** | **7.1x** | **44x** | **412x** |
+| Concat halves | 0.9x | 0.5x | **2.5x** | **20x** | **29x** |
+| Reduce (sum chars) | 0.4x | 0.5x | 0.5x | 0.5x | 0.5x |
+| `re-find` / `re-seq` | 0.6-1.3x | 0.1-0.2x | 0.1-0.2x | 0.1-0.2x | 0.1-0.2x |
+
+The rope family wins decisively on structural editing at scale; the advantage
+grows with collection size. See [Ropes](doc/ropes.md) for the full tutorial.
+
+*Benchmarked on Apple M2 (aarch64), OpenJDK 25.0.2, Clojure 1.12.4. See [report.txt](doc/report.txt) for full results and [benchmarks.md](doc/benchmarks.md) for methodology.*
 
 ---
 
@@ -215,6 +217,12 @@ and `fuzzy-map`.
 | `(oc/rope coll)` | Persistent sequence for structural editing |
 | `(oc/rope-concat a b)` | Concatenate two ropes — O(log n) |
 | `(oc/rope-splice r start end items)` | Replace a range — O(log n) |
+| **StringRope** | |
+| `(oc/string-rope s)` | Persistent text sequence (implements `CharSequence`) |
+| `(oc/string-rope-concat a b)` | Concatenate two string ropes — O(log n) |
+| **ByteRope** | |
+| `(oc/byte-rope bs)` | Persistent memory — structural editing, zero-cost snapshots, structure sharing |
+| `(oc/byte-rope-concat a b)` | Concatenate two byte ropes — O(log n) |
 | **Fuzzy Collections** | |
 | `(oc/fuzzy-set coll)` | Returns closest element to query |
 | `(oc/fuzzy-map coll)` | Returns value for closest key to query |
@@ -226,7 +234,11 @@ and `fuzzy-map`.
 A rope is a persistent sequence optimized for **structural editing** —
 concatenation, splitting, splicing, and insertion in the middle of large
 sequences. Where `PersistentVector` is O(n) for mid-sequence edits,
-the rope is O(log n).
+the rope is O(log n). Three variants share the same kernel:
+
+- **`rope`** — arbitrary Clojure values (vector-compatible)
+- **`string-rope`** — UTF-16 text, implements `CharSequence` for `re-find`/`clojure.string`
+- **`byte-rope`** — persistent memory with structural editing, zero-cost snapshots, and structure sharing. Think of it as a byte buffer with the safety properties of a persistent data structure: splice at any offset in O(log n), keep old versions for free, let the GC reclaim what's unreachable
 
 ```clojure
 (def r (oc/rope (range 100000)))
@@ -238,10 +250,15 @@ the rope is O(log n).
 (let [[left right] (oc/rope-split r 50000)]
   [(count left) (count right)])  ;=> [50000 50000]
 
-;; Concatenate — O(log n)
-(oc/rope-concat (oc/rope [1 2 3]) (oc/rope [4 5 6]))
-;=> #ordered/rope [1 2 3 4 5 6]
+;; StringRope — drops into regex and clojure.string
+(def text (oc/string-rope "hello world"))
+(re-find #"wor" text)  ;=> "wor"
+
+;; ByteRope — binary protocols, streaming digest
+(def packet (oc/byte-rope [0x48 0x45 0x4C 0x4C 0x4F]))
+(oc/byte-rope-get-int packet 0)  ;=> 1212501068
 ```
+ See [Ropes](doc/ropes.md) for the full tutorial.
 
 ---
 
@@ -399,7 +416,7 @@ All collection types implement `CollFold` for efficient `r/fold`:
 ```
 $ lein test
 
-Ran 454 tests containing 466,000+ assertions.
+Ran 690 tests containing 471,000+ assertions.
 0 failures, 0 errors.
 ```
 
@@ -417,7 +434,7 @@ $ lein stats                 # Print project statistics
 
 ```
 $ lein bench                  # Criterium, N=100K (~5 min)
-$ lein bench --full           # Criterium, N=10K,100K,500K (~40 min)
+$ lein bench --full           # Criterium, N=1K,5K,10K,100K,500K (~60 min)
 $ lein bench --readme --full  # README tables only (~10 min)
 $ lein bench --sizes 50000    # Custom sizes
 

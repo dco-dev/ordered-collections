@@ -9,9 +9,12 @@
   (common/path "bench-results"))
 
 (defn benchmark-files
+  "Return timestamped benchmark EDN files in chronological order.
+  Excludes non-timestamped files like string-rope-full.edn."
   []
   (->> (fs/glob (bench-results-dir) "*.edn")
        (map str)
+       (filter #(re-find #"/\d{4}-\d{2}-\d{2}_" %))
        sort))
 
 (defn latest-benchmark-file
@@ -27,11 +30,12 @@
 (defn parse-args
   [args]
   (loop [[arg & more] args
-         opts {:top 12}]
+         opts {:top 30}]
     (cond
       (nil? arg) opts
       (#{"--help" "-h"} arg) (recur more (assoc opts :help true))
       (= "--all" arg)        (recur more (assoc opts :all true))
+      (= "--publish" arg)    (recur more (assoc opts :publish true))
       (= "--file" arg)       (recur (rest more) (assoc opts :file (first more)))
       (= "--baseline" arg)   (recur (rest more) (assoc opts :baseline (first more)))
       (= "--top" arg)        (recur (rest more) (assoc opts :top (Long/parseLong (first more))))
@@ -43,9 +47,18 @@
   (let [target (or file (latest-benchmark-file))]
     (when-not target
       (throw (ex-info "No benchmark result files found." {:dir (bench-results-dir)})))
-    (assoc opts
-           :file (ensure-file! target)
-           :baseline (some-> baseline ensure-file!))))
+    ;; Auto-select the second-most-recent EDN as baseline when none is
+    ;; specified, matching the auto-compare behavior in bench-runner.
+    (let [auto-baseline
+          (when-not baseline
+            (let [all  (benchmark-files)
+                  target-str (str target)]
+              (->> all
+                   (remove #(= % target-str))
+                   last)))]
+      (assoc opts
+             :file (ensure-file! target)
+             :baseline (some-> (or baseline auto-baseline) ensure-file!)))))
 
 (defn usage []
   (str/join
@@ -57,4 +70,8 @@
      "  --baseline PATH    Compare against a baseline result file"
      "  --top N            Number of ranked rows to show (default 12)"
      "  --all              Show all ranked rows"
+     "  --publish          Publish mode: omit the Full Scorecard, Regressions,"
+     "                     and Improvements sections. Use when redirecting to"
+     "                     doc/report.txt — those sections are intended for"
+     "                     interactive A/B review, not the committed snapshot."
      "  --help             Show this help"]))

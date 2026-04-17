@@ -7,11 +7,299 @@ Practical examples showing where ordered-collections shines.
 ```clojure
 (require '[ordered-collections.core :as oc])
 (require '[clojure.core.reducers :as r])
+(require '[clojure.string :as str])
 ```
 
 ---
 
-## 1. Leaderboard with Rank Queries
+## Ropes
+
+The library provides three rope variants that share one tree kernel: a
+generic `rope` for arbitrary Clojure values, a `string-rope` specialized
+for text, and a `byte-rope` specialized for binary data. All three support
+O(log n) concat, split, splice, insert, and remove; the specialized
+variants add type-appropriate Java interop (CharSequence, byte[]) and
+faster materialization.
+
+---
+
+## 1. Text Editor Buffer (StringRope)
+
+**Problem:** An editor needs to insert, delete, and replace characters
+anywhere in a document with low latency, regardless of document size.
+Plain strings are O(n) per edit because every character after the cut
+must be shifted. A StringRope makes every edit O(log n) and keeps old
+versions available for free.
+
+```clojure
+(def doc (oc/string-rope "The quick brown fox jumps over the lazy dog."))
+
+(count doc)      ;; => 44
+(nth doc 10)     ;; => \b
+(str doc)        ;; => "The quick brown fox jumps over the lazy dog."
+
+;; Insert at cursor — O(log n)
+(def v1 (oc/rope-insert doc 10 "dark "))
+(str v1)
+;; => "The quick dark brown fox jumps over the lazy dog."
+
+;; Delete a range — O(log n)
+(def v2 (oc/rope-remove v1 10 15))
+(str v2)
+;; => "The quick brown fox jumps over the lazy dog."
+
+;; Find-and-replace is just splice — O(log n)
+(def v3 (oc/rope-splice doc 16 19 "cat"))
+(str v3)
+;; => "The quick brown cat jumps over the lazy dog."
+
+;; Extract the visible window — shares structure, no copying
+(str (oc/rope-sub v3 4 19))
+;; => "quick brown cat"
+
+;; Undo history is free — every version is a persistent snapshot
+;; sharing structure with its parent.
+(def history [doc v1 v2 v3])
+(mapv count history)  ;; => [44 49 44 44]
+```
+
+**Why StringRope?** String edits in the middle are O(n) because every
+character after the cut must be shifted. A StringRope does each edit in
+O(log n). At 100K characters with 200 random edits, StringRope is **~38x
+faster than plain String**; at 500K characters the gap grows to **~130x**.
+`StringRope` implements `java.lang.CharSequence`, so it drops
+into any Java API expecting text, and `(str sr)` materializes back to a
+regular Java `String` whenever you need one.
+
+---
+
+## 2. Regex and clojure.string on Large Text (StringRope)
+
+**Problem:** Run regex matching, `clojure.string` helpers, and ad-hoc
+`java.util.regex.Matcher` work on a multi-megabyte log file that you
+also want to edit in place.
+
+```clojure
+(def log-text
+  (oc/string-rope
+    (str "2026-04-10 09:14 INFO  started user=alice\n"
+         "2026-04-10 09:14 INFO  request path=/home user=alice\n"
+         "2026-04-10 09:15 ERROR auth failed token=xyz123 user=bob\n"
+         "2026-04-10 09:16 INFO  request path=/login user=bob\n"
+         "2026-04-10 09:17 ERROR db  timeout password=s3cret user=bob\n")))
+
+;; StringRope implements CharSequence, so all of java.util.regex works directly.
+(re-seq #"ERROR.*" log-text)
+;; => ("ERROR auth failed token=xyz123 user=bob"
+;;     "ERROR db  timeout password=s3cret user=bob")
+
+;; clojure.string functions accept CharSequence
+(count (str/split-lines log-text))
+;; => 5
+
+;; Redact sensitive fields — each replace is O(log n) per match,
+;; not O(n) per match like a flat String.
+(def sanitized
+  (-> log-text
+      (str/replace #"password=\S+" "password=<REDACTED>")
+      (str/replace #"token=\S+"    "token=<REDACTED>")))
+
+(str/includes? (str sanitized) "<REDACTED>")  ;; => true
+
+;; java.util.regex.Matcher works on the rope directly
+(let [m (re-matcher #"user=(\w+)" log-text)]
+  (loop [users #{}]
+    (if (.find m)
+      (recur (conj users (.group m 1)))
+      users)))
+;; => #{"alice" "bob"}
+```
+
+**Why StringRope?** The `CharSequence` contract means every Java text
+API works without conversion. You can hold a multi-megabyte log as a
+rope, run regex and `clojure.string` over it, and splice in edits — all
+in O(log n) per edit. A plain `String` would force an O(n) copy on
+every `str/replace` match.
+
+---
+
+## 3. Assembling Large Sequences from Many Parts (Rope)
+
+**Problem:** Collect data from many sources and merge the pieces into
+one indexable sequence without paying O(n²) for repeated `into`.
+
+```clojure
+;; Imagine sensor batches arriving from many collectors
+(def batches
+  (for [i (range 20)]
+    (vec (range (* i 1000) (* (inc i) 1000)))))
+
+;; Naive vector concat — each `into` copies everything accumulated.
+;; Fine for 4 batches, collapses to O(n²) for many.
+(def naive (reduce into [] batches))
+
+;; Rope concat — O(k log n). Each piece is joined structurally;
+;; nothing is copied.
+(def combined (apply oc/rope-concat (map oc/rope batches)))
+
+(count combined)  ;; => 20000
+(nth combined 12345)
+;; => 12345
+
+;; The combined rope stays fully efficient for downstream work
+(reduce + 0 combined)
+;; => 199990000
+
+;; Parallel fold splits along the natural tree structure
+(r/fold + combined)
+;; => 199990000
+```
+
+**Why Rope?** When you assemble a sequence from many sources, vector
+`into` is O(*total accumulated*) at each step and degrades to O(n²).
+Rope concat is O(log n) per join, and the combined rope remains
+efficient for random access, reduce, parallel fold, and further
+splicing.
+
+---
+
+## 4. Binary Protocol Assembly (ByteRope)
+
+**Problem:** Build a framed network message with a length header plus
+payload, then insert a checksum, then slice out just the payload. With
+`byte[]` every edit forces an `arraycopy` of the entire buffer; with
+ByteRope each edit is O(log n).
+
+```clojure
+;; Framed message format: [u32 big-endian length] [payload bytes]
+(defn pack-message [^bytes payload]
+  (let [len    (alength payload)
+        header (byte-array 4)]
+    (aset header 0 (unchecked-byte (bit-shift-right len 24)))
+    (aset header 1 (unchecked-byte (bit-shift-right len 16)))
+    (aset header 2 (unchecked-byte (bit-shift-right len 8)))
+    (aset header 3 (unchecked-byte len))
+    (oc/byte-rope-concat (oc/byte-rope header) (oc/byte-rope payload))))
+
+(def msg (pack-message (.getBytes "Hello, World!" "UTF-8")))
+
+(count msg)                           ;; => 17
+(oc/byte-rope-get-int msg 0)          ;; => 13   (4-byte BE length)
+(oc/byte-rope-get-byte msg 4)         ;; => 72   (unsigned 'H')
+(oc/byte-rope-hex msg)
+;; => "0000000d48656c6c6f2c20576f726c6421"
+
+;; Splice a checksum between header and payload — O(log n)
+(def with-csum
+  (oc/rope-insert msg 4 (byte-array [(unchecked-byte 0xde)
+                                     (unchecked-byte 0xad)
+                                     (unchecked-byte 0xbe)
+                                     (unchecked-byte 0xef)])))
+
+(oc/byte-rope-hex with-csum)
+;; => "0000000ddeadbeef48656c6c6f2c20576f726c6421"
+
+;; Extract just the payload — shares structure with the original
+(def payload (oc/rope-sub with-csum 8 (count with-csum)))
+(String. (oc/byte-rope-bytes payload) "UTF-8")
+;; => "Hello, World!"
+```
+
+**Why ByteRope?** Bytes are exposed as unsigned longs (0–255), avoiding
+signed-byte pitfalls. Big-endian and little-endian multi-byte reads
+(`byte-rope-get-short/int/long` with `-le` variants) are built in. You
+can splice, insert, or remove byte ranges in O(log n) instead of copying
+the whole buffer, which is exactly what protocol assembly and packet
+editing want.
+
+---
+
+## 5. Streaming Cryptographic Digest (ByteRope)
+
+**Problem:** Compute a SHA-256 (or any `MessageDigest` algorithm) over
+a large binary value without materializing the whole thing as one
+`byte[]`.
+
+```clojure
+;; Build a ~2 MB rope from 1-KB chunks — no intermediate copies
+(def large-data
+  (apply oc/byte-rope-concat
+    (for [i (range 2048)]
+      (byte-array 1024 (unchecked-byte i)))))
+
+(count large-data)  ;; => 2097152
+
+;; Compute SHA-256 by streaming chunks through MessageDigest.
+;; The rope never materializes the whole thing — each chunk is fed
+;; directly into the digest in its natural block size.
+(oc/byte-rope-hex (oc/byte-rope-digest large-data "SHA-256"))
+;; => "…64 hex chars…"
+
+;; Any algorithm the JVM supports
+(oc/byte-rope-hex (oc/byte-rope-digest large-data "MD5"))
+(oc/byte-rope-hex (oc/byte-rope-digest large-data "SHA-512"))
+
+;; Digests are themselves byte-ropes, so you can splice them into
+;; other messages without conversion
+(def stamped
+  (oc/byte-rope-concat
+    large-data
+    (oc/byte-rope-digest large-data "SHA-256")))
+```
+
+**Why ByteRope?** `byte-rope-digest` iterates the rope chunk-by-chunk
+through `java.security.MessageDigest` without building an intermediate
+`byte[]`. The same pattern applies to streaming compression, encryption,
+and any block-oriented consumer. For multi-gigabyte ropes this is the
+difference between working and OOM.
+
+---
+
+## 6. Persistent Undo History (any rope variant)
+
+**Problem:** Keep an arbitrarily long edit history for a document
+without paying the memory cost of a full copy per version.
+
+```clojure
+(def v0 (oc/string-rope "initial document"))
+(def v1 (oc/rope-insert  v0 0   "The "))
+(def v2 (oc/rope-splice  v1 4 7 "my"))
+(def v3 (oc/rope-splice  v2 0 3 "this is"))
+(def v4 (oc/rope-insert  v3 (count v3) "!"))
+
+(mapv str [v0 v1 v2 v3 v4])
+;; => ["initial document"
+;;     "The initial document"
+;;     "The my document"
+;;     "this is my document"
+;;     "this is my document!"]
+
+;; All five versions coexist. Each is a persistent snapshot that shares
+;; structure with its neighbours — most of the internal tree nodes are
+;; reused across versions.
+
+;; Undo is just picking an older reference
+(def current v4)
+(def after-undo (nth [v0 v1 v2 v3] 2))
+(str after-undo)
+;; => "The my document"
+
+;; Diff two versions without materializing either
+(= v1 v3)    ;; => false
+(count v1)   ;; => 20
+(count v3)   ;; => 19
+```
+
+**Why Rope?** Persistent ropes make undo trivial — every edit returns
+a new value whose internal tree mostly overlaps the previous one. You
+can keep hundreds of historical versions of a megabyte document for
+the cost of tens of kilobytes. The same pattern works for StringRope
+(text editors), ByteRope (binary patch editors), and generic Rope
+(any sequential data with a cursor).
+
+---
+
+## 7. Leaderboard with Rank Queries
 
 **Problem:** Maintain a leaderboard where you need to:
 - Add player scores
@@ -70,7 +358,7 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 2. Time-Series Windowing
+## 8. Time-Series Windowing
 
 **Problem:** Store timestamped events and efficiently query time ranges.
 
@@ -118,7 +406,7 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 3. Meeting Room Scheduler
+## 9. Meeting Room Scheduler
 
 **Problem:** Track meeting room bookings and find conflicts or free slots.
 
@@ -161,7 +449,7 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 4. Persistent Work Queue
+## 10. Persistent Work Queue
 
 **Problem:** Schedule work by priority, while keeping stable ordering among equal priorities.
 
@@ -201,7 +489,7 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 5. Parallel Aggregation
+## 11. Parallel Aggregation
 
 **Problem:** Aggregate large datasets efficiently using multiple cores.
 
@@ -240,7 +528,7 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 6. Efficient Set Algebra
+## 12. Efficient Set Algebra
 
 **Problem:** Compute intersections/unions/differences on large sorted sets.
 
@@ -272,7 +560,7 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 7. Sliding Window Statistics
+## 13. Sliding Window Statistics
 
 **Problem:** Maintain statistics over a sliding time window.
 
@@ -314,7 +602,7 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 8. Range Aggregate Queries (Segment Tree)
+## 14. Range Aggregate Queries (Segment Tree)
 
 **Problem:** Answer "what is the sum/max/min of values from key a to key b?" with efficient updates.
 
@@ -355,7 +643,7 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 9. Database Index Simulation
+## 15. Database Index Simulation
 
 **Problem:** Build a secondary index supporting range queries.
 
@@ -401,7 +689,7 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 10. Ordered Multiset
+## 16. Ordered Multiset
 
 **Problem:** Track duplicate values while keeping them sorted.
 
@@ -431,7 +719,7 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 11. Fuzzy Lookup / Nearest Neighbor
+## 17. Fuzzy Lookup / Nearest Neighbor
 
 **Problem:** Find the closest matching value when exact match doesn't exist.
 
@@ -470,7 +758,7 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 12. Splitting Collections
+## 18. Splitting Collections
 
 **Problem:** Partition a collection at a key or index for divide-and-conquer algorithms.
 
@@ -510,7 +798,7 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 13. Subrange Extraction
+## 19. Subrange Extraction
 
 **Problem:** Extract a contiguous range of elements by key bounds.
 
@@ -544,7 +832,7 @@ Practical examples showing where ordered-collections shines.
 
 ---
 
-## 14. Floor/Ceiling Queries
+## 20. Floor/Ceiling Queries
 
 **Problem:** Find the nearest element at or above/below a target.
 
@@ -582,6 +870,136 @@ Practical examples showing where ordered-collections shines.
 ```
 
 **Why ordered-collections?** O(log n) floor/ceiling queries using tree structure.
+
+---
+
+## 21. Non-Overlapping Ranges (Range Map)
+
+**Problem:** Map non-overlapping half-open ranges `[lo, hi)` to values and
+query by point. Inserting a new range should automatically carve out
+whatever it overlaps with existing ranges. Classic use cases: pricing
+tiers, version-gated feature flags, IP subnet ownership, memory-mapped
+region tables.
+
+```clojure
+;; Customer tier based on cumulative purchase amount
+(def tiers
+  (-> (oc/range-map)
+      (assoc [0 100]      :bronze)
+      (assoc [100 500]    :silver)
+      (assoc [500 5000]   :gold)
+      (assoc [5000 25000] :platinum)))
+
+(tiers 75)        ;; => :bronze     (point lookup)
+(tiers 250)       ;; => :silver
+(tiers 5000)      ;; => :platinum
+(tiers 30000)     ;; => nil         (outside all ranges)
+
+;; Which range does a point belong to?
+(oc/get-entry tiers 250)
+;; => [[100 500] :silver]
+
+;; Insert a flash-sale range — bronze and silver are automatically
+;; carved out so the new range sits cleanly in the middle.
+(def with-sale (assoc tiers [50 200] :flash))
+
+(oc/ranges with-sale)
+;; => ([[0 50]      :bronze]     ← auto-trimmed
+;;     [[50 200]    :flash]      ← inserted
+;;     [[200 500]   :silver]     ← auto-trimmed
+;;     [[500 5000]  :gold]
+;;     [[5000 25000] :platinum])
+
+(with-sale 75)    ;; => :flash    (used to be :bronze)
+(with-sale 600)   ;; => :gold     (unchanged)
+
+;; What ranges are unallocated?
+(oc/gaps tiers)
+;; => ()         (contiguous from 0 to 25000)
+
+(oc/gaps (-> (oc/range-map)
+             (assoc [0 100] :a)
+             (assoc [500 1000] :b)))
+;; => ([100 500])
+
+;; Coalescing: adjacent ranges with the same value merge automatically.
+(-> (oc/range-map)
+    (oc/assoc-coalescing [0 50]   :a)
+    (oc/assoc-coalescing [50 100] :a)   ; adjacent & same value → merged
+    (oc/assoc-coalescing [100 150] :b)
+    oc/ranges)
+;; => ([[0 100] :a] [[100 150] :b])
+
+;; Range removal clears a region entirely, leaving a gap.
+(oc/ranges (oc/range-map (-> tiers (oc/range-remove [100 500]))))
+;; => ([[0 100] :bronze] [[500 5000] :gold] [[5000 25000] :platinum])
+```
+
+**Why ordered-collections?** Range-map is a persistent version of
+Guava's `TreeRangeMap` — overlap detection is O(log n + k), point
+lookup is O(log n), and the carve-out-on-insert semantics mean you
+never have to manually split overlapping ranges. The persistent
+structure gives you free snapshots of pricing history or feature
+rollouts.
+
+---
+
+## 22. Availability Windows (Interval Set)
+
+**Problem:** Track a set of half-open time intervals (maintenance
+windows, busy periods, quiet hours, event schedules) and answer "is
+the current time inside any of them?". Unlike an interval-map, you
+don't have per-interval values — you just want overlap membership.
+
+```clojure
+;; Service maintenance windows — a set of intervals (no values).
+;; Scalar values are treated as point intervals.
+(def maintenance
+  (oc/interval-set [[100 130]      ; Mon 01:00-01:30
+                    [700 730]      ; Mon 07:00-07:30
+                    [1200 1215]    ; Mon 12:00-12:15 (deploy)
+                    [2200 2230]])) ; Mon 22:00-22:30
+
+;; Point query — is time t inside any maintenance window?
+(defn maintenance-now? [t]
+  (boolean (seq (oc/overlapping maintenance t))))
+
+(maintenance-now? 105)    ;; => true   (inside [100 130])
+(maintenance-now? 600)    ;; => false
+(maintenance-now? 1210)   ;; => true   (inside [1200 1215])
+
+;; Range query — which windows overlap a time range?
+(oc/overlapping maintenance [115 720])
+;; => ([100 130] [700 730])
+
+;; Set algebra on intervals
+(def planned
+  (oc/interval-set [[100 130] [700 730] [1200 1215]]))
+
+(def ad-hoc
+  (oc/interval-set [[800 815] [1205 1210] [1800 1830]]))
+
+(oc/union planned ad-hoc)
+;; => all planned + ad-hoc windows
+
+(oc/intersection planned ad-hoc)
+;; => #{[1200 1215]}  ← the one overlap (structurally: 1205-1210 is a subset)
+
+;; When does the next maintenance end?
+(defn next-free-slot [iset now]
+  (when-let [[_ hi] (first (oc/overlapping iset now))]
+    hi))
+
+(next-free-slot maintenance 1205)   ;; => 1215
+(next-free-slot maintenance 1500)   ;; => nil   (not in a window)
+```
+
+**Why ordered-collections?** Interval-set gives you O(log n + k)
+overlap queries via the interval-tree augmentation, plus set algebra
+(`union`, `intersection`, `difference`) over intervals as elements.
+When you care about "what's happening" and not "what values are
+attached", interval-set is lighter than interval-map and supports
+the same spatial-query operations.
 
 ---
 
@@ -645,82 +1063,14 @@ Practical examples showing where ordered-collections shines.
    (oc/string-ordered-set ["alice" "bob" "carol"])
    ```
 
----
+8. **Pick the right rope variant**
+   ```clojure
+   ;; Text editing — StringRope beats plain String at ~100+ chars
+   (oc/string-rope "…")
 
-## 11. Document Editor Buffer
+   ;; Binary data — ByteRope beats byte[] once edits get expensive
+   (oc/byte-rope #_…)
 
-**Problem:** Implement an editor buffer that supports:
-- Efficient insert and delete at any position
-- Undo/redo via persistent snapshots
-- Extracting a visible window without copying the whole document
-- Fast bulk assembly from parts (e.g., loading a file in chunks)
-
-Vectors are O(n) for mid-document edits — every insertion shifts all subsequent
-elements. A rope does these in O(log n), and persistent snapshots are
-nearly free because edits share structure with previous versions.
-
-```clojure
-;; Build a document from paragraphs
-(def doc
-  (apply oc/rope-concat
-    (map oc/rope
-      [["T" "h" "e" " " "q" "u" "i" "c" "k" " "]
-       ["b" "r" "o" "w" "n" " " "f" "o" "x" " "]
-       ["j" "u" "m" "p" "s" "."]])))
-
-(count doc)        ;; => 26
-(nth doc 10)       ;; => "b"
-(apply str doc)    ;; => "The quick brown fox jumps."
-
-;; Insert at cursor position — O(log n)
-(def after-insert
-  (oc/rope-insert doc 10 ["dark " ]))
-
-;; after-insert is not a copy — it shares almost all structure with doc
-(apply str after-insert)
-;; => "The quick dark brown fox jumps."
-
-;; Delete a range — O(log n)
-(def after-delete
-  (oc/rope-remove after-insert 10 15))
-
-(apply str after-delete)
-;; => "The quick brown fox jumps."
-
-;; Replace (find and replace) — O(log n)
-(def after-replace
-  (oc/rope-splice doc 4 9 (seq "slow")))
-
-(apply str after-replace)
-;; => "The slow brown fox jumps."
-
-;; Undo: just keep the old version — structural sharing makes this cheap
-(def history [doc after-insert after-delete after-replace])
-(apply str (nth history 0))  ;; => "The quick brown fox jumps."
-(apply str (nth history 1))  ;; => "The quick dark brown fox jumps."
-
-;; Extract visible window — O(log n), shares structure
-(def visible (oc/rope-sub doc 4 15))
-(apply str visible)  ;; => "quick brown"
-
-;; Split document at a section break
-(let [[before after] (oc/rope-split doc 10)]
-  [(apply str before) (apply str after)])
-;; => ["The quick " "brown fox jumps."]
-```
-
-**Why ordered-collections?** Every edit is O(log n) regardless of document
-size. A 100K-character document with 200 random edits takes ~3ms on a rope vs
-~5 seconds on a vector — a 1,968x advantage. The persistent structure means
-undo history is just a list of references, not copies.
-
-**Scaling:**
-
-| Operation | Rope | Vector |
-|---|---|---|
-| Insert at position | O(log n) | O(n) |
-| Delete range | O(log n) | O(n) |
-| Concatenate documents | O(log n) | O(n) |
-| Extract visible window | O(log n) | O(1) |
-| Undo (keep old version) | free | O(n) copy |
-| Reduce over full document | O(n) | O(n) |
+   ;; Anything else sequential — the generic rope
+   (oc/rope [1 2 3 …])
+   ```

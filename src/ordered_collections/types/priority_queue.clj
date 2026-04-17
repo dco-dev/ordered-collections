@@ -262,7 +262,7 @@
   java.io.Serializable
 
   INodeCollection
-  (getAllocator [_] nil)
+  (getAllocator [_] tree/node-create-weight-balanced)
   (getRoot [_] root)
 
   IOrderedCollection
@@ -273,7 +273,7 @@
   (isSimilar [_ _] false)
 
   IBalancedCollection
-  (getStitch [_] nil)
+  (getStitch [_] tree/node-stitch)
 
   clojure.lang.IMeta
   (meta [_] _meta)
@@ -533,7 +533,7 @@
 
 (defmethod print-method PriorityQueue [^PriorityQueue pq ^java.io.Writer w]
   (if (order/default-comparator? (.cmp pq))
-    (do (.write w "#ordered/priority-queue [")
+    (do (.write w "#priority/queue [")
         (when-let [s (seq pq)]
           (print-method (first s) w)
           (doseq [x (rest s)]

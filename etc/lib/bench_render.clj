@@ -16,6 +16,9 @@
 (def loss-cols
   [{:width 8} {:width 22} {:width 18} {:width 18} {:width 12 :align :right} {:width 0}])
 
+(def win-cols
+  [{:width 8} {:width 22} {:width 18} {:width 18} {:width 12 :align :right}])
+
 (def delta-cols
   [{:width 8} {:width 22} {:width 20} {:width 10 :align :right}
    {:width 10 :align :right} {:width 10 :align :right} {:width 14}])
@@ -26,6 +29,15 @@
 
 (def parity-cols
   [{:width 24} {:width 18} {:width 18} {:width 10 :align :right}])
+
+(def category-cols
+  [{:width 18} {:width 7 :align :right} {:width 7 :align :right}
+   {:width 8 :align :right} {:width 9 :align :right} {:width 9 :align :right}
+   {:width 28}])
+
+(def rope-family-cols
+  [{:width 22} {:width 10 :align :right} {:width 14 :align :right}
+   {:width 13 :align :right}])
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -137,10 +149,7 @@
           (doseq [{:keys [label sizes]} section-rows]
             (let [cells (mapv (fn [entry]
                                 (if entry
-                                  (let [s (:speedup entry)]
-                                    (if (>= s 1.0)
-                                      (format "**%.1fx**" (double s))
-                                      (format "%.1fx" (double s))))
+                                  (format "%.1fx" (double (:speedup entry)))
                                   "—"))
                               sizes)]
               (apply report/table-row cols (into [label] cells)))))))))
@@ -165,6 +174,27 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Significant Wins
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn render-significant-wins
+  "Scorecard entries where OC wins by more than ~1.2x, sorted by speedup."
+  [wins opts]
+  (when (seq wins)
+    (common/section "Significant Wins")
+    (apply report/table-row win-cols
+           ["Size" "Group" "OC Variant" "Peer" "Speedup"])
+    (doseq [{:keys [size group ordered-variant peer-variant speedup]}
+            (limit wins opts)]
+      (apply report/table-row win-cols
+             [(str size)
+              (name group)
+              (name ordered-variant)
+              (name peer-variant)
+              (format "%.1fx" (double speedup))]))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Significant Losses
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -182,6 +212,73 @@
               (name peer-variant)
               (format "%.1fx slower" (double slowdown))
               (or context "")]))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Category Summary
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- fmt-ratio-right [r]
+  (when r (format "%.1fx" (double r))))
+
+(defn render-category-summary
+  "Per-category aggregated stats. Each row shows how many wins/parity/losses
+   the category contributes, the geometric mean speedup across all of the
+   category's cases, and the single best and worst cases with their groups."
+  [summary]
+  (when (seq summary)
+    (common/section "Performance by Category")
+    (apply report/table-row category-cols
+           ["Category" "Wins" "Parity" "Losses" "Geomean" "Best" "Worst case (group)"])
+    (doseq [{:keys [category wins parity losses geomean best-win
+                    worst-loss worst-loss-group]} summary]
+      (apply report/table-row category-cols
+             [(name category)
+              (str wins)
+              (str parity)
+              (str losses)
+              (or (fmt-ratio-right geomean) "-")
+              (or (fmt-ratio-right best-win) "-")
+              (if worst-loss
+                (format "%.1fx slower (%s)"
+                        (/ 1.0 (double worst-loss))
+                        (name worst-loss-group))
+                "-")]))))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Rope Family Summary
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- fmt-speedup-cell [s]
+  (cond
+    (nil? s)     "—"
+    (>= s 10.0)  (format "%.0fx" (double s))
+    (>= s 1.0)   (format "%.1fx" (double s))
+    (>= s 0.1)   (format "%.2fx" (double s))
+    (>= s 0.01)  (format "%.3fx" (double s))
+    :else        (format "%.4fx" (double s))))
+
+(defn render-rope-family
+  "Side-by-side speedups for the three rope variants on structural
+   operations, each compared against its natural baseline (vector /
+   String / byte[]) at the largest benchmarked size."
+  [rows]
+  (when (seq rows)
+    (let [size (:size (first rows))]
+      (common/section "Rope Family at Scale")
+      (println (str "  Each cell is 'variant vs natural baseline' speedup at N="
+                    size "."))
+      (println (str "  rope vs PersistentVector · string-rope vs String · byte-rope vs byte[]"))
+      (println)
+      (apply report/table-row rope-family-cols
+             ["Operation" "rope" "string-rope" "byte-rope"])
+      (doseq [{:keys [label rope-speedup string-rope-speedup byte-rope-speedup]} rows]
+        (apply report/table-row rope-family-cols
+               [label
+                (fmt-speedup-cell rope-speedup)
+                (fmt-speedup-cell string-rope-speedup)
+                (fmt-speedup-cell byte-rope-speedup)])))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

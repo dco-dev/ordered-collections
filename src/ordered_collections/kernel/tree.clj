@@ -1802,6 +1802,34 @@
            (neg? c)  (recur (-l n) k rank)
            :else     (recur (-r n) k (+ 1 rank (node-size (-l n))))))))))
 
+(defn node-rank-long
+  "Primitive-specialized rank for Long keys. Bypasses Comparator dispatch
+   by using Long/compare directly. Returns the 0-based rank of k, or nil
+   if absent."
+  [n ^long k]
+  (loop [n n rank (long 0)]
+    (if (leaf? n)
+      nil
+      (let [nk (long (-k n))
+            c (Long/compare k nk)]
+        (cond
+          (zero? c) (+ rank (node-size (-l n)))
+          (neg? c)  (recur (-l n) rank)
+          :else     (recur (-r n) (+ 1 rank (node-size (-l n)))))))))
+
+(defn node-rank-string
+  "String-specialized rank. Uses String.compareTo directly. Returns the
+   0-based rank of k, or nil if absent."
+  [n ^String k]
+  (loop [n n rank (long 0)]
+    (if (leaf? n)
+      nil
+      (let [c (.compareTo k ^String (-k n))]
+        (cond
+          (zero? c) (+ rank (node-size (-l n)))
+          (neg? c)  (recur (-l n) rank)
+          :else     (recur (-r n) (+ 1 rank (node-size (-l n)))))))))
+
 ;; MAYBE: other splits? <= < > ?
 
 (defn node-split-nth
@@ -1824,6 +1852,28 @@
                 (not (fn? accessor)) node-accessor)]
     (fold #(conj! %1 (nval %2)) acc n)
     (persistent! acc)))
+
+(defn node-build-sorted
+  "Build a balanced tree from pre-sorted [k v] pairs in O(n). The caller
+   must guarantee the input is sorted by key under the current ordering
+   and contains no duplicate keys. Uses the currently bound `*t-join*`.
+
+   Because halves differ by at most 1 in count, the result is within the
+   weight-balance bound without any rotation, so `node-stitch` is not
+   needed on the build path."
+  [sorted-kvs]
+  (let [v (vec sorted-kvs)
+        n (count v)
+        create *t-join*]
+    (letfn [(build [^long lo ^long hi]
+              (if (>= lo hi)
+                (leaf)
+                (let [mid (quot (+ lo hi) 2)
+                      kv  (nth v mid)]
+                  (create (nth kv 0) (nth kv 1)
+                    (build lo mid)
+                    (build (unchecked-inc mid) hi)))))]
+      (build 0 n))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Lazy Seq
@@ -1984,3 +2034,38 @@
        (leaf? n)        nil
        (not (pos? cnt)) nil
        true (->> from (node-split-nth n) node-seq (take cnt))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Direct Iterator
+;;
+;; Non-allocating `java.util.Iterator` over a tree. Avoids the per-step
+;; seq-cell allocation incurred by `SeqIterator` over a lazy seq of entries
+;; — advances the underlying enumerator in place via an unsynchronized
+;; mutable field.
+
+(deftype NodeIterator [^:unsynchronized-mutable enum
+                       ^clojure.lang.IFn advance
+                       ^clojure.lang.IFn project]
+  java.util.Iterator
+  (hasNext [_] (some? enum))
+  (next [_]
+    (when (nil? enum)
+      (throw (java.util.NoSuchElementException.)))
+    (let [node   (node-enum-first enum)
+          result (project node)]
+      (set! enum (advance enum))
+      result))
+  (remove [_]
+    (throw (UnsupportedOperationException.))))
+
+(defn node-iterator
+  "Non-allocating forward `java.util.Iterator` over tree nodes. Applies
+   `project` to each visited node before yielding (typically `-k`, `-v`,
+   `-kv`, or `identity`)."
+  [root project]
+  (NodeIterator. (node-enumerator root) node-enum-rest project))
+
+(defn node-iterator-reverse
+  "Non-allocating reverse `java.util.Iterator` over tree nodes."
+  [root project]
+  (NodeIterator. (node-enumerator-reverse root) node-enum-prior project))

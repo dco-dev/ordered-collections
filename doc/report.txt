@@ -1,0 +1,320 @@
+ _                 _                            _
+| |__  ___ _ _  __| |_    _ _ ___ _ __  ___ _ _| |_
+| '_ \/ -_) ' \/ _| ' \  | '_/ -_) '_ \/ _ \ '_|  _|
+|_.__/\___|_||_\__|_||_| |_| \___| .__/\___/_|  \__|
+                                 |_|
+
+
+────────────────────────────────────────────────────────────────────────
+  Run
+────────────────────────────────────────────────────────────────────────
+File                     /Users/dan/src/ordered-collections/bench-results/2026-04-17_11-03-53.edn
+Baseline                 /Users/dan/src/ordered-collections/bench-results/2026-04-12_16-48-22.edn
+Timestamp                2026-04-17T17:32:10.303781Z
+Mode                     :full
+Artifact version         3
+Git branch               021-specialized-ropes
+Git rev                  990b9a5114
+Sizes                    [1000 5000 10000 100000 500000]
+Benchmark cases                                    1254
+Benchmark groups                                     96
+
+────────────────────────────────────────────────────────────────────────
+  Platform
+────────────────────────────────────────────────────────────────────────
+Host                     kiwi
+OS                       Mac OS X 26.3.1 aarch64
+Processors                                           12
+Java                     25.0.2 (Homebrew)
+VM                       OpenJDK 64-Bit Server VM
+Max memory (MB)                                    8192
+Heap max (MB)                                      8192
+Heap committed (MB)                                 376
+Heap used (MB)                                      107
+
+────────────────────────────────────────────────────────────────────────
+  Baseline Run
+────────────────────────────────────────────────────────────────────────
+File                     /Users/dan/src/ordered-collections/bench-results/2026-04-12_16-48-22.edn
+Timestamp                2026-04-12T23:16:26.435562Z
+Mode                     :full
+Git branch               021-specialized-ropes
+Git rev                  6acf560a90
+
+────────────────────────────────────────────────────────────────────────
+  Summary
+────────────────────────────────────────────────────────────────────────
+1254 benchmarks across 96 groups at N=1000, 5000, 10000, 100000, 500000. 154
+wins, 18 at parity, 88 losses. Best win: 1236.6x on rope-repeated-edits.
+Worst loss: 9.1x slower on string-rope-re-seq. 92 regressions, 98
+improvements vs baseline.
+
+────────────────────────────────────────────────────────────────────────
+  Headline Performance
+────────────────────────────────────────────────────────────────────────
+
+  Set Algebra vs sorted-set
+                             N=1000       N=5000      N=10000     N=100000     N=500000
+Union                         11.4x        10.6x        12.9x        23.4x        59.6x
+Intersection                   7.6x         7.7x         9.3x        15.5x        34.6x
+Difference                     9.4x        10.5x        10.8x        24.3x        54.7x
+
+  Set Algebra vs data.avl
+                             N=1000       N=5000      N=10000     N=100000     N=500000
+Union                          7.9x         7.8x         9.7x        20.0x        51.3x
+Intersection                   6.5x         5.8x         6.9x        13.1x        29.9x
+Difference                     5.9x         6.2x         7.9x        15.0x        37.2x
+
+  Set Algebra vs clojure.core/set
+                             N=1000       N=5000      N=10000     N=100000     N=500000
+Union                          3.5x         2.9x         3.7x         7.2x        20.5x
+Intersection                   3.4x         3.0x         3.5x         6.6x        17.8x
+Difference                     3.6x         3.7x         4.6x         9.8x        28.4x
+
+  Ordered Set vs sorted-set
+                             N=1000       N=5000      N=10000     N=100000     N=500000
+Construction                   2.2x         1.9x         2.1x         2.4x         2.8x
+Lookup                         1.3x         1.1x         1.1x         1.0x         0.9x
+Iteration                      1.7x         1.0x         1.1x         1.0x         1.0x
+Fold                           1.1x         2.0x         2.5x         4.0x         3.5x
+Split                          5.1x         4.4x         4.9x         6.1x         6.8x
+
+  Ordered Set vs data.avl
+                             N=1000       N=5000      N=10000     N=100000     N=500000
+Construction                   1.1x         1.0x         1.1x         1.2x         1.5x
+Lookup                         1.2x         0.9x         1.0x         0.9x         0.9x
+Iteration                      0.2x         0.3x         0.4x         0.3x         0.3x
+
+  Ordered Map vs sorted-map
+                             N=1000       N=5000      N=10000     N=100000     N=500000
+Construction                   1.3x         1.2x         1.4x         1.6x         2.3x
+Lookup                         1.2x         1.3x         1.2x         1.2x         1.1x
+Iteration                      2.8x         1.1x         1.1x         0.9x         1.0x
+Reduce                         3.1x         1.1x         1.2x         1.0x         1.0x
+
+  Ordered Map vs data.avl
+                             N=1000       N=5000      N=10000     N=100000     N=500000
+Construction                   1.1x         1.0x         1.2x         1.2x         1.6x
+Lookup                         1.4x         1.2x         1.2x         1.1x         1.0x
+Iteration                      0.5x         0.8x         0.8x         0.7x         0.6x
+
+  Long-Specialized vs sorted-set
+                             N=1000       N=5000      N=10000     N=100000     N=500000
+Construction                   0.6x         1.5x         1.8x         1.9x         2.6x
+Lookup                         1.9x         1.4x         1.2x         1.3x         1.2x
+Union                          6.6x         7.4x         9.6x        16.4x        41.3x
+Intersection                   4.7x         5.2x         6.7x        11.1x        27.3x
+Difference                     6.4x         7.2x         8.3x        16.9x        38.0x
+
+  String-Specialized vs sorted-set-by
+                             N=1000       N=5000      N=10000     N=100000     N=500000
+Construction                   1.1x         2.2x         2.8x         2.8x         2.8x
+Lookup                         1.7x         1.6x         1.5x         1.3x         1.0x
+Union                          1.4x         1.9x         2.2x         2.1x         5.8x
+Intersection                   1.4x         2.0x         2.2x         2.1x         5.4x
+Difference                     2.4x         3.6x         4.2x         8.8x        13.7x
+
+  Rope vs PersistentVector
+                             N=1000       N=5000      N=10000     N=100000     N=500000
+200 Random Edits               4.7x        13.7x        25.7x       261.4x      1236.6x
+Single Splice                  4.8x        12.7x       105.6x       761.8x       863.1x
+Concat Pieces                169.3x        22.4x        29.0x        39.1x        35.9x
+Chunk Iteration                1.0x         1.0x         1.0x         1.0x         1.0x
+Reduce (sum)                   1.0x         1.7x         1.4x         1.5x         1.4x
+Fold (sum)                     2.9x         1.4x         1.2x         1.4x         1.6x
+Random nth (1000)              0.5x         0.2x         0.2x         0.2x         0.2x
+Fold (freq map)                1.0x         0.7x         0.7x         1.0x         1.2x
+
+  StringRope vs String
+                             N=1000       N=5000      N=10000     N=100000     N=500000
+Single Splice                  0.4x         3.2x         5.9x        41.7x       349.2x
+Single Insert                  0.4x         2.7x         6.2x        39.7x       153.5x
+Single Remove                  1.5x         3.6x         7.1x        43.8x       412.2x
+Concat Halves                  0.9x         0.5x         2.5x        20.0x        28.9x
+Split at Midpoint              0.9x         0.1x         0.3x         1.7x         6.6x
+200 Random Edits               0.6x         2.6x         5.7x        38.2x       129.6x
+Random nth (1000)              0.2x         0.1x         0.1x         0.0x         0.0x
+Reduce (sum chars)             0.5x         0.5x         0.5x         0.5x         0.5x
+re-find                        1.3x         0.1x         0.1x         0.1x         0.1x
+re-seq                         0.6x         0.2x         0.2x         0.1x         0.1x
+Materialization (str)          0.7x         0.0x         0.0x         0.0x         0.0x
+str/replace (regex)            1.0x         1.0x         1.0x         1.0x         1.0x
+
+  StringRope vs StringBuilder
+                             N=1000       N=5000      N=10000     N=100000     N=500000
+Single Splice                  0.2x         2.1x         3.5x        22.7x       195.4x
+Single Insert                  0.2x         1.7x         3.5x        22.5x        80.7x
+Single Remove                  0.8x         2.2x         4.2x        24.5x       236.5x
+Concat Halves                  0.7x         0.4x         2.2x        16.4x        22.4x
+Split at Midpoint              0.8x         0.1x         0.3x         1.7x         6.6x
+200 Random Edits               0.2x         1.4x         3.3x        22.4x        74.8x
+Construction                  10.0x         0.5x         1.0x         1.0x         0.9x
+
+  ByteRope vs byte[]
+                             N=1000       N=5000      N=10000     N=100000     N=500000
+Single Splice                  0.1x         1.4x         2.7x        11.3x       109.6x
+Single Insert                  0.1x         1.0x         2.4x         9.7x        43.4x
+Single Remove                  0.8x         1.5x         2.8x        10.4x       128.3x
+Concat 4 Pieces                0.1x         0.3x         0.3x         0.4x         0.4x
+Split at Midpoint              0.8x         0.1x         0.3x         1.8x         7.1x
+200 Random Edits               0.2x         1.0x         2.0x        13.6x        46.4x
+Random nth (1000)              0.1x         0.0x         0.0x         0.0x         0.0x
+Reduce (sum bytes)             0.1x         0.2x         0.1x         0.1x         0.1x
+Fold (sum bytes)               0.1x         0.0x         0.1x         0.4x         0.6x
+Construction                  74.2x         2.9x         1.8x         0.5x         0.3x
+Materialization               73.7x        12.2x         6.5x         1.3x         0.7x
+SHA-256                        0.9x         0.9x         0.9x         1.0x         1.0x
+
+  Range Map vs Guava TreeRangeMap
+                             N=1000       N=5000      N=10000     N=100000     N=500000
+Construction                   0.2x         0.2x         0.2x         0.2x         0.2x
+Point Lookup                   0.2x         0.3x         0.3x         0.4x         0.5x
+Carve-out Insert               2.4x         1.6x         1.8x         2.0x         2.1x
+Iteration                      1.7x         1.5x         1.5x         1.6x         2.0x
+
+  Segment Tree vs sorted-map
+                             N=1000       N=5000      N=10000     N=100000     N=500000
+Construction                   0.3x         0.3x         0.4x         0.4x         0.4x
+Range Query                    9.2x        30.3x        65.6x       518.7x      3043.6x
+Point Update                   0.4x         0.4x         0.5x         0.5x         0.5x
+
+  Priority Queue vs sorted-set-by
+                             N=1000       N=5000      N=10000     N=100000     N=500000
+Construction                   1.7x         1.9x         1.8x         2.7x         3.2x
+Push                           2.1x         2.2x         2.2x         3.0x         3.7x
+Pop-min                        2.1x         2.1x         1.6x         1.9x         2.3x
+
+  Ordered Multiset vs sorted-map counts
+                             N=1000       N=5000      N=10000     N=100000     N=500000
+Construction                   0.9x         0.7x         0.7x         0.7x         0.6x
+Multiplicity                   1.2x         1.1x         1.1x         1.2x         1.1x
+Iteration                      1.5x         1.3x         1.8x         1.6x         1.9x
+
+  Fuzzy Set vs sorted-set
+                             N=1000       N=5000      N=10000     N=100000     N=500000
+Construction                   1.0x         1.7x         2.1x         2.3x         3.0x
+Nearest Lookup                 1.0x         0.8x         0.8x         0.7x         0.8x
+
+  Fuzzy Map vs sorted-map
+                             N=1000       N=5000      N=10000     N=100000     N=500000
+Construction                   0.6x         0.6x         0.6x         0.7x         0.7x
+Nearest Lookup                 1.0x         0.7x         0.8x         0.6x         0.7x
+
+────────────────────────────────────────────────────────────────────────
+  Performance by Category
+────────────────────────────────────────────────────────────────────────
+Category              Wins  Parity   Losses   Geomean      Best Worst case (group)          
+set-algebra             45       0        0      4.0x     28.4x -                           
+construction            16       2        7      0.8x      1.7x 7.9x slower (long-construction)
+lookup                  18       4        8      0.9x      1.5x 4.6x slower (long-lookup)   
+iteration                2       4       16      0.6x      1.2x 3.4x slower (set-iteration) 
+fold                    31       2        4      1.9x      4.9x 1.5x slower (rope-fold-freq)
+split                   10       0        0      4.7x      6.8x -                           
+equality                 5       2        0      1.9x      6.1x -                           
+rank                     0       0        5      0.7x         - 1.5x slower (rank-access)   
+range-map                9       0       10      0.7x      2.4x 5.5x slower (range-map-construction)
+rope                    10       0        0     45.6x   1236.6x -                           
+string-rope              4       4        8      0.9x     74.8x 9.1x slower (string-rope-re-seq)
+other                    4       0       30      0.6x      1.3x 2.7x slower (long-insert)   
+
+────────────────────────────────────────────────────────────────────────
+  Rope Family at Scale
+────────────────────────────────────────────────────────────────────────
+  Each cell is 'variant vs natural baseline' speedup at N=500000.
+  rope vs PersistentVector · string-rope vs String · byte-rope vs byte[]
+
+Operation                    rope    string-rope     byte-rope
+Concat                        36x            29x         0.40x
+Split                           —           6.6x          7.1x
+Splice                       863x           349x          110x
+Insert                          —           154x           43x
+Remove                          —           412x          128x
+200 Random Edits            1237x           130x           46x
+Random nth                  0.17x         0.034x        0.017x
+Reduce                       1.4x          0.47x         0.11x
+
+────────────────────────────────────────────────────────────────────────
+  Significant Wins
+────────────────────────────────────────────────────────────────────────
+Size     Group                  OC Variant         Peer                    Speedup
+500000   rope-repeated-edits    rope               vector                  1236.6x
+500000   rope-splice            rope               vector                   863.1x
+100000   rope-repeated-edits    rope               vector                   261.4x
+500000   string-rope-repeated-edits string-rope        string-builder            74.8x
+100000   rope-concat            rope               vector                    39.1x
+500000   rope-concat            rope               vector                    35.9x
+500000   set-difference         ordered-set        clojure-set               28.4x
+10000    rope-repeated-edits    rope               vector                    25.7x
+100000   string-rope-repeated-edits string-rope        string-builder            22.4x
+500000   set-union              ordered-set        clojure-set               20.5x
+500000   set-intersection       ordered-set        clojure-set               17.8x
+500000   long-difference        long-ordered       clojure-set               16.1x
+500000   long-union             long-ordered       clojure-set               14.1x
+5000     rope-repeated-edits    rope               vector                    13.7x
+5000     rope-splice            rope               vector                    12.7x
+500000   long-intersection      long-ordered       clojure-set               11.6x
+500000   string-set-difference  string-ordered     data-avl                  10.6x
+100000   set-difference         ordered-set        clojure-set                9.8x
+100000   set-union              ordered-set        clojure-set                7.2x
+100000   long-difference        long-ordered       clojure-set                7.0x
+500000   split                  ordered-set        data-avl                   6.8x
+100000   set-intersection       ordered-set        clojure-set                6.6x
+500000   different              ordered-set        hash-set                   6.1x
+100000   split                  ordered-set        data-avl                   6.1x
+500000   long-split             long-ordered       data-avl                   5.9x
+100000   string-set-difference  string-ordered     data-avl                   5.8x
+500000   string-set-union       string-ordered     sorted-set-by              5.8x
+100000   long-union             long-ordered       clojure-set                5.2x
+500000   string-set-intersection string-ordered     data-avl                   5.1x
+1000     split                  ordered-set        data-avl                   5.1x
+
+────────────────────────────────────────────────────────────────────────
+  At Parity
+────────────────────────────────────────────────────────────────────────
+Group                    OC Variant         Peer                    Ratio
+map-construction         ordered-map        data-avl               ~1.01x
+map-lookup               ordered-map        data-avl               ~1.03x
+rank-lookup              ordered-set        data-avl               ~1.02x
+rope-chunk-iteration     rope               vector                 ~1.00x
+rope-fold-freq           rope               vector                 ~1.04x
+set-construction         ordered-set        data-avl               ~0.97x
+set-lookup               ordered-set        data-avl               ~1.00x
+string-rope-re-replace   string-rope        string                 ~0.98x
+string-set-lookup        string-ordered     sorted-set-by          ~1.03x
+equal                    ordered-set        hash-set               ~0.99x
+
+────────────────────────────────────────────────────────────────────────
+  Significant Losses
+────────────────────────────────────────────────────────────────────────
+Size     Group                  OC Variant         Peer                   Slowdown Context
+500000   string-rope-re-seq     string-rope        string              9.1x slower 
+100000   string-rope-re-seq     string-rope        string              9.0x slower 
+1000     long-construction      long-ordered       hash-set            7.9x slower 
+10000    string-rope-re-seq     string-rope        string              6.3x slower 
+5000     range-map-construction range-map          guava-range-map     5.5x slower 
+1000     range-map-construction range-map          guava-range-map     4.9x slower 
+5000     string-rope-re-seq     string-rope        string              4.9x slower 
+10000    range-map-construction range-map          guava-range-map     4.9x slower 
+5000     long-construction      long-ordered       hash-set            4.9x slower 
+100000   range-map-construction range-map          guava-range-map     4.7x slower 
+100000   long-lookup            long-ordered       hash-set            4.6x slower 
+100000   long-construction      long-ordered       hash-set            4.6x slower 
+500000   long-lookup            long-ordered       hash-set            4.5x slower 
+1000     string-rope-repeated-edits string-rope        string-builder      4.5x slower 
+500000   range-map-construction range-map          guava-range-map     4.5x slower 
+1000     range-map-lookup       range-map          guava-range-map     4.3x slower 
+10000    long-construction      long-ordered       hash-set            4.0x slower 
+5000     long-lookup            long-ordered       hash-set            3.8x slower 
+10000    long-lookup            long-ordered       hash-set            3.7x slower 
+500000   long-construction      long-ordered       hash-set            3.6x slower 
+500000   set-iteration          ordered-set        data-avl            3.4x slower Enumerator-based seq allocates per step
+5000     range-map-lookup       range-map          guava-range-map     3.4x slower 
+100000   set-iteration          ordered-set        data-avl            3.3x slower Enumerator-based seq allocates per step
+10000    range-map-lookup       range-map          guava-range-map     3.1x slower 
+5000     set-iteration          ordered-set        data-avl            3.0x slower Enumerator-based seq allocates per step
+100000   long-iteration         long-ordered       data-avl            2.9x slower 
+1000     long-insert            long-ordered       data-avl            2.7x slower 
+10000    set-iteration          ordered-set        data-avl            2.7x slower Enumerator-based seq allocates per step
+1000     long-lookup            long-ordered       hash-set            2.5x slower 
+500000   long-iteration         long-ordered       data-avl            2.4x slower 
+

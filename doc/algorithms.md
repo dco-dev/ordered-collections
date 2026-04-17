@@ -597,12 +597,18 @@ by element count.
 Chunks are bounded by a formal invariant analogous to B-tree minimum fill:
 
 ```
-target = 256    min = 256
+target = 1024    min = 512    (per-variant, kernel-wide default)
 
 Every chunk has size in [min, target] except:
   - If the rope has ≤ 1 chunk, it may be any size in [1, target]
   - Otherwise, only the rightmost chunk (the "runt") may be [1, target]
 ```
+
+Each rope variant (`rope`, `string-rope`, `byte-rope`) carries its own
+`+target-chunk-size+` / `+min-chunk-size+` constants and binds them into
+the kernel's `*target-chunk-size*` / `*min-chunk-size*` dynamic vars via
+its `with-tree` macro. The values above are the current tuned defaults;
+`lein bench-rope-tuning` sweeps candidate sizes for each variant.
 
 CSI is enforced locally at each mutation site:
 
@@ -617,6 +623,31 @@ CSI is enforced locally at each mutation site:
 `rechunk-balanced` is the core partitioning helper: it packs greedily at target
 size, but when the last full chunk would leave a remainder below min, it splits
 the final two pieces evenly so both halves are ≥ min.
+
+### Flat Mode
+
+Below the target chunk size, a rope would consist of exactly one chunk
+wrapped in a single tree node. That wrapper adds no information, so
+every rope variant applies a **flat-mode** optimization: when the
+element count is at or below the flat threshold (= `+target-chunk-size+`,
+currently 1024), the rope stores its content as a bare concrete
+collection in its `root` field — a `PersistentVector` for the generic
+rope, a `java.lang.String` for the string rope, a `byte[]` for the byte
+rope — and skips the tree wrapper entirely.
+
+Reads dispatch directly to the underlying type's native operations with
+zero indirection (`.nth` on the vector, `.charAt` on the string,
+`aget` on the byte array). Structural edits use the native type's
+own efficient operations (`subvec`+`into`, `StringBuilder`,
+`System.arraycopy`) and promote to the chunked tree form only when
+the result would exceed the threshold. Transient construction always
+builds a tree internally but demotes back to flat form at
+`persistent!` time if the final result fits.
+
+The flat threshold is `+target-chunk-size+` — "small enough to live in
+one chunk" and "small enough to stay flat" are the same regime. Memory
+overhead for a flat-mode rope is essentially identical to the raw
+underlying type.
 
 ### Indexed Access
 
@@ -751,10 +782,16 @@ Rope loses (bounded, inherent O(log n) vs O(1)):
 └────────────────────┴───────┴────────┴────────┘
 ```
 
-Reduce beats vectors at N ≥ 100K because the rope's 256-element chunk size
+Reduce beats vectors at N ≥ 100K because the rope's 1024-element chunk size
 gives better cache locality per reduction step than PersistentVector's 32-wide
 trie nodes. The direct recursive tree walk (no enumerator frames) and native
 vector `.reduce` delegation keep per-element overhead minimal.
+
+At N ≤ 1024 the rope is in **flat mode** — the root holds a bare
+`PersistentVector` directly rather than a one-chunk tree, so every read
+dispatches straight to the underlying vector with zero indirection. At
+that size, the rope's read performance is essentially identical to
+`PersistentVector` itself.
 
 Every remaining loss is structural — there are no non-inherent performance gaps:
 

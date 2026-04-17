@@ -3,13 +3,14 @@
 
    Usage:
      lein bench                  # Default: N=100K (~5 min)
-     lein bench --full           # N=10K,100K,500K (~20-30 min)
+     lein bench --full           # N=1K,5K,10K,100K,500K (~60 min)
      lein bench --sizes 50000    # Custom sizes
 
    Output is written to bench-results/<timestamp>.edn"
   (:require [criterium.core :as crit]
             [clojure.core.reducers :as r]
             [clojure.data.avl :as avl]
+            [clojure.edn :as edn]
             [clojure.set :as cset]
             [clojure.string :as str]
             [clojure.java.io :as io]
@@ -27,7 +28,8 @@
   (:import [java.lang.management ManagementFactory]
            [java.net InetAddress]
            [java.time Duration Instant LocalDateTime]
-           [java.time.format DateTimeFormatter])
+           [java.time.format DateTimeFormatter]
+           [com.google.common.collect TreeRangeMap Range])
   (:gen-class))
 
 
@@ -36,7 +38,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (def sizes-default [100000])
-(def sizes-full    [10000 100000 500000])
+(def sizes-full    [1000 5000 10000 100000 500000])
 
 (defn timestamp []
   (.format (LocalDateTime/now)
@@ -229,6 +231,26 @@
        :data-avl    #(reduce (fn [^long acc x] (+ acc (long x))) 0 as)
        :ordered-set #(reduce (fn [^long acc x] (+ acc (long x))) 0 os)})))
 
+(defn- iterate-sum-longs
+  "Sum a Java Iterable of Long values via its .iterator(). Exercises the
+   collection's iterator path rather than its CollReduce path."
+  ^long [^Iterable coll]
+  (let [it (.iterator coll)]
+    (loop [acc (long 0)]
+      (if (.hasNext it)
+        (recur (unchecked-add acc (long (.next it))))
+        acc))))
+
+(defn bench-set-iteration-iterator [n]
+  (let [elems (generate-elements n)
+        ss    (into (sorted-set) elems)
+        as    (into (avl/sorted-set) elems)
+        os    (core/ordered-set elems)]
+    (run-cases
+      {:sorted-set  #(iterate-sum-longs ss)
+       :data-avl    #(iterate-sum-longs as)
+       :ordered-set #(iterate-sum-longs os)})))
+
 (defn bench-set-equality [n]
   (let [{equal :equal
          different :different
@@ -420,6 +442,13 @@
        :data-avl     #(reduce (fn [^long acc x] (+ acc (long x))) 0 data-avl)
        :long-ordered #(reduce (fn [^long acc x] (+ acc (long x))) 0 long-ordered)})))
 
+(defn bench-long-rank-lookup [n & {:keys [num-lookups] :or {num-lookups 10000}}]
+  (let [{:keys [data-avl long-ordered]} (make-long-sets n)
+        ^longs ks (long-array (repeatedly num-lookups #(rand-int n)))]
+    (run-cases
+      {:data-avl     #(dotimes [i num-lookups] (avl/rank-of data-avl (aget ks i)))
+       :long-ordered #(dotimes [i num-lookups] (core/rank long-ordered (aget ks i)))})))
+
 (defn bench-long-fold [n]
   (let [{:keys [sorted-set data-avl long-ordered]} (make-long-sets n)
         sum-fn (fn [^long acc x] (+ acc (long x)))]
@@ -534,6 +563,16 @@
        :data-avl        #(dotimes [i num-lookups] (contains? as (aget look i)))
        :string-ordered  #(dotimes [i num-lookups] (contains? os (aget look i)))})))
 
+(defn bench-string-rank-lookup [n & {:keys [num-lookups] :or {num-lookups 10000}}]
+  (let [ks   (generate-string-keys n)
+        cmp  #(compare (str %1) (str %2))
+        as   (into (avl/sorted-set-by cmp) ks)
+        os   (core/string-ordered-set ks)
+        ^objects look (object-array (repeatedly num-lookups #(nth ks (rand-int n))))]
+    (run-cases
+      {:data-avl       #(dotimes [i num-lookups] (avl/rank-of as (aget look i)))
+       :string-ordered #(dotimes [i num-lookups] (core/rank os (aget look i)))})))
+
 (defn bench-string-set-union [n]
   (let [{left :left right :right} (make-string-set-pair n)]
     (run-cases
@@ -582,6 +621,303 @@
     (run-cases
       {:interval-set-reduce #(reduce sum-intervals 0 is)
        :interval-set-fold   #(r/fold + sum-intervals is)})))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Range Map Benchmarks — vs Guava TreeRangeMap
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- gen-range-entries [n]
+  (let [spacing 100]
+    (vec (for [i (range n)]
+           [(* i spacing) (+ (* i spacing) (quot spacing 2)) (keyword (str "v" i))]))))
+
+(defn- build-oc-range-map [entries]
+  (reduce (fn [rm [lo hi v]] (assoc rm [lo hi] v)) (core/range-map) entries))
+
+(defn- ^TreeRangeMap build-guava-range-map [entries]
+  (let [m (TreeRangeMap/create)]
+    (doseq [[lo hi v] entries]
+      (.put m (Range/closedOpen (long lo) (long hi)) v))
+    m))
+
+(defn bench-range-map-construction [n]
+  (let [entries (gen-range-entries n)]
+    (run-cases
+      {:guava-range-map #(build-guava-range-map entries)
+       :range-map       #(build-oc-range-map entries)})))
+
+(defn bench-range-map-bulk-construction
+  "Exercises the single-argument (core/range-map coll) constructor's O(n)
+   balanced-build path for pre-sorted disjoint input. Distinct from
+   bench-range-map-construction, which measures per-entry assoc."
+  [n]
+  (let [entries (gen-range-entries n)
+        pairs   (mapv (fn [[lo hi v]] [[lo hi] v]) entries)]
+    (run-cases
+      {:guava-range-map #(build-guava-range-map entries)
+       :range-map       #(core/range-map pairs)})))
+
+(defn bench-range-map-lookup [n & {:keys [num-lookups] :or {num-lookups 10000}}]
+  (let [entries  (gen-range-entries n)
+        rm       (build-oc-range-map entries)
+        grm      (build-guava-range-map entries)
+        max-p    (long (* n 100))
+        ^ints pts (int-array (repeatedly num-lookups #(rand-int max-p)))]
+    (run-cases
+      {:guava-range-map #(dotimes [i num-lookups] (.get grm (long (aget pts i))))
+       :range-map       #(dotimes [i num-lookups] (rm (aget pts i)))})))
+
+(defn bench-range-map-carve-out [n]
+  (let [entries (gen-range-entries n)
+        rm      (build-oc-range-map entries)
+        grm     (build-guava-range-map entries)
+        mid-lo  (long (* (quot n 4) 100))
+        mid-hi  (long (* (* 3 (quot n 4)) 100))]
+    (run-cases
+      {:guava-range-map #(let [copy (TreeRangeMap/create)]
+                           (.putAll copy grm)
+                           (.put copy (Range/closedOpen mid-lo mid-hi) :carved)
+                           copy)
+       :range-map       #(assoc rm [mid-lo mid-hi] :carved)})))
+
+(defn bench-range-map-iteration [n]
+  (let [entries (gen-range-entries n)
+        rm      (build-oc-range-map entries)
+        grm     (build-guava-range-map entries)]
+    (run-cases
+      {:guava-range-map #(reduce (fn [^long c _] (unchecked-inc c)) 0
+                                 (.asMapOfRanges grm))
+       :range-map       #(reduce (fn [^long c _] (unchecked-inc c)) 0
+                                 (core/ranges rm))})))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Segment Tree Benchmarks — vs sorted-map subseq for range queries
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn bench-segment-tree-construction [n]
+  (let [data (zipmap (shuffle (range n)) (map long (range n)))]
+    (run-cases
+      {:sorted-map   #(into (sorted-map) data)
+       :segment-tree #(core/sum-tree data)})))
+
+(defn bench-segment-tree-query
+  [n & {:keys [num-queries window-frac] :or {num-queries 1000 window-frac 10}}]
+  (let [data   (zipmap (range n) (map long (range n)))
+        st     (core/sum-tree data)
+        sm     (into (sorted-map) data)
+        window (max 1 (quot n window-frac))
+        rng    (java.util.Random. 42)
+        ^ints los (int-array (repeatedly num-queries
+                                         #(.nextInt rng (max 1 (- n window)))))]
+    (run-cases
+      ;; sorted-map baseline: walk the subseq and sum values
+      {:sorted-map   #(dotimes [i num-queries]
+                        (let [lo (aget los i)
+                              hi (+ lo window)]
+                          (reduce-kv (fn [^long acc _ v] (+ acc (long v)))
+                                     0
+                                     (into {} (subseq sm >= lo <= hi)))))
+       :segment-tree #(dotimes [i num-queries]
+                        (let [lo (aget los i)
+                              hi (+ lo window)]
+                          (core/query st lo hi)))})))
+
+(defn bench-segment-tree-update
+  [n & {:keys [num-updates] :or {num-updates 1000}}]
+  (let [data   (zipmap (range n) (map long (range n)))
+        st     (core/sum-tree data)
+        sm     (into (sorted-map) data)
+        rng    (java.util.Random. 42)
+        ^ints ks (int-array (repeatedly num-updates #(.nextInt rng n)))
+        ^longs vs (long-array (repeatedly num-updates #(.nextInt rng 1000)))]
+    (run-cases
+      {:sorted-map   #(loop [m sm, i 0]
+                        (if (< i num-updates)
+                          (recur (assoc m (aget ks i) (aget vs i)) (unchecked-inc i))
+                          m))
+       :segment-tree #(loop [m st, i 0]
+                        (if (< i num-updates)
+                          (recur (assoc m (aget ks i) (aget vs i)) (unchecked-inc i))
+                          m))})))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Priority Queue Benchmarks — vs sorted-set-by [priority seqnum value]
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- gen-priority-pairs [n]
+  (let [rng (java.util.Random. 42)]
+    (vec (for [i (range n)]
+           [(.nextInt rng 1000) (keyword (str "task-" i))]))))
+
+(def ^:private pq-tuple-cmp
+  (fn [[p1 s1] [p2 s2]]
+    (let [c (compare p1 p2)]
+      (if (zero? c) (compare s1 s2) c))))
+
+(defn- build-sorted-pq-baseline [pairs]
+  (into (sorted-set-by pq-tuple-cmp)
+        (map-indexed (fn [i [p v]] [p i v]) pairs)))
+
+(defn bench-priority-queue-construction [n]
+  (let [pairs (gen-priority-pairs n)]
+    (run-cases
+      {:sorted-set-by  #(build-sorted-pq-baseline pairs)
+       :priority-queue #(core/priority-queue pairs)})))
+
+(defn bench-priority-queue-push
+  [n & {:keys [num-ops] :or {num-ops 1000}}]
+  (let [pairs      (gen-priority-pairs n)
+        base-pq    (core/priority-queue pairs)
+        base-ss    (build-sorted-pq-baseline pairs)
+        rng        (java.util.Random. 42)
+        extra      (vec (for [i (range num-ops)]
+                          [(.nextInt rng 1000) (keyword (str "new-" i))]))]
+    (run-cases
+      {:sorted-set-by  #(loop [s base-ss, i 0]
+                          (if (< i num-ops)
+                            (let [[p v] (nth extra i)]
+                              (recur (conj s [p (+ n i) v]) (unchecked-inc i)))
+                            s))
+       :priority-queue #(loop [q base-pq, i 0]
+                          (if (< i num-ops)
+                            (let [[p v] (nth extra i)]
+                              (recur (core/push q p v) (unchecked-inc i)))
+                            q))})))
+
+(defn bench-priority-queue-pop-min
+  [n & {:keys [num-ops] :or {num-ops 1000}}]
+  (let [num-ops (min num-ops n)
+        pairs   (gen-priority-pairs n)
+        base-pq (core/priority-queue pairs)
+        base-ss (build-sorted-pq-baseline pairs)]
+    (run-cases
+      {:sorted-set-by  #(loop [s base-ss, i 0]
+                          (if (< i num-ops)
+                            (recur (disj s (first s)) (unchecked-inc i))
+                            s))
+       :priority-queue #(loop [q base-pq, i 0]
+                          (if (< i num-ops)
+                            (recur (core/pop-min q) (unchecked-inc i))
+                            q))})))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Ordered Multiset Benchmarks — vs sorted-map counts
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- gen-multiset-elements [n]
+  ;; Repeat each element 3x to exercise the multiplicity path
+  (vec (mapcat #(repeat 3 %) (range (quot n 3)))))
+
+(defn bench-multiset-construction [n]
+  (let [elems (gen-multiset-elements n)]
+    (run-cases
+      {:sorted-map-counts #(reduce (fn [m x] (update m x (fnil inc 0)))
+                                   (sorted-map) elems)
+       :ordered-multiset  #(core/ordered-multiset elems)})))
+
+(defn bench-multiset-multiplicity
+  [n & {:keys [num-ops] :or {num-ops 10000}}]
+  (let [elems   (gen-multiset-elements n)
+        mset    (core/ordered-multiset elems)
+        counts  (reduce (fn [m x] (update m x (fnil inc 0))) (sorted-map) elems)
+        max-key (quot n 3)
+        rng     (java.util.Random. 42)
+        ^ints ks (int-array (repeatedly num-ops #(.nextInt rng (max 1 max-key))))]
+    (run-cases
+      {:sorted-map-counts #(dotimes [i num-ops]
+                             (get counts (aget ks i) 0))
+       :ordered-multiset  #(dotimes [i num-ops]
+                             (core/multiplicity mset (aget ks i)))})))
+
+(defn bench-multiset-iteration [n]
+  (let [elems  (gen-multiset-elements n)
+        mset   (core/ordered-multiset elems)
+        counts (reduce (fn [m x] (update m x (fnil inc 0))) (sorted-map) elems)]
+    (run-cases
+      ;; Baseline: walk the sorted-map, expanding each entry into
+      ;; `count` repeated elements — the same observable content.
+      {:sorted-map-counts #(reduce (fn [^long acc [k c]]
+                                     (+ acc (* (long k) (long c))))
+                                   0 counts)
+       :ordered-multiset  #(reduce + 0 mset)})))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Fuzzy Set / Fuzzy Map Benchmarks — vs sorted-set / sorted-map nearest
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- sorted-set-nearest
+  "Find the element in sorted-set `s` closest to `query` by absolute
+  difference. O(log n) floor + ceiling via `subseq`/`rsubseq`."
+  [s query]
+  (let [floor   (first (rsubseq s <= query))
+        ceiling (first (subseq s >= query))]
+    (cond
+      (and floor ceiling) (if (<= (Math/abs ^long (- (long query) (long floor)))
+                                  (Math/abs ^long (- (long query) (long ceiling))))
+                            floor
+                            ceiling)
+      floor   floor
+      ceiling ceiling
+      :else   nil)))
+
+(defn- sorted-map-nearest
+  [m query]
+  (let [floor   (first (rsubseq m <= query))
+        ceiling (first (subseq m >= query))]
+    (cond
+      (and floor ceiling) (if (<= (Math/abs ^long (- (long query) (long (key floor))))
+                                  (Math/abs ^long (- (long query) (long (key ceiling)))))
+                            floor
+                            ceiling)
+      floor   floor
+      ceiling ceiling
+      :else   nil)))
+
+(defn bench-fuzzy-set-construction [n]
+  (let [elems (vec (shuffle (range n)))]
+    (run-cases
+      {:sorted-set #(into (sorted-set) elems)
+       :fuzzy-set  #(core/fuzzy-set elems)})))
+
+(defn bench-fuzzy-set-nearest
+  [n & {:keys [num-ops] :or {num-ops 10000}}]
+  (let [elems  (vec (range n))
+        ss     (into (sorted-set) elems)
+        fs     (core/fuzzy-set elems)
+        max-q  (long (* 2 n))
+        rng    (java.util.Random. 42)
+        ^ints qs (int-array (repeatedly num-ops #(.nextInt rng (max 1 max-q))))]
+    (run-cases
+      {:sorted-set #(dotimes [i num-ops]
+                      (sorted-set-nearest ss (aget qs i)))
+       :fuzzy-set  #(dotimes [i num-ops]
+                      (fs (aget qs i)))})))
+
+(defn bench-fuzzy-map-construction [n]
+  (let [pairs (map (fn [i] [i (str "v-" i)]) (shuffle (range n)))]
+    (run-cases
+      {:sorted-map #(into (sorted-map) pairs)
+       :fuzzy-map  #(core/fuzzy-map pairs)})))
+
+(defn bench-fuzzy-map-nearest
+  [n & {:keys [num-ops] :or {num-ops 10000}}]
+  (let [pairs (map (fn [i] [i (str "v-" i)]) (range n))
+        sm    (into (sorted-map) pairs)
+        fm    (core/fuzzy-map pairs)
+        max-q (long (* 2 n))
+        rng   (java.util.Random. 42)
+        ^ints qs (int-array (repeatedly num-ops #(.nextInt rng (max 1 max-q))))]
+    (run-cases
+      {:sorted-map #(dotimes [i num-ops]
+                      (sorted-map-nearest sm (aget qs i)))
+       :fuzzy-map  #(dotimes [i num-ops]
+                      (fm (aget qs i)))})))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Rope Benchmarks
@@ -671,6 +1007,370 @@
        :vector #(r/fold combinef reducef v)})))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; String Rope vs String vs StringBuilder Benchmarks
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Three competitors:
+;;   :string        — idiomatic Clojure: (str (subs ...) ...) — what most people write
+;;   :string-builder — optimal mutable: pre-sized StringBuilder with append(CharSequence,int,int)
+;;   :string-rope   — persistent rope: O(log n) structural edits with structural sharing
+;;
+;; StringRope's architectural advantages over StringBuilder:
+;;   • Persistent — old versions survive edits (free undo, no defensive copying)
+;;   • Structural sharing — concat/split are O(log n), no bulk copying
+;;   • Thread-safe by construction — immutable, no locking needed
+;;   • O(log n) splice/insert/remove vs StringBuilder's O(n) arraycopy
+
+(defn- sb-splice
+  "Optimal String splice via StringBuilder."
+  ^String [^String s ^long start ^long end ^String rep]
+  (let [si (int start)
+        ei (int end)
+        sb (StringBuilder. (+ (.length s) (.length rep) (- si) ei))]
+    (.append sb s 0 si)
+    (.append sb rep)
+    (.append sb s ei (.length s))
+    (.toString sb)))
+
+(defn- sb-insert
+  "Optimal String insert via StringBuilder."
+  ^String [^String s ^long i ^String ins]
+  (sb-splice s i i ins))
+
+(defn- sb-remove
+  "Optimal String remove via StringBuilder."
+  ^String [^String s ^long start ^long end]
+  (let [si (int start)
+        ei (int end)
+        sb (StringBuilder. (- (.length s) (- ei si)))]
+    (.append sb s 0 si)
+    (.append sb s ei (.length s))
+    (.toString sb)))
+
+(defn- random-text
+  "Generate a random ASCII text of length n."
+  ^String [^long n]
+  (let [sb (StringBuilder. n)
+        ^String chars "abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ\n0123456789"
+        nchars (.length chars)]
+    (dotimes [_ n]
+      (.append sb (.charAt chars (rand-int nchars))))
+    (.toString sb)))
+
+(defn bench-string-rope-construction [n]
+  (let [^String text (random-text n)]
+    (run-cases
+      {:string         #(String. text)
+       :string-builder #(let [sb (StringBuilder. (count text))]
+                          (.append sb text)
+                          (.toString sb))
+       :string-rope    #(core/string-rope text)})))
+
+(defn bench-string-rope-concat [n]
+  (let [^String text (random-text n)
+        half   (int (quot n 2))
+        ^String s1 (.substring text 0 half)
+        ^String s2 (.substring text half)
+        sr1    (core/string-rope s1)
+        sr2    (core/string-rope s2)]
+    (run-cases
+      {:string         #(str s1 s2)
+       :string-builder #(let [sb (StringBuilder. (.length text))]
+                          (.append sb s1)
+                          (.append sb s2)
+                          (.toString sb))
+       :string-rope    #(core/string-rope-concat sr1 sr2)})))
+
+(defn bench-string-rope-split [n]
+  (let [^String text (random-text n)
+        sr  (core/string-rope text)
+        mid (int (quot n 2))]
+    (run-cases
+      {:string         #(vector (subs text 0 mid) (subs text mid))
+       :string-builder #(vector (.substring text 0 mid) (.substring text mid))
+       :string-rope    #(core/rope-split sr mid)})))
+
+(defn bench-string-rope-splice [n]
+  (let [^String text (random-text n)
+        sr  (core/string-rope text)
+        mid (quot n 2)
+        lo  (max 0 (- mid 5))
+        hi  (min n (+ mid 5))
+        ^String rep "YYYYYYYYYY"]
+    (run-cases
+      {:string         #(str (subs text 0 lo) rep (subs text hi))
+       :string-builder #(sb-splice text lo hi rep)
+       :string-rope    #(core/rope-splice sr lo hi rep)})))
+
+(defn bench-string-rope-insert [n]
+  (let [^String text (random-text n)
+        sr  (core/string-rope text)
+        mid (quot n 2)
+        ^String ins "Y"]
+    (run-cases
+      {:string         #(str (subs text 0 mid) ins (subs text mid))
+       :string-builder #(sb-insert text mid ins)
+       :string-rope    #(core/rope-insert sr mid ins)})))
+
+(defn bench-string-rope-remove [n]
+  (let [^String text (random-text n)
+        sr  (core/string-rope text)
+        mid (quot n 2)
+        lo  (max 0 (- mid 5))
+        hi  (min n (+ mid 5))]
+    (run-cases
+      {:string         #(str (subs text 0 lo) (subs text hi))
+       :string-builder #(sb-remove text lo hi)
+       :string-rope    #(core/rope-remove sr lo hi)})))
+
+(defn bench-string-rope-nth [n & {:keys [num-ops] :or {num-ops 1000}}]
+  (let [^String text (random-text n)
+        sr   (core/string-rope text)
+        rng  (java.util.Random. 42)
+        idxs (int-array (repeatedly num-ops #(.nextInt rng (max 1 n))))]
+    (run-cases
+      {:string         #(areduce idxs i acc (char 0) (.charAt text (aget idxs i)))
+       :string-rope    #(areduce idxs i acc nil (nth sr (aget idxs i)))})))
+
+(defn bench-string-rope-reduce [n]
+  (let [^String text (random-text n)
+        sr  (core/string-rope text)
+        f   (fn [^long acc c] (+ acc (long (int (char c)))))]
+    (run-cases
+      {:string         #(let [len (.length text)]
+                          (loop [i (int 0), acc (long 0)]
+                            (if (< i len)
+                              (recur (unchecked-inc-int i) (+ acc (long (int (.charAt text i)))))
+                              acc)))
+       :string-rope    #(reduce f 0 sr)})))
+
+(defn bench-string-rope-str [n]
+  (let [^String text (random-text n)
+        sr  (core/string-rope text)]
+    (run-cases
+      {:string         #(String. text)
+       :string-rope    #(str sr)})))
+
+(defn bench-string-rope-repeated-edits [n]
+  (let [^String text (random-text n)
+        sr   (core/string-rope text)
+        rng  (java.util.Random. 42)
+        nops 200
+        idxs (vec (repeatedly nops #(.nextInt rng (max 1 n))))
+        ^String ins "XXXXX"]
+    (run-cases
+      {:string         #(loop [^String s text, i 0]
+                          (if (< i nops)
+                            (let [pos (rem (long (nth idxs i)) (long (.length s)))
+                                  end (min (.length s) (+ pos 5))]
+                              (recur (str (subs s 0 pos) ins (subs s end)) (unchecked-inc i)))
+                            s))
+       :string-builder #(loop [^String s text, i 0]
+                          (if (< i nops)
+                            (let [pos (rem (long (nth idxs i)) (long (.length s)))
+                                  end (min (.length s) (+ pos 5))]
+                              (recur (sb-splice s pos end ins) (unchecked-inc i)))
+                            s))
+       :string-rope    #(loop [r sr, i 0]
+                          (if (< i nops)
+                            (let [pos (rem (long (nth idxs i)) (long (count r)))
+                                  end (min (count r) (+ pos 5))]
+                              (recur (core/rope-splice r pos end ins) (unchecked-inc i)))
+                            r))})))
+
+(defn bench-string-rope-re-find [n]
+  (let [^String text (random-text n)
+        sr   (core/string-rope text)
+        pat  #"[A-Z]{2,}"]
+    (run-cases
+      {:string      #(re-find pat text)
+       :string-rope #(re-find pat sr)})))
+
+(defn bench-string-rope-re-seq [n]
+  (let [^String text (random-text n)
+        sr   (core/string-rope text)
+        pat  #"\w+"]
+    (run-cases
+      {:string      #(doall (re-seq pat text))
+       :string-rope #(doall (re-seq pat sr))})))
+
+(defn bench-string-rope-re-replace [n]
+  (let [^String text (random-text n)
+        sr   (core/string-rope text)
+        pat  #"[aeiou]"]
+    (run-cases
+      {:string      #(clojure.string/replace text pat "*")
+       :string-rope #(clojure.string/replace sr pat "*")})))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Byte Rope vs byte[] Benchmarks
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; ByteRope is a persistent, immutable byte sequence backed by a chunked
+;; weight-balanced tree. The mutable baseline is the raw byte[] with
+;; System.arraycopy — the fastest possible same-operation comparison on JVM.
+;; ByteRope's architectural advantages: O(log n) structural edits,
+;; persistent snapshots, structural sharing, thread safety by construction.
+
+(defn- ba-splice
+  "Optimal byte[] splice via System.arraycopy."
+  ^bytes [^bytes s ^long start ^long end ^bytes rep]
+  (let [si (int start)
+        ei (int end)
+        sl (alength s)
+        rl (int (if rep (alength rep) 0))
+        result (byte-array (+ (- sl (- ei si)) rl))]
+    (System/arraycopy s 0 result 0 si)
+    (when (pos? rl)
+      (System/arraycopy rep 0 result si rl))
+    (System/arraycopy s ei result (+ si rl) (- sl ei))
+    result))
+
+(defn- ba-concat
+  ^bytes [^bytes a ^bytes b]
+  (let [al (alength a)
+        bl (alength b)
+        result (byte-array (+ al bl))]
+    (System/arraycopy a 0 result 0 al)
+    (System/arraycopy b 0 result al bl)
+    result))
+
+(defn- random-bytes
+  "Generate a random byte array of length n."
+  ^bytes [^long n]
+  (let [rng (java.util.Random. 42)
+        b (byte-array n)]
+    (.nextBytes rng b)
+    b))
+
+(defn bench-byte-rope-construction [n]
+  (let [^bytes data (random-bytes n)]
+    (run-cases
+      {:byte-array #(java.util.Arrays/copyOf data n)
+       :byte-rope  #(core/byte-rope data)})))
+
+(defn bench-byte-rope-concat [n]
+  (let [^bytes b1 (random-bytes (quot n 4))
+        ^bytes b2 (random-bytes (quot n 4))
+        ^bytes b3 (random-bytes (quot n 4))
+        ^bytes b4 (random-bytes (- n (* 3 (quot n 4))))
+        br1 (core/byte-rope b1) br2 (core/byte-rope b2)
+        br3 (core/byte-rope b3) br4 (core/byte-rope b4)]
+    (run-cases
+      {:byte-array #(ba-concat (ba-concat (ba-concat b1 b2) b3) b4)
+       :byte-rope  #(core/byte-rope-concat br1 br2 br3 br4)})))
+
+(defn bench-byte-rope-splice [n]
+  (let [^bytes data (random-bytes n)
+        br  (core/byte-rope data)
+        mid (quot n 2)
+        lo  (max 0 (- mid 16))
+        hi  (min n (+ mid 16))
+        ^bytes rep (random-bytes 32)]
+    (run-cases
+      {:byte-array #(ba-splice data lo hi rep)
+       :byte-rope  #(core/rope-splice br lo hi rep)})))
+
+(defn bench-byte-rope-insert [n]
+  (let [^bytes data (random-bytes n)
+        br  (core/byte-rope data)
+        mid (quot n 2)
+        ^bytes ins (random-bytes 16)]
+    (run-cases
+      {:byte-array #(ba-splice data mid mid ins)
+       :byte-rope  #(core/rope-insert br mid ins)})))
+
+(defn bench-byte-rope-remove [n]
+  (let [^bytes data (random-bytes n)
+        br  (core/byte-rope data)
+        mid (quot n 2)
+        lo  (max 0 (- mid 16))
+        hi  (min n (+ mid 16))]
+    (run-cases
+      {:byte-array #(ba-splice data lo hi nil)
+       :byte-rope  #(core/rope-remove br lo hi)})))
+
+(defn bench-byte-rope-split [n]
+  (let [^bytes data (random-bytes n)
+        br  (core/byte-rope data)
+        mid (int (quot n 2))]
+    (run-cases
+      {:byte-array #(vector (java.util.Arrays/copyOfRange data 0 mid)
+                            (java.util.Arrays/copyOfRange data mid (alength data)))
+       :byte-rope  #(core/rope-split br mid)})))
+
+(defn bench-byte-rope-repeated-edits [n]
+  (let [^bytes data (random-bytes n)
+        br   (core/byte-rope data)
+        rng  (java.util.Random. 42)
+        nops 200
+        idxs (vec (repeatedly nops #(.nextInt rng (max 1 n))))
+        ^bytes ins (random-bytes 5)]
+    (run-cases
+      {:byte-array
+       #(loop [^bytes s data, i 0]
+          (if (< i nops)
+            (let [pos (rem (long (nth idxs i)) (long (alength s)))
+                  end (min (alength s) (+ pos 5))]
+              (recur (ba-splice s pos end ins) (unchecked-inc i)))
+            s))
+       :byte-rope
+       #(loop [r br, i 0]
+          (if (< i nops)
+            (let [pos (rem (long (nth idxs i)) (long (count r)))
+                  end (min (count r) (+ pos 5))]
+              (recur (core/rope-splice r pos end ins) (unchecked-inc i)))
+            r))})))
+
+(defn bench-byte-rope-nth [n & {:keys [num-ops] :or {num-ops 1000}}]
+  (let [^bytes data (random-bytes n)
+        br   (core/byte-rope data)
+        rng  (java.util.Random. 42)
+        idxs (int-array (repeatedly num-ops #(.nextInt rng (max 1 n))))]
+    (run-cases
+      {:byte-array #(areduce idxs i acc (long 0) (+ acc (long (aget data (aget idxs i)))))
+       :byte-rope  #(areduce idxs i acc (long 0) (+ acc (long (nth br (aget idxs i)))))})))
+
+(defn bench-byte-rope-reduce [n]
+  (let [^bytes data (random-bytes n)
+        br  (core/byte-rope data)]
+    (run-cases
+      {:byte-array #(let [len (alength data)]
+                      (loop [i (int 0), acc (long 0)]
+                        (if (< i len)
+                          (recur (unchecked-inc-int i)
+                                 (+ acc (bit-and (long (aget data i)) 0xff)))
+                          acc)))
+       :byte-rope  #(reduce + 0 br)})))
+
+(defn bench-byte-rope-fold [n]
+  (let [^bytes data (random-bytes n)
+        br  (core/byte-rope data)]
+    (run-cases
+      {:byte-array #(let [len (alength data)]
+                      (loop [i (int 0), acc (long 0)]
+                        (if (< i len)
+                          (recur (unchecked-inc-int i)
+                                 (+ acc (bit-and (long (aget data i)) 0xff)))
+                          acc)))
+       :byte-rope  #(r/fold + br)})))
+
+(defn bench-byte-rope-bytes [n]
+  (let [^bytes data (random-bytes n)
+        br  (core/byte-rope data)]
+    (run-cases
+      {:byte-array #(java.util.Arrays/copyOf data n)
+       :byte-rope  #(core/byte-rope-bytes br)})))
+
+(defn bench-byte-rope-digest [n]
+  (let [^bytes data (random-bytes n)
+        br  (core/byte-rope data)]
+    (run-cases
+      {:byte-array #(let [md (java.security.MessageDigest/getInstance "SHA-256")]
+                      (.digest md data))
+       :byte-rope  #(core/byte-rope-bytes (core/byte-rope-digest br "SHA-256"))})))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Suite Runners
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -699,7 +1399,15 @@
    [:long-lookup bench-long-lookup]
    [:long-union bench-long-union]
    [:long-intersection bench-long-intersection]
-   [:long-difference bench-long-difference]])
+   [:long-difference bench-long-difference]
+   [:string-rope-splice bench-string-rope-splice]
+   [:string-rope-insert bench-string-rope-insert]
+   [:string-rope-remove bench-string-rope-remove]
+   [:string-rope-repeated-edits bench-string-rope-repeated-edits]
+   [:byte-rope-splice bench-byte-rope-splice]
+   [:byte-rope-insert bench-byte-rope-insert]
+   [:byte-rope-remove bench-byte-rope-remove]
+   [:byte-rope-repeated-edits bench-byte-rope-repeated-edits]])
 
 (def ^:private readme-benchmark-specs
   [[:set-construction bench-set-construction]
@@ -724,6 +1432,7 @@
    [:set-delete bench-set-delete]
    [:set-lookup bench-set-lookup]
    [:set-iteration bench-set-iteration]
+   [:set-iteration-iterator bench-set-iteration-iterator]
    [:set-equality bench-set-equality]
    [:set-fold bench-set-fold]
    [:set-fold-freq bench-set-fold-freq]
@@ -742,6 +1451,24 @@
    [:interval-map-construction bench-interval-map-construction]
    [:interval-lookup bench-interval-lookup]
    [:interval-fold bench-interval-fold]
+   [:range-map-construction bench-range-map-construction]
+   [:range-map-bulk-construction bench-range-map-bulk-construction]
+   [:range-map-lookup bench-range-map-lookup]
+   [:range-map-carve-out bench-range-map-carve-out]
+   [:range-map-iteration bench-range-map-iteration]
+   [:segment-tree-construction bench-segment-tree-construction]
+   [:segment-tree-query bench-segment-tree-query]
+   [:segment-tree-update bench-segment-tree-update]
+   [:priority-queue-construction bench-priority-queue-construction]
+   [:priority-queue-push bench-priority-queue-push]
+   [:priority-queue-pop-min bench-priority-queue-pop-min]
+   [:multiset-construction bench-multiset-construction]
+   [:multiset-multiplicity bench-multiset-multiplicity]
+   [:multiset-iteration bench-multiset-iteration]
+   [:fuzzy-set-construction bench-fuzzy-set-construction]
+   [:fuzzy-set-nearest bench-fuzzy-set-nearest]
+   [:fuzzy-map-construction bench-fuzzy-map-construction]
+   [:fuzzy-map-nearest bench-fuzzy-map-nearest]
    [:rope-concat bench-rope-concat]
    [:rope-splice bench-rope-splice]
    [:rope-repeated-edits bench-rope-repeated-edits]
@@ -755,6 +1482,7 @@
    [:long-insert bench-long-insert]
    [:long-delete bench-long-delete]
    [:long-iteration bench-long-iteration]
+   [:long-rank-lookup bench-long-rank-lookup]
    [:long-fold bench-long-fold]
    [:long-union bench-long-union]
    [:long-intersection bench-long-intersection]
@@ -762,9 +1490,35 @@
    [:long-split bench-long-split]
    [:string-set-construction bench-string-set-construction]
    [:string-set-lookup bench-string-set-lookup]
+   [:string-rank-lookup bench-string-rank-lookup]
    [:string-set-union bench-string-set-union]
    [:string-set-intersection bench-string-set-intersection]
-   [:string-set-difference bench-string-set-difference]])
+   [:string-set-difference bench-string-set-difference]
+   [:string-rope-construction bench-string-rope-construction]
+   [:string-rope-concat bench-string-rope-concat]
+   [:string-rope-split bench-string-rope-split]
+   [:string-rope-splice bench-string-rope-splice]
+   [:string-rope-insert bench-string-rope-insert]
+   [:string-rope-remove bench-string-rope-remove]
+   {:key :string-rope-nth :fn bench-string-rope-nth :when #(<= % 500000)}
+   [:string-rope-reduce bench-string-rope-reduce]
+   [:string-rope-str bench-string-rope-str]
+   [:string-rope-repeated-edits bench-string-rope-repeated-edits]
+   [:string-rope-re-find bench-string-rope-re-find]
+   [:string-rope-re-seq bench-string-rope-re-seq]
+   [:string-rope-re-replace bench-string-rope-re-replace]
+   [:byte-rope-construction bench-byte-rope-construction]
+   [:byte-rope-concat bench-byte-rope-concat]
+   [:byte-rope-split bench-byte-rope-split]
+   [:byte-rope-splice bench-byte-rope-splice]
+   [:byte-rope-insert bench-byte-rope-insert]
+   [:byte-rope-remove bench-byte-rope-remove]
+   {:key :byte-rope-nth :fn bench-byte-rope-nth :when #(<= % 500000)}
+   [:byte-rope-reduce bench-byte-rope-reduce]
+   [:byte-rope-fold bench-byte-rope-fold]
+   [:byte-rope-repeated-edits bench-byte-rope-repeated-edits]
+   [:byte-rope-bytes bench-byte-rope-bytes]
+   [:byte-rope-digest bench-byte-rope-digest]])
 
 (defn run-wins-benchmarks
   "Run benchmarks focused on where ordered-collections wins."
@@ -776,7 +1530,7 @@
     @results))
 
 (defn run-readme-benchmarks
-  "Run only the benchmarks used in README tables (~5 min for 3 sizes)."
+  "Run only the benchmarks used in README tables (~10 min for 5 sizes)."
   [sizes]
   (let [results (atom {})]
     (doseq [n sizes]
@@ -892,6 +1646,148 @@
       (print-summary-node "    " bench-results))
     (println)))
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Auto-Compare Against Prior Run
+;;
+;; After writing the fresh EDN to disk, look for the most-recent
+;; existing result file in bench-results/ that predates this run. If
+;; one exists, flat-walk both and diff matching (size, group, variant)
+;; tuples, printing a compact section with any notable regressions
+;; and improvements. Self-contained: no dependency on the bb report
+;; tool — runs from the same JVM process that just finished the bench.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def ^:private ^:const +regression-threshold+ 1.10)
+(def ^:private ^:const +improvement-threshold+ 0.90)
+(def ^:private ^:const +compare-top-n+ 15)
+
+(defn- prior-edn-file
+  "Return the absolute path of the most-recent `.edn` file in
+  bench-results/ whose filename sorts before the given `current` file
+  (which must also live in bench-results/), or nil if none exists.
+  Filenames are timestamped, so lexical sort == chronological sort."
+  [current]
+  (let [dir (io/file "bench-results")
+        current-name (.getName ^java.io.File (io/file current))]
+    (when (.isDirectory dir)
+      (let [prior (->> (.listFiles dir)
+                       (map (fn [^java.io.File f] (.getName f)))
+                       (filter #(.endsWith ^String % ".edn"))
+                       (filter #(neg? (compare % current-name)))
+                       sort
+                       last)]
+        (when prior
+          (.getAbsolutePath ^java.io.File (io/file dir prior)))))))
+
+(defn- walk-leaves
+  "Walk a nested benchmark-result map and yield a flat seq of
+  {:size :group :variant :mean-ns} entries, one per leaf measurement."
+  [benchmarks]
+  (letfn [(walk [size path node]
+            (cond
+              (and (map? node) (contains? node :mean-ns))
+              [{:size size
+                :group (first path)
+                :variant (last path)
+                :mean-ns (double (:mean-ns node))}]
+
+              (map? node)
+              (mapcat (fn [[k v]] (walk size (conj path k) v)) node)
+
+              :else nil))]
+    (mapcat (fn [[size groups]]
+              (mapcat (fn [[group node]] (walk size [group] node)) groups))
+            benchmarks)))
+
+(defn- load-bench-edn [path]
+  (try
+    (edn/read-string (slurp path))
+    (catch Exception _ nil)))
+
+(defn- delta-row [{:keys [size group variant mean-ns]} prior-map]
+  (when-let [old (get prior-map [size group variant])]
+    (let [new-ns (double mean-ns)
+          old-ns (double old)
+          ratio  (/ new-ns old-ns)]
+      {:size size
+       :group group
+       :variant variant
+       :old-ns old-ns
+       :new-ns new-ns
+       :ratio ratio
+       :delta-pct (* 100.0 (dec ratio))})))
+
+(defn- fmt-time [^double ns]
+  (cond
+    (>= ns 1e9) (format "%.2fs" (/ ns 1e9))
+    (>= ns 1e6) (format "%.2fms" (/ ns 1e6))
+    (>= ns 1e3) (format "%.2fµs" (/ ns 1e3))
+    :else       (format "%.0fns" ns)))
+
+(defn- print-delta-table [title rows]
+  (println title)
+  (println "  -------------------------------------------------------------------------------------------------")
+  (println (format "  %6s  %-32s %-22s %12s %12s %10s"
+                   "N" "group" "variant" "old" "new" "delta"))
+  (println "  -------------------------------------------------------------------------------------------------")
+  (doseq [{:keys [size group variant old-ns new-ns delta-pct]} rows]
+    (println (format "  %6d  %-32s %-22s %12s %12s %+9.1f%%"
+                     size (name group) (name variant)
+                     (fmt-time old-ns) (fmt-time new-ns) delta-pct)))
+  (println))
+
+(defn print-comparison-vs-prior
+  "If a prior bench-results EDN exists for comparison, walk both files,
+  match leaf measurements by (size, group, variant), and print
+  regressions (slower ≥10%) and improvements (faster ≥10%) side-by-side."
+  [current-file]
+  (if-let [prior-file (prior-edn-file current-file)]
+    (let [current (load-bench-edn current-file)
+          prior   (load-bench-edn prior-file)]
+      (if-not (and current prior (:benchmarks current) (:benchmarks prior))
+        (do (println)
+            (println "(No prior EDN loaded — skipping comparison.)"))
+        (let [current-rows (walk-leaves (:benchmarks current))
+              prior-rows   (walk-leaves (:benchmarks prior))
+              prior-map    (into {} (map (juxt (juxt :size :group :variant) :mean-ns))
+                                 prior-rows)
+              deltas       (keep #(delta-row % prior-map) current-rows)
+              regressions  (->> deltas
+                                (filter #(>= (:ratio %) +regression-threshold+))
+                                (sort-by :ratio >)
+                                (take +compare-top-n+))
+              improvements (->> deltas
+                                (filter #(<= (:ratio %) +improvement-threshold+))
+                                (sort-by :ratio)
+                                (take +compare-top-n+))]
+          (println)
+          (println "========================================================================")
+          (println "  Comparison vs Previous Run")
+          (println "========================================================================")
+          (println)
+          (println (str "  Baseline: " prior-file))
+          (println (str "  Compared:  " (count deltas) " matching benchmark cells."))
+          (println)
+          (if (seq regressions)
+            (print-delta-table
+              (format "  Regressions (≥ %.0f%% slower), top %d by magnitude:"
+                      (* 100.0 (dec +regression-threshold+)) +compare-top-n+)
+              regressions)
+            (println "  No significant regressions (≥10% slower).\n"))
+          (if (seq improvements)
+            (print-delta-table
+              (format "  Improvements (≥ %.0f%% faster), top %d by magnitude:"
+                      (* 100.0 (- 1.0 +improvement-threshold+)) +compare-top-n+)
+              improvements)
+            (println "  No significant improvements (≥10% faster).\n"))
+          (println (str "  Use `lein bench-report --file " current-file
+                        " --baseline " prior-file "` for the full"))
+          (println (str "  comparison (category breakdown, headline tables, etc.)."))
+          (println))))
+    (do (println)
+        (println "(No prior bench-results EDN found — skipping comparison.)"))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Main Entry Point
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -905,12 +1801,12 @@
   (println "Usage: lein bench [options]")
   (println)
   (println "Options:")
-  (println "  --readme           README table benchmarks only (~5 min for --full)")
-  (println "  --full             N=10K,100K,500K")
+  (println "  --readme           README table benchmarks only (~10 min for --full)")
+  (println "  --full             N=1K,5K,10K,100K,500K (~60 min)")
   (println "  --sizes N,N,...    Custom sizes (comma-separated)")
   (println "  --help             Show this help")
   (println)
-  (println "Default: N=100K (~3 min)")
+  (println "Default: N=100K (~5 min)")
   (println "Output is written to bench-results/<timestamp>.edn"))
 
 (defn -main [& args]
@@ -938,7 +1834,8 @@
 
         (let [results (runner (:sizes opts))]
           (print-summary results)
-          (write-results results output-file opts started-at))
+          (write-results results output-file opts started-at)
+          (print-comparison-vs-prior output-file))
 
         (println)
         (println "Benchmark suite complete.")))

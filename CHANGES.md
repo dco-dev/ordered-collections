@@ -1,5 +1,251 @@
 # Changelog
 
+## [0.2.1] - 2026-04-17
+
+### New Collection Types
+
+- **StringRope** (`string-rope`) — persistent chunked text sequence backed by
+  `java.lang.String` chunks. Implements `java.lang.CharSequence` so it drops
+  into `re-find`/`re-seq`/`re-matches`, `clojure.string`, and any Java API
+  expecting text. Equality with `String` is content-based and hash-compatible.
+  `#string/rope "…"` tagged literal with EDN round-trip. Constructor:
+  `string-rope` / `string-rope-concat`. At 100K+ characters, up to
+  ~38x faster than `String` on repeated structural edits, growing to
+  ~130x at 500K.
+- **ByteRope** (`byte-rope`) — persistent chunked binary sequence backed by
+  `byte[]` chunks. Unsigned byte semantics (0–255 as long). Unsigned
+  lexicographic `Comparable` via `Arrays.compareUnsigned`. `#byte/rope "hex"`
+  tagged literal. Constructor: `byte-rope` / `byte-rope-concat`. Extras:
+  `byte-rope-bytes`, `byte-rope-hex`, `byte-rope-write`,
+  `byte-rope-input-stream`, `byte-rope-get-byte`/`-short`/`-int`/`-long`
+  (plus `-le` variants), `byte-rope-index-of`, and a streaming
+  `byte-rope-digest` that feeds chunks through `java.security.MessageDigest`
+  without materialization.
+
+### Rope Family Improvements
+
+- **Flat-mode optimization** for all three rope variants (`rope`,
+  `string-rope`, `byte-rope`). When a rope's element count is at or below
+  the per-variant flat threshold (1024 elements, characters, or bytes),
+  the rope stores its content as a bare concrete collection
+  (`PersistentVector`, `java.lang.String`, or `byte[]`) directly in the
+  root field, skipping the tree wrapper entirely. Reads dispatch straight
+  to the native type with zero indirection overhead; edits that grow the
+  rope past the threshold transparently promote to chunked tree form;
+  transients demote back to flat form at `persistent!` time when the
+  result fits. Memory for small ropes is essentially identical to the
+  natural baseline (1.00x vs `PersistentVector` / `String` / `byte[]`).
+  StringRope and ByteRope had this from day one; the generic Rope
+  gained it late in the 0.2.1 cycle so all three variants now share the
+  same optimization pattern.
+- **Per-variant Chunk Size Invariant (CSI)** — each rope variant now
+  declares its own `+target-chunk-size+` / `+min-chunk-size+` constants
+  and binds them via its `with-tree` macro into the kernel's new
+  `*target-chunk-size*` / `*min-chunk-size*` dynamic vars. Tuned via
+  `lein bench-rope-tuning`: all three variants default to 1024/512
+  (up from the historical 256/128). At 500K elements, generic Rope
+  gains +41% nth, +38% split, and 5x concat; StringRope and ByteRope
+  improve on every measured operation.
+- **`kernel/chunk.clj`** — extracted from `kernel/rope.clj`. Holds the
+  `PRopeChunk` protocol extensions for the three chunk backends
+  (`APersistentVector`, `String`, `byte[]`) as a standalone kernel
+  submodule. `kernel/rope.clj` drops from 1237 to 1155 lines and is now
+  purely the rope tree algebra.
+- **StringRope internals refactor** — `with-tree` macro replaces 16+
+  copies of the `(binding [*t-join* alloc] ...)` form; `->StringRope*`
+  helper replaces 35+ copies of the 6-arg constructor; `coll->str` and
+  `coll->tree-root` coercion helpers deduplicate scattered dispatch
+  logic in the PRope method bodies.
+- **Monomorphic hot paths for `nth` and `reduce`** on all three rope
+  variants. Each variant's deftype now inlines the tree walk directly,
+  replacing the generic kernel's protocol-dispatched `rope-nth` /
+  `rope-chunk-at` / `rope-reduce` with concrete chunk-type calls
+  (`alength`/`aget` for byte[], `.length`/`.charAt` for String,
+  `.count`/`.nth` for vector). Eliminates per-tree-level `PRopeChunk`
+  protocol dispatch (~9 dispatches per `nth` at N=500K), the
+  `[chunk offset]` tuple allocation that `rope-chunk-at` returned on
+  every call, and per-chunk `chunk-reduce-init` dispatch on every leaf
+  during `reduce`.
+  Measured at N=500K (1000 random nth, full reduce):
+  - Rope `nth`: 106 → 58 µs (**1.8x faster**, 0.09x → 0.16x vs vector)
+  - StringRope `nth`: 120 → 50 µs (**2.4x faster**, 0.013x → 0.030x vs String)
+  - ByteRope `nth`: 145 → 62 µs (**2.3x faster**, 0.003x → 0.015x vs byte[])
+  - StringRope `reduce`: 1.81 → 1.07 ms (**1.7x faster**, 0.31x → 0.52x vs String)
+  - ByteRope `reduce`: 3.53 → 1.91 ms (**1.8x faster**)
+  - No structural-op regression: splice, concat, insert, remove, and
+    repeated-edits all within ±3% of prior run.
+- **Removed cursor cache from StringRope and ByteRope.** The volatile-mutable
+  `_cc_chunk`/`_cc_start`/`_cc_end` fields introduced torn-read races
+  under concurrent access (three volatile writes are not atomic as a group)
+  and caused cache thrashing when two threads did sequential access on
+  the same rope instance — violating the thread-safety guarantees
+  expected of persistent data structures. The monomorphic tree walk is
+  fast enough (~50–70 ns per `nth` at N=500K) that the cache's benefit
+  on sequential access was not worth the correctness cost. If sequential
+  `charAt` throughput becomes a bottleneck for regex-heavy workloads, an
+  explicit cursor wrapper (opt-in, not shared) may be added in a future
+  release.
+- **`rope-splice-inplace`** fused single-chunk splice path avoids an
+  intermediate `chunk-splice` allocation on the overflow path via
+  `chunk-splice-split`.
+
+### Performance Improvements
+
+- **Primitive rank for `long-ordered-set` / `string-ordered-set` /
+  `long-ordered-map` / `string-ordered-map`.** `rank-of` and `indexOf`
+  now dispatch to `node-rank-long` / `node-rank-string` on primitive-
+  specialized collections, bypassing the generic `Comparator` dispatch.
+  Matches the existing primitive fast-path pattern already used for
+  `contains` / `find` / `find-val`. At N=1K, rank on a
+  `long-ordered-set` is ~4x faster than on a `data.avl/sorted-set`;
+  `string-ordered-set` rank is ~3.4x faster.
+- **Range-map bulk construction.** `(range-map coll)` with sorted
+  disjoint input now takes an O(n) balanced-build path (`node-build-
+  sorted`) instead of per-entry `assoc` with carve-out. Input with
+  overlapping ranges falls through to the general carving path,
+  preserving "later wins" semantics. ~10x faster than the previous
+  per-insert path; at N=1K the bulk path is already ~2.2x faster than
+  Guava's `TreeRangeMap` construction.
+- **Non-allocating `java.util.Iterator` for `OrderedSet` /
+  `OrderedMap`.** A new `tree/NodeIterator` deftype advances the tree
+  enumerator in place via an unsynchronized-mutable field, avoiding
+  the per-step seq-cell allocation of `clojure.lang.SeqIterator` over
+  a lazy seq. Thread-safety contract is unchanged: the iterator is
+  per-call fresh (no shared state on the collection), matching the
+  memory model of `SeqIterator`. Java-style iteration on
+  `OrderedSet` is now ~2x faster than on `sorted-set` and ~3.6x
+  faster than on `data.avl` at N=1K.
+
+### Refactoring
+
+- **`RopeSeq` / `RopeSeqReverse` moved from `kernel/rope.clj` into
+  `types/rope.clj`.** These generic-Rope-specific seq types were
+  only used by the generic `Rope` deftype — `StringRope` and
+  `ByteRope` carry their own monomorphic seq types. Relocating them
+  makes `kernel/rope.clj` honestly chunk-protocol-agnostic and cuts
+  ~220 lines from the kernel (now 1001 lines). No user-visible
+  change.
+
+### Bug Fixes
+
+- **Primitive node specialization preserved across mutations.**
+  `conj`/`disjoin` on `OrderedSet` and `assoc`/`without` on
+  `OrderedMap` were passing the generic `SimpleNode` constructor
+  instead of the collection's stored allocator. After a single
+  `conj` on a `long-ordered-set`, the root silently degraded from
+  `LongKeyNode` to `SimpleNode`, losing unboxed-key performance.
+  Fixed by threading `alloc` through all `node-add`/`node-remove`
+  call sites. `ordered-merge-with` also propagated nil alloc/stitch
+  into the result; fixed.
+- **PriorityQueue and OrderedMultiset** `getAllocator` and `getStitch`
+  returned nil instead of the generic constructor, violating the
+  `INodeCollection`/`IBalancedCollection` contract.
+- **Empty StringRope** `charAt` and `nth` dereferenced nil root
+  instead of throwing bounds exceptions.
+- **StringRope `valAt`** threw `ClassCastException` on non-integer
+  keys (e.g., `(get sr :x)`). Added `integer?` guard.
+- **Empty StringRope/ByteRope `r/fold`** crashed instead of returning
+  `(combinef)`.
+- **ByteRope `InputStream.read(buf, off, 0)`** returned -1 at EOF
+  instead of 0 per `InputStream` contract.
+- **Auto-boxing in `str->root` and `bytes->root`.** The loop variable
+  `pos` was inferred as primitive `long` but the recur argument came
+  from `clojure.core/min` (Object) and `unchecked-dec-int` (int),
+  forcing auto-boxing per iteration. Threaded as primitive `long`
+  throughout using `unchecked-add` / `unchecked-dec` / `unchecked-int`
+  consistently. Pre-existing latent warning exposed when compiling
+  under `*warn-on-reflection*`.
+
+### Benchmarks and Tooling
+
+- **`lein bench-rope-tuning`** fully rewritten to sweep chunk sizes
+  across all three rope variants (`Rope` vs `Vector`, `StringRope` vs
+  `String`, `ByteRope` vs `byte[]`). Reports per-operation speedups and
+  a geomean score for ranking. Supports
+  `--variant rope|string-rope|byte-rope`.
+- **`lein bench`** (`bench_runner.clj`) full suite gains N=1000 and
+  N=5000 cardinalities alongside the existing 10K/100K/500K. The 1K
+  column exercises flat-mode for all three rope variants; the 5K
+  column exercises the smallest tree-mode regime.
+- **`lein bench-simple`** gains a `:rope` category (alongside the
+  existing `:string-rope` and new `:byte-rope` categories) and adds
+  N=5000 to the shared size defaults.
+- **Memory test** (`memory_test.clj`) gains `string-rope-memory` and
+  `byte-rope-memory` deftests plus a new rope family section in the
+  summary report table, showing all three variants against their
+  natural baselines. The `specialized-collection-memory` deftest
+  extends to cover range-map, segment-tree, and fuzzy-map (previously
+  only interval-set/-map, multiset, priority-queue, and fuzzy-set).
+- **`lein bench-report`** gains three new sections: *Performance by
+  Category* (aggregated wins/parity/losses per category with geomean
+  speedup and best/worst case), *Rope Family at Scale* (side-by-side
+  speedups for all three rope variants on structural ops), and
+  *Significant Wins* (parallel to the existing Significant Losses
+  section — the significant-wins analyzer was always computed but
+  previously not rendered). All existing sections — Headline
+  Performance, Parity, Significant Losses, Full Scorecard,
+  Regressions, Improvements — render identically.
+- **`lein bench` auto-compare** — after writing a fresh
+  `bench-results/<timestamp>.edn`, the runner looks for the
+  most-recent prior EDN in the same directory, flat-walks both files,
+  matches leaf measurements by `(size, group, variant)`, and prints a
+  compact Regressions / Improvements section with timing deltas.
+  Self-contained (no dependency on the `bb` report tool); suggests
+  `lein bench-report --baseline` for the full comparison.
+- **Main bench suite coverage parity** — `bench_runner.clj` now
+  benchmarks range-map, segment-tree, priority-queue, ordered-multiset,
+  fuzzy-set, and fuzzy-map alongside the existing set / map / rope
+  coverage. Previously these types were only exercised by specialized
+  scripts (`lein bench-range-map`) or not at all, which meant the main
+  `lein bench --full` pipeline and `bench-report` had no visibility
+  into their performance.
+- **`lein bench-charts`** generates 7 PNG charts in `doc/charts/` from
+  the latest benchmark EDN via XChart. Charts: set-algebra scaling,
+  rope editing scaling, collection winners (dot plot), rope operations
+  profile (win/loss), rope vs vector absolute time (diverging lines),
+  StringRope crossover, ByteRope crossover.
+- **`lein bench-report` auto-baseline** — when `--baseline` is not
+  specified, the report automatically selects the prior timestamped
+  EDN, so Regressions and Improvements sections render by default.
+  Headline sections now include ordered-set, ordered-map,
+  long-specialized, and string-specialized vs their competitors.
+- **Rope tuner scoring** — `lein bench-rope-tuning` now uses
+  structural-editing geomean (splice, split, concat) as the primary
+  score, with the equal-weight geomean shown as a secondary `all`
+  column. The old equal-weight geomean was misleadingly driven by
+  concat scaling.
+- **`lein bench-report --publish`** suppresses the Full Scorecard,
+  Regressions, and Improvements sections. These are useful for
+  interactive A/B review during development but are noise for outside
+  readers of the committed `doc/report.txt` snapshot. The default
+  (no flag) still shows everything. Recommended snapshot workflow:
+  `lein bench-report --publish > doc/report.txt`.
+- **New bench cases exercising the primitive-rank / range-map-bulk /
+  iterator optimizations.** `bench-long-rank-lookup` and
+  `bench-string-rank-lookup` hit the primitive `node-rank-long` /
+  `node-rank-string` paths that the generic `bench-rank-lookup`
+  missed. `bench-range-map-bulk-construction` uses the single-argument
+  `(core/range-map coll)` constructor to exercise the new O(n)
+  balanced-build path alongside the existing per-insert
+  `bench-range-map-construction`. `bench-set-iteration-iterator`
+  traverses via `.iterator()` to exercise `NodeIterator` (the
+  existing `bench-set-iteration` goes through `reduce`).
+
+### Documentation
+
+- [Cookbook](doc/cookbook.md) restructured with six rope recipes at the
+  front (text editor, regex on StringRope, bulk sequence assembly, binary
+  protocol, streaming digest, undo history). Duplicate section
+  numbering cleaned up; existing collection recipes renumbered.
+- [Ropes](doc/ropes.md) gains a "Chunk Abstraction: One Kernel, Many
+  Backends" section explaining `PRopeChunk` and `kernel/chunk.clj`, a
+  "Specialized Ropes" section with per-variant design and examples,
+  and a variant-picker table. API section now covers all three
+  variants with the shared `PRope` surface up front.
+- [Collections API](doc/collections-api.md) gains full StringRope and
+  ByteRope sections with constructors, interfaces, and per-variant
+  operations.
+
 ## [0.2.0] - 2026-04-08
 
 ### New Collection Types
@@ -52,7 +298,7 @@
 
 ### EDN Tagged Literals
 
-Round-trip serialization via `data_readers.clj`: `#ordered/set`, `#ordered/map`, `#ordered/interval-set`, `#ordered/interval-map`, `#ordered/range-map`, `#ordered/priority-queue`, `#ordered/multiset`, `#ordered/rope`. Collections with custom comparators (including `general-compare`) print in opaque `#<Type ...>` form to avoid non-round-trippable tagged literals.
+Round-trip serialization via `data_readers.clj`: `#ordered/set`, `#ordered/map`, `#interval/set`, `#interval/map`, `#range/map`, `#priority/queue`, `#multi/set`, `#vec/rope`. Collections with custom comparators (including `general-compare`) print in opaque `#<Type ...>` form to avoid non-round-trippable tagged literals.
 
 ### Performance
 

@@ -376,10 +376,39 @@
 ;; Constructor
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defn- sorted-disjoint?
+  "True iff every range in the sorted vector satisfies `lo < hi` AND the
+   ranges are non-overlapping. Ranges are half-open `[lo, hi)`, so
+   disjointness requires `prev-hi <= cur-lo`. Input with invalid or
+   overlapping ranges returns false so the caller falls through to the
+   general path, which throws on the invalid input (matching the
+   single-insert semantics of `assoc`)."
+  [sorted-entries]
+  (let [n (count sorted-entries)]
+    (loop [i (long 0) prev-hi nil]
+      (if (>= i n)
+        true
+        (let [[[lo hi] _] (nth sorted-entries i)]
+          (cond
+            ;; Invalid range: lo >= hi.
+            (not (neg? (clojure.core/compare lo hi)))
+            false
+
+            ;; Overlap with predecessor: prev-hi > lo.
+            (and prev-hi (pos? (clojure.core/compare prev-hi lo)))
+            false
+
+            :else (recur (unchecked-inc i) hi)))))))
+
 (defn range-map
   "Create a range map from a collection of [range value] pairs.
 
    Ranges are [lo hi) (half-open, hi exclusive).
+
+   When the input is disjoint (no overlapping ranges), the tree is built
+   directly in O(n) via a balanced bottom-up construction, which is
+   substantially faster than carving per insert. Overlapping input falls
+   through to the general carving path, preserving 'later wins' semantics.
 
    Example:
      (range-map {[0 10] :a [20 30] :b})
@@ -388,10 +417,13 @@
    (RangeMap. (node/leaf) range-compare {}))
   ([coll]
    (binding [order/*compare* range-compare]
-     (reduce
-       (fn [rm [rng v]] (range-map-assoc rm rng v false))
-       (RangeMap. (node/leaf) range-compare {})
-       coll))))
+     (let [sorted (vec (sort-by (comp first first) coll))]
+       (if (sorted-disjoint? sorted)
+         (RangeMap. (tree/node-build-sorted sorted) range-compare {})
+         (reduce
+           (fn [rm [rng v]] (range-map-assoc rm rng v false))
+           (RangeMap. (node/leaf) range-compare {})
+           coll))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Public API (delegates to protocol)
@@ -449,7 +481,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmethod print-method RangeMap [^RangeMap m ^java.io.Writer w]
-  (.write w "#ordered/range-map [")
+  (.write w "#range/map [")
   (let [s (seq m)]
     (when s
       (let [[k v] (first s)]

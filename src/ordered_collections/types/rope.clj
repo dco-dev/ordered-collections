@@ -4,13 +4,95 @@
   (:require [clojure.core.protocols :as cp]
             [clojure.core.reducers :as r]
             [ordered-collections.protocol :as proto]
-            [ordered-collections.kernel.node :as node]
+            [ordered-collections.kernel.node :as node
+             :refer [leaf? -k -v -l -r]]
+            [ordered-collections.kernel.tree :as tree]
             [ordered-collections.kernel.rope :as ropetree])
   (:import  [clojure.lang RT Murmur3 MapEntry Indexed Util
                            IPersistentCollection IPersistentStack IPersistentVector
                            IEditableCollection ITransientCollection
                            IReduce IReduceInit SeqIterator]
+            [ordered_collections.kernel.root INodeCollection]
             [java.util ArrayList]))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Constants & tree binding macro
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def ^:const ^:private +target-chunk-size+
+  "Generic Rope target chunk size (element count). Bound into the
+  kernel's `*target-chunk-size*` dynamic var via `with-tree`. Tuned
+  via `lein bench-rope-tuning`: at 100K+ elements, 1024 gives better
+  nth/reduce/concat than the historical 256 with only a small splice
+  regression (which is still ~6000x faster than PersistentVector)."
+  1024)
+
+(def ^:const ^:private +min-chunk-size+
+  "Generic Rope minimum internal chunk size (= target/2)."
+  512)
+
+(def ^:const ^:private +flat-threshold+
+  "Maximum element count stored in flat (raw PersistentVector)
+  representation. Below this, the rope skips the tree wrapper entirely
+  and holds the vector directly, eliminating the per-rope SimpleNode
+  header and one layer of indirection on every operation. Above the
+  threshold, the representation is transparently promoted to the
+  chunked tree form. Matches `+target-chunk-size+` — a rope small
+  enough to live in one chunk goes flat."
+  1024)
+
+(defmacro ^:private with-tree
+  "Bind the kernel's dynamic rope context for generic Rope operations:
+  `tree/*t-join*` to the allocator, and the CSI target/min to the
+  generic-rope constants. Every tree-mutating operation must execute
+  inside this binding."
+  [alloc & body]
+  `(binding [tree/*t-join*                ~alloc
+             ropetree/*target-chunk-size* +target-chunk-size+
+             ropetree/*min-chunk-size*    +min-chunk-size+]
+     ~@body))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Flat-mode helpers
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn- flat?
+  "True when root is a raw PersistentVector (flat representation).
+  Also matches APersistentVector$SubVector, which rope-sub returns."
+  [root]
+  (instance? clojure.lang.APersistentVector root))
+
+(defn- flat-size
+  "Size of a flat or tree root. Handles nil, flat vector, and tree nodes."
+  ^long [root]
+  (cond
+    (nil? root)  0
+    (flat? root) (.count ^clojure.lang.Counted root)
+    :else        (long (node/-v root))))
+
+(defn- ensure-tree-root
+  "Promote a flat vector root to a tree root. Tree nodes are returned
+  unchanged. Caller must bind tree/*t-join* (and CSI vars)."
+  [root]
+  (cond
+    (nil? root)  nil
+    (flat? root) (if (zero? (.count ^clojure.lang.Counted root))
+                   nil
+                   (ropetree/chunks->root [root]))
+    :else        root))
+
+(defn- make-root
+  "Create a Rope root from a (flat) vector. Stays flat if ≤ threshold,
+  otherwise promotes to tree via str-like rechunking so internal
+  chunks satisfy CSI. Caller must bind tree/*t-join* for promotion."
+  [^clojure.lang.IPersistentVector v]
+  (let [n (.length v)]
+    (cond
+      (zero? n)               nil
+      (<= n +flat-threshold+) v
+      :else                   (ropetree/coll->root v))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -103,39 +185,279 @@
 (defn- linear-index-of
   "Linear scan for first index of x, or -1."
   [root x]
-  (let [n      (ropetree/rope-size root)
-        result (ropetree/rope-reduce
-                 (fn [^long i elem]
-                   (if (Util/equiv elem x)
-                     (reduced i)
-                     (unchecked-inc i)))
-                 (long 0)
-                 root)]
-    (if (< (long result) n) (long result) -1)))
+  (cond
+    (nil? root) -1
+    (flat? root) (.indexOf ^java.util.List root x)
+    :else
+    (let [n      (ropetree/rope-size root)
+          result (ropetree/rope-reduce
+                   (fn [^long i elem]
+                     (if (Util/equiv elem x)
+                       (reduced i)
+                       (unchecked-inc i)))
+                   (long 0)
+                   root)]
+      (if (< (long result) n) (long result) -1))))
 
 (defn- linear-last-index-of
   "Forward linear scan tracking the last matching index. O(n)."
   [root x]
-  (let [found (volatile! (long -1))]
-    (ropetree/rope-reduce
-      (fn [^long i elem]
-        (when (Util/equiv elem x) (vreset! found i))
-        (unchecked-inc i))
-      (long 0)
-      root)
-    (long @found)))
+  (cond
+    (nil? root) -1
+    (flat? root) (.lastIndexOf ^java.util.List root x)
+    :else
+    (let [found (volatile! (long -1))]
+      (ropetree/rope-reduce
+        (fn [^long i elem]
+          (when (Util/equiv elem x) (vreset! found i))
+          (unchecked-inc i))
+        (long 0)
+        root)
+      (long @found))))
 
 (defn- rope-to-array
   ^objects [root]
-  (let [n   (ropetree/rope-size root)
-        arr (object-array n)]
-    (ropetree/rope-reduce
-      (fn [^long i x]
-        (aset arr i x)
-        (unchecked-inc i))
-      (long 0)
-      root)
-    arr))
+  (cond
+    (nil? root)  (object-array 0)
+    (flat? root) (.toArray ^java.util.Collection root)
+    :else
+    (let [n   (ropetree/rope-size root)
+          arr (object-array n)]
+      (ropetree/rope-reduce
+        (fn [^long i x]
+          (aset arr i x)
+          (unchecked-inc i))
+        (long 0)
+        root)
+      arr)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; RopeSeq / RopeSeqReverse — direct seq types over vector chunks
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; These monomorphic seq types walk a rope tree's vector chunks using
+;; `.count ^Counted` and `.nth ^Indexed`. They are specific to the generic
+;; Rope (whose chunks are APersistentVector); the StringRope and ByteRope
+;; carry their own specialized seq types with .charAt and aget fast paths.
+
+(defn- seq-equiv
+  "Element-wise sequential equivalence."
+  [s1 o]
+  (if-not (or (instance? clojure.lang.Sequential o)
+              (instance? java.util.List o))
+    false
+    (loop [s1 (seq s1) s2 (seq o)]
+      (cond
+        (nil? s1) (nil? s2)
+        (nil? s2) false
+        (not (Util/equiv (first s1) (first s2))) false
+        :else (recur (next s1) (next s2))))))
+
+(deftype RopeSeq [enum chunk ^long i cnt _meta]
+  clojure.lang.ISeq
+  (first [_]
+    (.nth ^clojure.lang.Indexed chunk (unchecked-int i)))
+  (next [_]
+    (let [next-cnt (when cnt (unchecked-dec-int cnt))
+          next-i   (unchecked-inc i)]
+      (if (< next-i (count chunk))
+        (RopeSeq. enum chunk next-i next-cnt nil)
+        (when-let [e (tree/node-enum-rest enum)]
+          (let [chunk' (-k (tree/node-enum-first e))]
+            (RopeSeq. e chunk' 0 next-cnt nil))))))
+  (more [this]
+    (or (.next this) ()))
+  (cons [this o]
+    (clojure.lang.Cons. o this))
+
+  clojure.lang.Seqable
+  (seq [this] this)
+
+  clojure.lang.Sequential
+
+  java.lang.Iterable
+  (iterator [this]
+    (SeqIterator. this))
+
+  clojure.lang.Counted
+  (count [_]
+    (or cnt
+        (loop [e enum
+               chunk chunk
+               i i
+               n 0]
+          (let [n (+ n (- (count chunk) i))]
+            (if-let [e' (tree/node-enum-rest e)]
+              (let [chunk' (-k (tree/node-enum-first e'))]
+                (recur e' chunk' 0 n))
+              n)))))
+
+  clojure.lang.IReduceInit
+  (reduce [_ f init]
+    (loop [e enum
+           chunk chunk
+           i i
+           acc init]
+      (let [acc (loop [idx i
+                       acc acc]
+                  (if (< idx (count chunk))
+                    (let [ret (f acc (.nth ^clojure.lang.Indexed chunk (unchecked-int idx)))]
+                      (if (reduced? ret)
+                        ret
+                        (recur (unchecked-inc idx) ret)))
+                    acc))]
+        (if (reduced? acc)
+          @acc
+          (if-let [e' (tree/node-enum-rest e)]
+            (let [chunk' (-k (tree/node-enum-first e'))]
+              (recur e' chunk' 0 acc))
+            acc)))))
+
+  clojure.lang.IReduce
+  (reduce [this f]
+    (if enum
+      (let [acc (.nth ^clojure.lang.Indexed chunk (unchecked-int i))
+            next-i (unchecked-inc i)]
+        (if (< next-i (count chunk))
+          (.reduce ^clojure.lang.IReduceInit
+            (RopeSeq. enum chunk next-i nil nil) f acc)
+          (if-let [e' (tree/node-enum-rest enum)]
+            (let [chunk' (-k (tree/node-enum-first e'))]
+              (.reduce ^clojure.lang.IReduceInit
+                (RopeSeq. e' chunk' 0 nil nil) f acc))
+            acc)))
+      (f)))
+
+  clojure.lang.IHashEq
+  (hasheq [this]
+    (Murmur3/hashOrdered this))
+
+  clojure.lang.IPersistentCollection
+  (empty [_] ())
+  (equiv [this o]
+    (seq-equiv this o))
+
+  Object
+  (hashCode [this]
+    (Util/hash this))
+  (equals [this o]
+    (Util/equals this o))
+
+  clojure.lang.IMeta
+  (meta [_] _meta)
+
+  clojure.lang.IObj
+  (withMeta [_ m]
+    (RopeSeq. enum chunk i cnt m)))
+
+(deftype RopeSeqReverse [enum chunk ^long i cnt _meta]
+  clojure.lang.ISeq
+  (first [_]
+    (.nth ^clojure.lang.Indexed chunk (unchecked-int i)))
+  (next [_]
+    (let [next-cnt (when cnt (unchecked-dec-int cnt))]
+      (if (pos? i)
+        (RopeSeqReverse. enum chunk (unchecked-dec i) next-cnt nil)
+        (when-let [e (tree/node-enum-prior enum)]
+          (let [chunk' (-k (tree/node-enum-first e))]
+            (RopeSeqReverse. e chunk' (dec (count chunk')) next-cnt nil))))))
+  (more [this]
+    (or (.next this) ()))
+  (cons [this o]
+    (clojure.lang.Cons. o this))
+
+  clojure.lang.Seqable
+  (seq [this] this)
+
+  clojure.lang.Sequential
+
+  java.lang.Iterable
+  (iterator [this]
+    (SeqIterator. this))
+
+  clojure.lang.Counted
+  (count [_]
+    (or cnt
+        (loop [e enum
+               chunk chunk
+               i i
+               n 0]
+          (let [n (+ n (inc i))]
+            (if-let [e' (tree/node-enum-prior e)]
+              (let [chunk' (-k (tree/node-enum-first e'))]
+                (recur e' chunk' (dec (count chunk')) n))
+              n)))))
+
+  clojure.lang.IReduceInit
+  (reduce [_ f init]
+    (loop [e enum
+           chunk chunk
+           i i
+           acc init]
+      (let [acc (loop [idx i
+                       acc acc]
+                  (if (neg? idx)
+                    acc
+                    (let [ret (f acc (.nth ^clojure.lang.Indexed chunk (unchecked-int idx)))]
+                      (if (reduced? ret)
+                        ret
+                        (recur (unchecked-dec idx) ret)))))]
+        (if (reduced? acc)
+          @acc
+          (if-let [e' (tree/node-enum-prior e)]
+            (let [chunk' (-k (tree/node-enum-first e'))]
+              (recur e' chunk' (dec (count chunk')) acc))
+            acc)))))
+
+  clojure.lang.IReduce
+  (reduce [this f]
+    (if enum
+      (let [acc (.nth ^clojure.lang.Indexed chunk (unchecked-int i))]
+        (if (pos? i)
+          (.reduce ^clojure.lang.IReduceInit
+            (RopeSeqReverse. enum chunk (unchecked-dec i) nil nil) f acc)
+          (if-let [e' (tree/node-enum-prior enum)]
+            (let [chunk' (-k (tree/node-enum-first e'))]
+              (.reduce ^clojure.lang.IReduceInit
+                (RopeSeqReverse. e' chunk' (dec (count chunk')) nil nil) f acc))
+            acc)))
+      (f)))
+
+  clojure.lang.IHashEq
+  (hasheq [this]
+    (Murmur3/hashOrdered this))
+
+  clojure.lang.IPersistentCollection
+  (empty [_] ())
+  (equiv [this o]
+    (seq-equiv this o))
+
+  Object
+  (hashCode [this]
+    (Util/hash this))
+  (equals [this o]
+    (Util/equals this o))
+
+  clojure.lang.IMeta
+  (meta [_] _meta)
+
+  clojure.lang.IObj
+  (withMeta [_ m]
+    (RopeSeqReverse. enum chunk i cnt m)))
+
+(defn- rope-seq
+  "Forward seq over a rope tree's elements."
+  [root]
+  (when-let [enum (tree/node-enumerator root)]
+    (let [chunk (-k (tree/node-enum-first enum))]
+      (RopeSeq. enum chunk 0 (ropetree/rope-size root) nil))))
+
+(defn- rope-rseq
+  "Reverse seq over a rope tree's elements."
+  [root]
+  (when-let [enum (tree/node-enumerator-reverse root)]
+    (let [chunk (-k (tree/node-enum-first enum))]
+      (RopeSeqReverse. enum chunk (dec (count chunk)) (ropetree/rope-size root) nil))))
 
 (declare ->TransientRope)
 
@@ -152,29 +474,51 @@
 ;; IPersistentVector for full vector-contract compatibility, including
 ;; indexed access, assoc, conj-to-end, peek/pop-right.
 
-(deftype Rope [root _meta]
+(deftype Rope [root alloc _meta]
 
   java.io.Serializable
   java.util.RandomAccess
+
+  INodeCollection
+  (getAllocator [_] alloc)
 
   clojure.lang.IMeta
   (meta [_] _meta)
 
   clojure.lang.IObj
-  (withMeta [_ m] (Rope. root m))
+  (withMeta [_ m] (Rope. root alloc m))
 
   clojure.lang.Counted
   (count [_]
-    (ropetree/rope-size root))
+    (flat-size root))
 
   Indexed
+  ;; Monomorphic nth — inlines the tree walk so we can replace the kernel's
+  ;; protocol-dispatched `chunk-length` and `chunk-nth` with direct calls
+  ;; on `Counted` and `Indexed` interfaces. APersistentVector is the only
+  ;; chunk type for generic Rope, so the type is known statically.
   (nth [_ i]
-    (if (valid-index? (ropetree/rope-size root) i)
-      (ropetree/rope-nth root (long i))
-      (throw (IndexOutOfBoundsException.))))
-  (nth [_ i not-found]
-    (if (valid-index? (ropetree/rope-size root) i)
-      (ropetree/rope-nth root (long i))
+    (let [ii (long i)
+          n  (flat-size root)]
+      (when-not (valid-index? n ii)
+        (throw (IndexOutOfBoundsException.)))
+      (if (flat? root)
+        ;; Flat mode: direct .nth on the backing PersistentVector/SubVector.
+        (.nth ^clojure.lang.Indexed root (unchecked-int ii))
+        ;; Tree mode: inline monomorphic walk using Counted + Indexed.
+        (loop [nd root, j ii]
+          (let [l  (-l nd)
+                ls (if (leaf? l) 0 (long (-v l)))
+                ck (-k nd)
+                cs (long (.count ^clojure.lang.Counted ck))
+                rs (+ ls cs)]
+            (cond
+              (< j ls) (recur l j)
+              (< j rs) (.nth ^clojure.lang.Indexed ck (unchecked-int (- j ls)))
+              :else    (recur (-r nd) (- j rs))))))))
+  (nth [this i not-found]
+    (if (and (integer? i) (valid-index? (flat-size root) (long i)))
+      (.nth this (int i))
       not-found))
 
   clojure.lang.ILookup
@@ -198,49 +542,98 @@
 
   clojure.lang.Associative
   (containsKey [_ k]
-    (valid-index? (ropetree/rope-size root) k))
+    (valid-index? (flat-size root) k))
   (entryAt [this k]
     (when (.containsKey this k)
       (MapEntry. k (.nth this k))))
   (assoc [this k v]
-    (let [n (ropetree/rope-size root)]
+    (let [n (flat-size root)
+          i (long k)]
       (cond
-        (not (insert-index? n k))
+        (not (insert-index? n i))
         (throw (IndexOutOfBoundsException.))
 
-        (= (long k) n)
-        (Rope. (ropetree/rope-conj-right root v) _meta)
+        (flat? root)
+        (let [^clojure.lang.IPersistentVector fv root]
+          (if (= i n)
+            ;; append
+            (if (< n +flat-threshold+)
+              (Rope. (.cons fv v) alloc _meta)
+              (with-tree alloc
+                (Rope. (ropetree/rope-conj-right (ensure-tree-root root) v) alloc _meta)))
+            ;; replace
+            (Rope. (.assocN fv (int i) v) alloc _meta)))
 
         :else
-        (Rope. (ropetree/rope-assoc root (long k) v) _meta))))
+        (with-tree alloc
+          (if (= i n)
+            (Rope. (ropetree/rope-conj-right root v) alloc _meta)
+            (Rope. (ropetree/rope-assoc root (long i) v) alloc _meta))))))
 
   IPersistentVector
   (assocN [this i v]
     (.assoc this i v))
   (length [_]
-    (ropetree/rope-size root))
+    (flat-size root))
 
   IPersistentCollection
   (cons [_ o]
-    (Rope. (ropetree/rope-conj-right root o) _meta))
+    (cond
+      (nil? root)
+      (Rope. [o] alloc _meta)
+
+      (flat? root)
+      (let [^clojure.lang.IPersistentVector fv root
+            n (.length fv)]
+        (if (< n +flat-threshold+)
+          (Rope. (.cons fv o) alloc _meta)
+          (with-tree alloc
+            (Rope. (ropetree/rope-conj-right (ensure-tree-root root) o) alloc _meta))))
+
+      :else
+      (with-tree alloc
+        (Rope. (ropetree/rope-conj-right root o) alloc _meta))))
   (empty [_]
-    (Rope. nil _meta))
+    (Rope. nil alloc _meta))
   (equiv [this o]
     (rope-equiv this o))
 
   IPersistentStack
   (peek [_]
-    (ropetree/rope-peek-right root))
+    (cond
+      (nil? root)  nil
+      (flat? root) (let [^clojure.lang.IPersistentStack fv root]
+                     (.peek fv))
+      :else        (ropetree/rope-peek-right root)))
   (pop [_]
-    (Rope. (ropetree/rope-pop-right root) _meta))
+    (cond
+      (nil? root)
+      (throw (IllegalStateException. "Can't pop empty vector"))
+
+      (flat? root)
+      (let [^clojure.lang.IPersistentVector fv root
+            n (.length fv)]
+        (if (<= n 1)
+          (Rope. nil alloc _meta)
+          (Rope. (.pop ^clojure.lang.IPersistentStack fv) alloc _meta)))
+
+      :else
+      (with-tree alloc
+        (Rope. (ropetree/rope-pop-right root) alloc _meta))))
 
   clojure.lang.Seqable
   (seq [_]
-    (ropetree/rope-seq root))
+    (cond
+      (nil? root)  nil
+      (flat? root) (seq root)
+      :else        (rope-seq root)))
 
   clojure.lang.Reversible
   (rseq [_]
-    (ropetree/rope-rseq root))
+    (cond
+      (nil? root)  nil
+      (flat? root) (rseq ^clojure.lang.Reversible root)
+      :else        (rope-rseq root)))
 
   clojure.lang.Sequential
 
@@ -256,11 +649,19 @@
 
   IReduceInit
   (reduce [_ f init]
-    (ropetree/rope-reduce f init root))
+    (cond
+      (nil? root)  init
+      ;; clojure.core/reduce dispatches via CollReduce/IReduceInit as
+      ;; appropriate — works for PersistentVector and SubVector alike.
+      (flat? root) (clojure.core/reduce f init root)
+      :else        (ropetree/rope-reduce f init root)))
 
   IReduce
   (reduce [_ f]
-    (ropetree/rope-reduce f root))
+    (cond
+      (nil? root)  (f)
+      (flat? root) (clojure.core/reduce f root)
+      :else        (ropetree/rope-reduce f root)))
 
   cp/CollReduce
   (coll-reduce [this f]
@@ -270,7 +671,10 @@
 
   r/CollFold
   (coll-fold [this n combinef reducef]
-    (ropetree/rope-fold root (long n) combinef reducef))
+    (cond
+      (nil? root)  (combinef)
+      (flat? root) (clojure.core/reduce reducef (combinef) root)
+      :else        (ropetree/rope-fold root (long n) combinef reducef)))
 
   clojure.lang.IHashEq
   (hasheq [this]
@@ -280,13 +684,13 @@
   (toArray [_]
     (rope-to-array root))
   (isEmpty [_]
-    (nil? root))
+    (zero? (flat-size root)))
   (^boolean contains [_ x]
     (not (neg? (linear-index-of root x))))
   (containsAll [this c]
     (every? #(.contains this %) c))
   (size [_]
-    (ropetree/rope-size root))
+    (int (flat-size root)))
   (add [_ _]
     (throw (UnsupportedOperationException.)))
   (addAll [_ _]
@@ -301,10 +705,8 @@
     (throw (UnsupportedOperationException.)))
 
   java.util.List
-  (get [_ i]
-    (if (valid-index? (ropetree/rope-size root) i)
-      (ropetree/rope-nth root (long i))
-      (throw (IndexOutOfBoundsException.))))
+  (get [this i]
+    (.nth this (int i)))
   (indexOf [_ x]
     (linear-index-of root x))
   (lastIndexOf [_ x]
@@ -316,40 +718,182 @@
 
   proto/PRope
   (rope-cat [this other]
-    (Rope. (ropetree/rope-concat root (.-root ^Rope other)) _meta))
+    (when-not (instance? Rope other)
+      (throw (IllegalArgumentException. "Rope rope-cat requires a Rope")))
+    (let [other-root (.-root ^Rope other)
+          fv1 (when (flat? root) root)
+          fv2 (when (flat? other-root) other-root)]
+      (cond
+        ;; Both empty
+        (and (nil? root) (nil? other-root))
+        (Rope. nil alloc _meta)
+
+        ;; Other empty
+        (nil? other-root) this
+
+        ;; This empty
+        (nil? root) (Rope. other-root alloc _meta)
+
+        ;; Fast path: both flat and combined fits
+        (and fv1 fv2
+             (<= (+ (count fv1) (count fv2)) +flat-threshold+))
+        (Rope. (into fv1 fv2) alloc _meta)
+
+        :else
+        (with-tree alloc
+          (Rope. (ropetree/rope-concat (ensure-tree-root root)
+                                        (ensure-tree-root other-root))
+                 alloc _meta)))))
   (rope-split [_ i]
-    (check-insert-index! (ropetree/rope-size root) i)
-    (let [[l r] (ropetree/ensure-split-parts
-                  (ropetree/rope-split-at root (long i)))]
-      [(Rope. l _meta) (Rope. r _meta)]))
-  (rope-sub [_ start end]
-    (let [n (ropetree/rope-size root)]
-      (check-range! start end n)
-      (Rope. (ropetree/rope-subvec-root root (long start) (long end)) _meta)))
-  (rope-insert [this i coll]
-    (let [n (ropetree/rope-size root)]
+    (let [n (flat-size root)]
       (check-insert-index! n i)
-      (let [mid (->rope coll)]
-        (Rope. (ropetree/rope-insert-root root (long i) (.-root ^Rope mid)) _meta))))
+      (let [ii (long i)]
+        (cond
+          (nil? root)
+          [(Rope. nil alloc _meta) (Rope. nil alloc _meta)]
+
+          (flat? root)
+          (let [^clojure.lang.IPersistentVector fv root]
+            [(Rope. (when (pos? ii) (subvec fv 0 (int ii))) alloc _meta)
+             (Rope. (when (< ii n) (subvec fv (int ii) (int n))) alloc _meta)])
+
+          :else
+          (with-tree alloc
+            (let [[l r] (ropetree/ensure-split-parts
+                          (ropetree/rope-split-at root ii))]
+              [(Rope. l alloc _meta) (Rope. r alloc _meta)]))))))
+  (rope-sub [_ start end]
+    (let [n (flat-size root)]
+      (check-range! start end n)
+      (let [si (long start)
+            ei (long end)]
+        (cond
+          (or (nil? root) (= si ei))
+          (Rope. nil alloc _meta)
+
+          (flat? root)
+          (let [^clojure.lang.IPersistentVector fv root]
+            (Rope. (subvec fv (int si) (int ei)) alloc _meta))
+
+          :else
+          (with-tree alloc
+            (Rope. (ropetree/rope-subvec-root root si ei) alloc _meta))))))
+  (rope-insert [this i coll]
+    (let [n (flat-size root)]
+      (check-insert-index! n i)
+      (let [ii (long i)
+            ins (if (instance? clojure.lang.APersistentVector coll) coll (vec coll))
+            ins-n (.count ^clojure.lang.Counted ins)]
+        (cond
+          (zero? ins-n) this
+
+          ;; Flat fast path
+          (flat? root)
+          (let [^clojure.lang.IPersistentVector fv root
+                total (+ n ins-n)]
+            (if (<= total +flat-threshold+)
+              ;; Build new flat vector directly
+              (let [new-v (-> []
+                              (into (subvec fv 0 (int ii)))
+                              (into ins)
+                              (into (subvec fv (int ii) (int n))))]
+                (Rope. new-v alloc _meta))
+              ;; Promote to tree
+              (with-tree alloc
+                (Rope. (ropetree/rope-insert-root
+                         (ensure-tree-root root) ii
+                         (ensure-tree-root ins))
+                       alloc _meta))))
+
+          :else
+          (or (when (and (<= ins-n +target-chunk-size+) (pos? ins-n))
+                (when-let [new-root (ropetree/rope-splice-inplace
+                                      root ii ii ins alloc)]
+                  (Rope. new-root alloc _meta)))
+              (with-tree alloc
+                (Rope. (ropetree/rope-insert-root root ii
+                                                   (ensure-tree-root ins))
+                       alloc _meta)))))))
   (rope-remove [this start end]
-    (check-range! start end (ropetree/rope-size root))
-    (let [start (long start)
-          end   (long end)]
-      (Rope. (ropetree/rope-remove-root root start end) _meta)))
+    (let [n (flat-size root)]
+      (check-range! start end n)
+      (let [si (long start)
+            ei (long end)]
+        (cond
+          (= si ei) this
+
+          (flat? root)
+          (let [^clojure.lang.IPersistentVector fv root
+                new-v (into (subvec fv 0 (int si)) (subvec fv (int ei) (int n)))]
+            (Rope. (when (pos? (count new-v)) new-v) alloc _meta))
+
+          :else
+          (or (when-let [new-root (ropetree/rope-splice-inplace
+                                    root si ei nil alloc)]
+                (Rope. new-root alloc _meta))
+              (with-tree alloc
+                (Rope. (ropetree/rope-remove-root root si ei) alloc _meta)))))))
   (rope-splice [this start end coll]
-    (check-range! start end (ropetree/rope-size root))
-    (let [start (long start)
-          end   (long end)
-          mid   (->rope coll)]
-      (Rope. (ropetree/rope-splice-root root start end (.-root ^Rope mid)) _meta)))
+    (let [n (flat-size root)]
+      (check-range! start end n)
+      (let [si (long start)
+            ei (long end)
+            ins (if (instance? clojure.lang.APersistentVector coll) coll (vec coll))
+            ins-n (.count ^clojure.lang.Counted ins)]
+        (cond
+          (flat? root)
+          (let [^clojure.lang.IPersistentVector fv root
+                total (+ (- n (- ei si)) ins-n)]
+            (if (<= total +flat-threshold+)
+              (let [new-v (-> []
+                              (into (subvec fv 0 (int si)))
+                              (into ins)
+                              (into (subvec fv (int ei) (int n))))]
+                (Rope. (when (pos? (count new-v)) new-v) alloc _meta))
+              (with-tree alloc
+                (Rope. (ropetree/rope-splice-root
+                         (ensure-tree-root root) si ei
+                         (ensure-tree-root ins))
+                       alloc _meta))))
+
+          (nil? root)
+          (if (zero? ins-n)
+            this
+            (with-tree alloc
+              (Rope. (make-root ins) alloc _meta)))
+
+          :else
+          (or (when (<= ins-n +target-chunk-size+)
+                (let [rep-chunk (when (pos? ins-n) ins)]
+                  (when-let [new-root (ropetree/rope-splice-inplace
+                                        root si ei rep-chunk alloc)]
+                    (Rope. new-root alloc _meta))))
+              (with-tree alloc
+                (Rope. (ropetree/rope-splice-root root si ei
+                                                   (ensure-tree-root ins))
+                       alloc _meta)))))))
   (rope-chunks [_]
-    (ropetree/rope-chunks-seq root))
+    (cond
+      (nil? root)  nil
+      (flat? root) (list root)
+      :else        (ropetree/rope-chunks-seq root)))
   (rope-str [_]
-    (ropetree/rope->str root))
+    (cond
+      (nil? root)  ""
+      (flat? root)
+      (let [sb (StringBuilder.)]
+        (run! #(.append sb %) root)
+        (.toString sb))
+      :else
+      (ropetree/rope->str root)))
 
   IEditableCollection
   (asTransient [_]
-    (->TransientRope root (ArrayList.) (ArrayList.) 0 true _meta))
+    ;; TransientRope's internal machinery (rope-size, rope-nth, etc.)
+    ;; expects a tree root, so promote any flat root on the way in.
+    (->TransientRope
+      (with-tree alloc (ensure-tree-root root))
+      alloc (ArrayList.) (ArrayList.) 0 true _meta))
 
   Object
   (hashCode [this]
@@ -361,11 +905,48 @@
 
 
 (defn- ->rope
-  "Coerce x to a Rope, returning x if already a Rope."
+  "Coerce x to a Rope, returning x if already a Rope. Small inputs
+  stay in flat form (raw vector); larger inputs build a tree."
   [x]
   (if (instance? Rope x)
     x
-    (Rope. (ropetree/coll->root x) {})))
+    (let [v (if (instance? clojure.lang.APersistentVector x) x (vec x))
+          n (.count ^clojure.lang.Counted v)]
+      (cond
+        (zero? n)
+        (Rope. nil ropetree/rope-node-create {})
+
+        (<= n +flat-threshold+)
+        (Rope. v ropetree/rope-node-create {})
+
+        :else
+        (with-tree ropetree/rope-node-create
+          (Rope. (ropetree/coll->root v) ropetree/rope-node-create {}))))))
+
+(defn- ->tree-root
+  "Coerce `x` to a tree root suitable for kernel operations.
+  Caller must bind tree/*t-join* (and CSI vars).
+  - `nil`              → `nil`
+  - `Rope` with flat   → single-node tree from the flat vector
+  - `Rope` with tree   → that tree
+  - anything else      → promoted via coll->root"
+  [x]
+  (cond
+    (nil? x) nil
+
+    (instance? Rope x)
+    (let [rt (.-root ^Rope x)]
+      (cond
+        (nil? rt)    nil
+        (flat? rt)   (if (zero? (count rt))
+                       nil
+                       (ropetree/chunks->root [rt]))
+        :else        rt))
+
+    :else
+    (ropetree/coll->root (if (instance? clojure.lang.APersistentVector x)
+                           x
+                           (vec x)))))
 
 (defn rope-concat
   "Concatenate ropes or rope-coercible collections.
@@ -377,12 +958,20 @@
   ([left right]
    (proto/rope-cat (->rope left) (->rope right)))
   ([left right & more]
-   (Rope. (ropetree/chunks->root-csi
-            (into [] (mapcat (comp ropetree/root->chunks rope-root))
-                  (list* left right more)))
-     (or (meta left) {}))))
+   (with-tree ropetree/rope-node-create
+     (Rope. (ropetree/chunks->root-csi
+              (into []
+                    (mapcat (fn [x]
+                              (let [rt (->tree-root x)]
+                                (if rt
+                                  (ropetree/root->chunks rt)
+                                  []))))
+                    (list* left right more)))
+            ropetree/rope-node-create
+            (or (meta left) {})))))
 
 (defn- transient-appended-root
+  "Build a rope tree from flushed chunks + tail. Caller must bind *t-join*."
   [^ArrayList chunks ^ArrayList tail]
   (let [chunk-count (.size chunks)
         tail-empty? (.isEmpty tail)]
@@ -404,6 +993,7 @@
   4)
 
 (defn- transient-final-root
+  "Merge original root with appended chunks/tail. Caller must bind *t-join*."
   [root ^ArrayList chunks ^ArrayList tail]
   (cond
     ;; Fast path: nothing appended — return original root unchanged
@@ -465,6 +1055,7 @@
 ;; rope API.
 
 (deftype TransientRope [^:unsynchronized-mutable root
+                        alloc
                         ^ArrayList chunks
                         ^ArrayList tail
                         ^:unsynchronized-mutable chunk-elems
@@ -474,16 +1065,24 @@
   (conj [this x]
     (when-not edit (throw (IllegalAccessError. "Transient used after persistent! call")))
     (.add tail x)
-    (when (>= (.size tail) ropetree/+target-chunk-size+)
+    (when (>= (.size tail) +target-chunk-size+)
       (.add chunks (vec tail))
-      (set! chunk-elems (+ chunk-elems ropetree/+target-chunk-size+))
+      (set! chunk-elems (+ chunk-elems +target-chunk-size+))
       (.clear tail))
     this)
 
   (persistent [_]
     (when-not edit (throw (IllegalAccessError. "Transient used after persistent! call")))
     (set! edit false)
-    (Rope. (transient-final-root root chunks tail) _meta))
+    (with-tree alloc
+      (let [tree-root  (transient-final-root root chunks tail)
+            ;; Demote to flat if the result is small enough
+            final-root (if (and tree-root
+                                (not (flat? tree-root))
+                                (<= (ropetree/rope-size tree-root) +flat-threshold+))
+                         (vec (mapcat identity (ropetree/root->chunks tree-root)))
+                         tree-root)]
+        (Rope. final-root alloc _meta))))
 
   clojure.lang.Counted
   (count [_]
@@ -497,8 +1096,8 @@
       (cond
         (and (>= i 0) (< i rs))   (ropetree/rope-nth root i)
         (and (>= j 0) (< j chunk-elems))
-        (let [chunk-idx (quot j ropetree/+target-chunk-size+)
-              offset    (rem j ropetree/+target-chunk-size+)
+        (let [chunk-idx (quot j +target-chunk-size+)
+              offset    (rem j +target-chunk-size+)
               chunk     (.get chunks chunk-idx)]
           (.nth ^clojure.lang.Indexed chunk offset))
 
@@ -517,35 +1116,49 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn rope
-  ([] (Rope. nil {}))
+  "Create a persistent rope from a collection.
+   Small inputs (≤ 1024 elements) are stored as a raw PersistentVector
+   root with zero tree overhead. Larger inputs build the chunked tree."
+  ([] (Rope. nil ropetree/rope-node-create {}))
   ([coll]
-   (Rope. (ropetree/coll->root coll) {})))
-
-(defn- rope-root
-  [x]
-  (if (instance? Rope x)
-    (.-root ^Rope x)
-    (ropetree/coll->root x)))
+   (->rope coll)))
 
 (defn rope-concat-all
   "Bulk concatenation of rope values or rope-coercible collections.
   Collects all chunks and builds the tree directly in O(total chunks),
   avoiding pairwise tree operations."
   [& xs]
-  (Rope. (ropetree/chunks->root-csi
-           (into [] (mapcat (comp ropetree/root->chunks rope-root)) xs))
-    (or (meta (first xs)) {})))
+  (with-tree ropetree/rope-node-create
+    (Rope. (ropetree/chunks->root-csi
+             (into []
+                   (mapcat (fn [x]
+                             (let [rt (->tree-root x)]
+                               (if rt
+                                 (ropetree/root->chunks rt)
+                                 []))))
+                   xs))
+      ropetree/rope-node-create
+      (or (meta (first xs)) {}))))
 
 (defn rope-chunks-reverse
   "Reverse seq of internal chunk vectors."
   [v]
-  (ropetree/rope-chunks-rseq (rope-root v)))
+  (let [^Rope r (->rope v)
+        root (.-root r)]
+    (cond
+      (nil? root)  nil
+      (flat? root) (list root)
+      :else        (ropetree/rope-chunks-rseq root))))
 
 (defn rope-chunk-count
   "Number of internal chunks. O(1)."
   [v]
-  (let [root (rope-root v)]
-    (if (nil? root) 0 (ropetree/chunk-count root))))
+  (let [^Rope r (->rope v)
+        root (.-root r)]
+    (cond
+      (nil? root)  0
+      (flat? root) 1
+      :else        (ropetree/chunk-count root))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -553,5 +1166,5 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmethod print-method Rope [^Rope r ^java.io.Writer w]
-  (.write w "#ordered/rope ")
+  (.write w "#vec/rope ")
   (print-method (into [] r) w))

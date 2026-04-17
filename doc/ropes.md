@@ -2,18 +2,35 @@
 
 ## Status
 
-The rope is a **public** collection type in `ordered-collections.core`.
+The library provides three public rope variants in
+`ordered-collections.core`, all backed by the same weight-balanced tree
+kernel:
+
+- **`rope`** — generic persistent sequence for arbitrary Clojure values,
+  backed by `PersistentVector` chunks.
+- **`string-rope`** — specialized text rope backed by `java.lang.String`
+  chunks. Implements `CharSequence` for Java interop.
+- **`byte-rope`** — specialized binary rope backed by `byte[]` chunks.
+  Unsigned 0–255 element semantics.
 
 ```clojure
 (require '[ordered-collections.core :as oc])
 
-(oc/rope [1 2 3 4 5])
+(oc/rope [1 2 3 4 5])                   ; generic
+(oc/string-rope "the quick brown fox")  ; text
+(oc/byte-rope (byte-array [1 2 3]))     ; binary
 ```
 
 Implementation namespaces:
 
-- `ordered-collections.types.rope` — `Rope` deftype
-- `ordered-collections.kernel.rope` — low-level chunked tree operations
+- `ordered-collections.kernel.rope` — shared chunked-tree operations
+  (concat, split, splice, reduce, fold). Dispatches to chunk primitives
+  via the `PRopeChunk` protocol.
+- `ordered-collections.kernel.chunk` — `PRopeChunk` extensions for the
+  three chunk backends (`APersistentVector`, `String`, `byte[]`).
+- `ordered-collections.types.rope` — generic `Rope` deftype.
+- `ordered-collections.types.string-rope` — `StringRope` deftype.
+- `ordered-collections.types.byte-rope` — `ByteRope` deftype.
 
 
 ## What a Rope Is
@@ -89,18 +106,25 @@ The better question is:
 
 | Workload | N=10K | N=100K | N=500K |
 |---|---:|---:|---:|
-| 200 random edits | **43x** | **498x** | **1968x** |
-| Single splice | **6x** | **116x** | **584x** |
-| Concat many pieces | **3.4x** | **5.4x** | **9.5x** |
-| Chunk iteration | **58x** | **83x** | **117x** |
-| Fold (sum) | **5.6x** | **1.5x** | **1.3x** |
-| Reduce (sum) | 0.4x | **1.7x** | **1.3x** |
-| Random nth (1000) | 0.7x | 0.5x | 0.4x |
+| 200 random edits | **26x** | **261x** | **1237x** |
+| Single splice | **106x** | **762x** | **863x** |
+| Concat many pieces | **29x** | **39x** | **36x** |
+| Chunk iteration | 1.0x | 1.0x | 1.0x |
+| Fold (sum) | **1.2x** | **1.4x** | **1.6x** |
+| Reduce (sum) | **1.4x** | **1.5x** | **1.4x** |
+| Random nth (1000) | 0.2x | 0.2x | 0.2x |
 
-The rope wins on 6 of 7 workloads at scale. The advantage grows with collection
-size because structural editing is O(log n) vs O(n). Parallel fold beats vectors
-via tree-based fork-join decomposition. Random nth is slower (O(log n) vs O(1))
-— an inherent tradeoff of tree-backed indexing.
+The rope wins decisively on structural editing at scale — the advantage grows
+with collection size because structural editing is O(log n) vs O(n). Parallel
+fold beats vectors via tree-based fork-join decomposition. Random nth is
+slower (O(log n) vs O(1)) — an inherent tradeoff of tree-backed indexing.
+
+> These numbers are all for tree-mode ropes (above the 1024-element
+> flat threshold). Below that threshold the rope stores its content as
+> a bare `PersistentVector` directly and every read dispatches to
+> vector operations with zero indirection — read performance is
+> essentially identical to a raw vector. See **Flat Mode: Zero-Overhead
+> Small Ropes** below.
 
 
 ## Rope Design in This Library
@@ -137,6 +161,64 @@ That is why the rope can support `nth`, `assoc`, split, and slicing without
 pretending that element positions are stored as explicit keys.
 
 
+## The Chunk Abstraction: One Kernel, Many Backends
+
+The rope kernel is written once and works over any chunk type that
+satisfies the `PRopeChunk` protocol. This is what lets the same tree
+algebra back the generic `Rope`, the `StringRope`, and the `ByteRope`
+without the kernel needing to know which backend it is operating on.
+
+`PRopeChunk` is a small internal protocol (13 methods) that captures
+every primitive operation the kernel needs on a chunk:
+
+```
+chunk-length       — element count
+chunk-nth          — element at index
+chunk-slice        — subrange [start, end)
+chunk-merge        — concatenate two chunks
+chunk-append       — append a single element
+chunk-last         — last element
+chunk-butlast      — all but last element
+chunk-update       — replace element at index
+chunk-of           — build a single-element chunk
+chunk-reduce-init  — reduce over the chunk with an initial value
+chunk-append-sb    — append to a StringBuilder (for materialization)
+chunk-splice       — replace a range inside the chunk
+chunk-splice-split — same but returning a split pair (overflow path)
+```
+
+The extensions live in `ordered-collections.kernel.chunk`:
+
+| Backend                       | Variant       | Primary operations              |
+|-------------------------------|---------------|---------------------------------|
+| `clojure.lang.APersistentVector` | `rope`        | `subvec`, `into`, `.nth`, `conj` |
+| `java.lang.String`            | `string-rope` | `.substring`, `.charAt`, `StringBuilder` |
+| `byte[]`                      | `byte-rope`   | `Arrays/copyOfRange`, `System/arraycopy`, `aget`/`aset` |
+
+Each backend is self-contained — it only touches the underlying JVM
+type and has no dependency on the rest of the rope kernel. Structural
+algorithms (`rope-concat`, `rope-split-at`, `rope-splice-root`,
+`rope-reduce`, `rope-fold`, CSI repair) are written exactly once and
+dispatch through the protocol.
+
+This is internal dispatch, not user-facing interop. User code never
+calls `chunk-length` or `chunk-slice` directly — those are the kernel's
+own adapter layer for "here's how to manipulate a chunk of type X". If
+you want to add a new rope variant (say, a `LongRope` over `long[]`),
+the recipe is:
+
+1. Extend `PRopeChunk` to the new chunk type in `kernel/chunk.clj`.
+2. Add a `<variant>-rope-node-create` allocator in `kernel/rope.clj`.
+3. Add a `<variant>->root` chunking builder.
+4. Create a `types/<variant>_rope.clj` deftype that wraps the tree root
+   and binds `*t-join*` to the new allocator in each mutating operation.
+5. Expose the public API in `core.clj`.
+
+The shared-kernel approach means every optimization the kernel gains —
+`rope-splice-inplace`, monomorphic hot paths, parallel fold, transient
+construction — is inherited by all variants at once.
+
+
 ## Chunked Leaves
 
 The current rope implementation is chunked rather than storing one element per
@@ -163,23 +245,85 @@ slice, and splice can move a former right-edge runt into the interior, where it
 must be merged and rechunked back into a valid shape.
 
 
+## Flat Mode: Zero-Overhead Small Ropes
+
+All three rope variants apply the same **flat-mode optimization**: when a
+rope's element count is at or below the per-variant flat threshold (1024
+by default), the rope skips the tree wrapper entirely and stores its
+content as a bare concrete collection in its `root` field — a
+`PersistentVector` for the generic rope, a `java.lang.String` for the
+string rope, a `byte[]` for the byte rope.
+
+This is just good engineering rather than clever algorithms: a
+1024-element rope does not need an outer tree node, an augmented
+subtree element count, and a chunk-protocol dispatch layer just to
+read one element. Below the threshold every operation dispatches
+straight to the native type:
+
+| Variant      | Below threshold         | Above threshold             |
+|---           |---                      |---                          |
+| `rope`       | `PersistentVector`      | chunked WBT of vectors      |
+| `string-rope`| `java.lang.String`      | chunked WBT of strings      |
+| `byte-rope`  | `byte[]`                | chunked WBT of byte arrays  |
+
+Concretely:
+
+- **Reads** (`nth`, `seq`, `reduce`, `charAt`, indexed access) go
+  directly to the underlying type. No tree descent, no chunk protocol
+  call, no per-op indirection.
+- **Structural edits** (`rope-insert`, `rope-splice`, `rope-cat`, etc.)
+  use the native type's own efficient operations (`subvec` + `into` for
+  vectors, `StringBuilder` for strings, `System.arraycopy` for byte
+  arrays). If the result would exceed the threshold, the rope
+  transparently **promotes** to the chunked tree form.
+- **Transients** always build in tree form internally, but at
+  `persistent!` time the final result is **demoted** back to flat form
+  if it fits under the threshold.
+- **Memory overhead** for a small rope is essentially identical to the
+  underlying type — the flat-mode rope is just the bare collection
+  plus the deftype field headers (alloc, meta).
+  Measured with `clj-memory-meter`, a 1024-element rope is within 0.1
+  bytes/element of a raw `PersistentVector`.
+
+The flat threshold for each variant is tuned independently and can
+diverge as each variant's performance profile demands, but currently
+all three use 1024 — that happens to coincide with the
+`+target-chunk-size+`, so "small enough to live in a single chunk"
+and "small enough to stay flat" are the same regime.
+
+The asymmetry worth noting: on the generic rope, flat-mode reads are
+*not* O(1) — `PersistentVector.nth` is O(log₃₂ n), a trie-level
+lookup. They are, however, as fast as reads get on the JVM for
+arbitrary Clojure values, and they skip the outer rope-tree
+indirection entirely. On the specialized variants, flat-mode
+`charAt` and unsigned-byte indexing are genuinely O(1) because
+`String` and `byte[]` are contiguous.
+
+
 ## API
 
-From `ordered-collections.core`:
+### Shared rope API (works on all three variants)
 
-- `rope`
-- `rope-concat` — two args: O(log n) tree join; three or more: O(total chunks) bulk
-- `rope-split`
-- `rope-sub`
-- `rope-insert`
-- `rope-remove`
-- `rope-splice`
-- `rope-chunks`
-- `rope-chunks-reverse`
-- `rope-chunk-count`
-- `rope-str`
+The `PRope` protocol is implemented by `Rope`, `StringRope`, and
+`ByteRope`. Every function below dispatches on the protocol, so the
+same call works regardless of which rope variant you pass in:
 
-And the `Rope` type itself supports:
+- `rope-split` — split at index, returns `[left right]`
+- `rope-sub` — extract subrange `[start, end)`
+- `rope-insert` — insert content at index
+- `rope-remove` — remove range
+- `rope-splice` — replace range with new content
+- `rope-chunks` — seq of internal chunk values
+- `rope-str` — materialize to the natural backing type (String / byte[] / etc.)
+
+### Generic Rope
+
+- `rope` — constructor (any seqable)
+- `rope-concat` — 1-arg coerce, 2-arg O(log n) join, 3+-arg bulk
+- `rope-chunks-reverse` — reverse chunk seq
+- `rope-chunk-count` — number of chunks
+
+The `Rope` type supports:
 
 - `count`, `nth`, `get`, `assoc`, `conj`, `peek`, `pop`
 - vector-style function lookup
@@ -189,7 +333,71 @@ And the `Rope` type itself supports:
 - `compare` (lexicographic)
 - `java.util.List`: `get`, `indexOf`, `lastIndexOf`, `contains`, `subList`
 - `java.util.Collection`: `size`, `isEmpty`, `toArray`, `containsAll`
+- `IPersistentVector` — `(vector? r)` is true
 - metadata, sequential equality, ordered hashing
+
+### StringRope
+
+- `string-rope` — constructor (from `String`, another StringRope, or anything `str` can coerce)
+- `string-rope-concat` — variadic, same 1/2/3+ semantics as `rope-concat`
+
+The `StringRope` type implements `java.lang.CharSequence` and most of
+the same Clojure interfaces as the generic Rope, with text-appropriate
+semantics:
+
+- `nth` / `charAt` return a `Character`
+- `(str sr)` materializes to a `java.lang.String`
+- Equality with `java.lang.String` is content-based
+- Hash matches `String`'s so ropes and strings can co-exist as map keys
+- `Comparable` — lexicographic compare matches `String.compareTo`
+- `IEditableCollection` — `TransientStringRope` with a `StringBuilder` tail
+- Works with `re-find` / `re-seq` / `re-matches` / `java.util.regex.Matcher`
+- Works with `clojure.string` (all of its functions accept `CharSequence`)
+- Works with `java.io.*` APIs that accept `CharSequence`
+
+### ByteRope
+
+ByteRope is essentially a **persistent, structure-sharing memory** — a
+model of a contiguous byte region that supports O(log n) structural
+editing (splice, insert, remove), zero-cost immutable snapshots (every
+version persists via path-copying), automatic coalescing of adjacent
+chunks (the CSI invariant merges undersized neighbors), and garbage
+collection of unreachable versions by the JVM. You get the mental model
+of a mutable byte buffer with the safety properties of a persistent data
+structure.
+
+This makes ByteRope useful far beyond simple binary blobs:
+- **Binary protocol construction** — build packets by splicing fields
+  at offsets, roll back on error by keeping the prior version
+- **Undo/redo** — each edit produces a new ByteRope; old versions are
+  retained as long as referenced, discarded by GC when not
+- **Diffing and patching** — apply a patch to a snapshot without
+  copying the unmodified regions (structure sharing)
+- **Streaming** — `byte-rope-input-stream` and `byte-rope-write` let
+  you feed chunks through Java I/O without materializing the full
+  contents
+
+API surface:
+
+- `byte-rope` — constructor (from `byte[]`, another ByteRope, `String` (UTF-8), `InputStream`, seq of unsigned longs)
+- `byte-rope-concat` — variadic, same 1/2/3+ semantics
+- `byte-rope-bytes` — defensively-copied `byte[]` materialization
+- `byte-rope-hex` — lowercase hex string
+- `byte-rope-write` — stream chunks to an `OutputStream`
+- `byte-rope-input-stream` — adapter returning a fresh `java.io.InputStream`
+- `byte-rope-get-byte` / `-short` / `-int` / `-long` — big-endian multi-byte reads
+- `byte-rope-get-short-le` / `-int-le` / `-long-le` — little-endian variants
+- `byte-rope-index-of` — first index of a given unsigned byte value
+- `byte-rope-digest` — streaming `java.security.MessageDigest`; returns a ByteRope
+
+The `ByteRope` type exposes bytes as unsigned longs in `[0, 255]`:
+
+- `nth` / `reduce` / `seq` yield longs in that range
+- Equality with `byte[]` is content-based
+- Not equal to Clojure vectors (intentional — avoids signed/unsigned confusion)
+- `Comparable` — unsigned lexicographic via `Arrays/compareUnsigned`
+- `IEditableCollection` — `TransientByteRope` with a `ByteArrayOutputStream` tail
+- Does **not** implement `CharSequence` or `IPersistentVector` — bytes are their own domain
 
 
 ## Examples
@@ -219,12 +427,12 @@ And the `Rope` type itself supports:
 (def a (oc/rope [0 1 2]))
 (def b (oc/rope [3 4 5]))
 
-(oc/rope-concat a b)  ;; => #ordered/rope [0 1 2 3 4 5]
+(oc/rope-concat a b)  ;; => #vec/rope [0 1 2 3 4 5]
 
 ;; Variadic — bulk concatenation in O(total chunks)
 
 (oc/rope-concat (oc/rope [1 2]) (oc/rope [3 4]) (oc/rope [5 6]))
-;; => #ordered/rope [1 2 3 4 5 6]
+;; => #vec/rope [1 2 3 4 5 6]
 ```
 
 ### Split and Slice
@@ -524,10 +732,10 @@ coerce their arguments automatically:
 
 ```clojure
 (oc/rope-concat (oc/rope [1 2]) [3 4])
-;; => #ordered/rope [1 2 3 4]
+;; => #vec/rope [1 2 3 4]
 
 (oc/rope-insert (oc/rope [1 2 3]) 1 [:a :b])
-;; => #ordered/rope [1 :a :b 2 3]
+;; => #vec/rope [1 :a :b 2 3]
 ```
 
 **Interop summary:**
@@ -540,7 +748,7 @@ coerce their arguments automatically:
 | Rope | PersistentVector | `(vec r)` |
 | Rope | lazy seq | `(seq r)` |
 | Rope | Java array | `(.toArray r)` |
-| Rope | EDN round-trip | `#ordered/rope` tagged literal |
+| Rope | EDN round-trip | `#vec/rope` tagged literal |
 
 
 ### Scenario 9: Java Interop
@@ -555,7 +763,7 @@ with Java APIs that expect these interfaces:
 (.size r)            ;; => 5
 (.contains r 30)     ;; => true
 (.indexOf r 40)      ;; => 3
-(.subList r 1 4)     ;; => #ordered/rope [20 30 40]
+(.subList r 1 4)     ;; => #vec/rope [20 30 40]
 (.toArray r)         ;; => Object[5] {10, 20, 30, 40, 50}
 ```
 
@@ -577,6 +785,137 @@ Use a **rope** when:
 - you want cheap persistent snapshots after structural edits
 - you want to reduce over very large sequences in parallel
 - you assemble a sequence from many parts and then process it
+
+
+## Specialized Ropes
+
+The generic `Rope` stores any Clojure value in `PersistentVector`
+chunks. That is the right choice for heterogeneous sequential data
+but pays for boxing and per-element object headers on workloads where
+the element type is uniform. The library provides two specialized
+variants backed by native JVM types:
+
+### StringRope — text
+
+`StringRope` backs each chunk with a `java.lang.String`. The JEP 254
+compact-string optimization means a 256-character ASCII chunk occupies
+about the same space as a 256-byte `byte[]`, plus object headers.
+`StringRope` implements `java.lang.CharSequence`, so every Java and
+Clojure text API accepts it directly:
+
+```clojure
+(require '[clojure.string :as str])
+
+(def doc (oc/string-rope "The quick brown fox jumps over the lazy dog."))
+
+(count doc)                           ;; => 44
+(str doc)                             ;; => "The quick brown fox jumps over the lazy dog."
+(subs doc 4 9)                        ;; NOT supported — use rope-sub
+
+(str (oc/rope-sub doc 4 9))           ;; => "quick"
+(str (oc/rope-splice doc 4 9 "slow")) ;; => "The slow brown fox jumps over the lazy dog."
+
+;; Regex and clojure.string work directly because doc implements CharSequence
+(re-seq #"\w+" doc)
+(str/upper-case (str doc))
+(str/replace doc #"\w+" clojure.string/upper-case)
+```
+
+Key properties:
+
+- `(= (string-rope "hello") "hello")` is true
+- `(hash (string-rope "hello"))` matches `(hash "hello")`
+- `#string/rope "…"` tagged literal round-trips through EDN
+- Transient support via `StringBuilder` tail buffer for fast batch construction
+- Small strings (≤ 1024 chars) are stored as a raw `String` internally
+  with zero tree overhead; edits that grow past the threshold transparently
+  promote to chunked form
+
+Performance vs `java.lang.String` (structural editing workloads):
+
+| Workload | N=10K | N=100K | N=500K |
+|---|---:|---:|---:|
+| 200 random edits | **5.7x** | **38x** | **130x** |
+| Single splice | **5.9x** | **42x** | **349x** |
+| Single remove | **7.1x** | **44x** | **412x** |
+| Random nth | 0.1x | 0.0x | 0.0x |
+
+Random-access reads are slower than `String` (O(log n) vs O(1)) but
+bounded; structural edits scale indefinitely while `String` edits are
+always O(n).
+
+### ByteRope — binary data
+
+`ByteRope` backs each chunk with a primitive `byte[]`. This matches
+the mutable-world defaults of `java.nio.ByteBuffer`, protobuf
+`ByteString`, Okio, and Netty — but with persistent semantics and
+O(log n) structural edits.
+
+```clojure
+(def msg (oc/byte-rope (.getBytes "Hello, World!" "UTF-8")))
+
+(count msg)                           ;; => 13
+(oc/byte-rope-hex msg)                ;; => "48656c6c6f2c20576f726c6421"
+(nth msg 0)                           ;; => 72        (unsigned 'H')
+(oc/byte-rope-get-int msg 0)          ;; => 1214606444 (big-endian u32)
+
+(def with-prefix
+  (oc/byte-rope-concat
+    (oc/byte-rope (byte-array [0xde 0xad 0xbe 0xef]))
+    msg))
+
+(oc/byte-rope-hex with-prefix)
+;; => "deadbeef48656c6c6f2c20576f726c6421"
+
+;; Cryptographic digest streams chunks through MessageDigest
+(oc/byte-rope-hex (oc/byte-rope-digest msg "SHA-256"))
+;; => "dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f"
+```
+
+Key properties:
+
+- Unsigned byte semantics — `nth` / `reduce` / `seq` yield longs in `[0, 255]`
+- Equality with `byte[]` is content-based; intentionally not equal to Clojure vectors
+- Unsigned lexicographic `Comparable` (consistent with protobuf/Okio/Netty)
+- Big-endian multi-byte reads with `-le` variants for little-endian
+- `#byte/rope "hex"` tagged literal round-trips through EDN
+- Defensive copy on construction — never shares mutable `byte[]` with the caller
+- Transient support via `ByteArrayOutputStream` tail buffer
+- Small byte sequences (≤ 1024 bytes) are stored as a raw `byte[]` with zero
+  tree overhead; edits that grow past the threshold promote transparently
+- Streaming primitives: `byte-rope-write` for `OutputStream`,
+  `byte-rope-input-stream` for `InputStream`, `byte-rope-digest` for
+  `MessageDigest` — no full materialization needed
+
+Performance vs `byte[]` (structural editing workloads):
+
+| Workload | N=10K | N=100K | N=500K |
+|---|---:|---:|---:|
+| 200 random edits | **2.0x** | **14x** | **46x** |
+| Single splice at midpoint | **2.7x** | **11x** | **110x** |
+| Single remove | **2.8x** | **10x** | **128x** |
+| Split at midpoint | 0.3x | **1.8x** | **7.1x** |
+| Random nth | 0.0x | 0.0x | 0.0x |
+
+Small-scale byte-array operations win because `System/arraycopy` is
+absurdly fast. The rope takes over at the scale where persistent edits
+matter — roughly 10K+ bytes with repeated splicing. For single reads
+or small buffers, stay with `byte[]`. For binary-protocol assembly,
+streaming digests, or any workload with many edits on a large buffer,
+use `ByteRope`.
+
+### Choosing a variant
+
+| You want... | Use |
+|---|---|
+| Text editing, regex, clojure.string, Java interop | `string-rope` |
+| Binary protocol assembly, streaming digest, patch editing | `byte-rope` |
+| Anything else sequential (vectors of arbitrary values) | `rope` |
+
+All three share the same public API through the `PRope` protocol —
+`rope-split`, `rope-sub`, `rope-insert`, `rope-remove`, `rope-splice`,
+`rope-chunks`, `rope-str` — so code that works on one variant often
+works on the others with minimal changes.
 
 
 ## Conceptual Tradeoffs

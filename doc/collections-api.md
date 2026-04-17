@@ -556,6 +556,11 @@ split, splice, insert, and remove. Backed by a weight-balanced tree of chunk
 vectors. Implements `IPersistentVector` (`(vector? rope)` is true),
 `java.util.List`, `java.util.RandomAccess`, `Comparable`, and `r/fold`.
 
+Small ropes (≤ 1024 elements) are stored as a raw `PersistentVector`
+internally, skipping the tree wrapper entirely. Reads dispatch straight
+to the vector with zero indirection; edits that grow past the threshold
+transparently promote to chunked tree form.
+
 ### Constructors
 
 - `rope`
@@ -583,13 +588,13 @@ vectors. Implements `IPersistentVector` (`(vector? rope)` is true),
 |---|---|---|
 | `conj` | `[rope x]` | Append to end. |
 | `assoc` | `[rope i x]` | Replace element at index (or append if `i = count`). |
-| `nth` | `[rope i]` `[rope i not-found]` | Positional access. O(log n). |
+| `nth` | `[rope i]` `[rope i not-found]` | Positional access. O(log n) on tree mode; direct `PersistentVector.nth` on flat mode. |
 | `get` | `[rope i]` `[rope i not-found]` | Same as `nth`. |
 | `peek` | `[rope]` | Last element. |
 | `pop` | `[rope]` | Remove last element. |
 | `seq` / `rseq` | `[rope]` | Forward / reverse traversal. |
 | `reduce` | `[f rope]` `[f init rope]` | Chunk-aware reduction with `reduced` support. |
-| `r/fold` | `[n combinef reducef rope]` | Parallel fork-join fold. |
+| `r/fold` | `[n combinef reducef rope]` | Parallel fork-join fold. (Sequential reduce on flat-mode ropes since they are already small.) |
 | `compare` | `[rope1 rope2]` | Lexicographic comparison. |
 | `count` | `[rope]` | O(1). |
 
@@ -601,3 +606,222 @@ supporting all rope operations including `assoc`, `conj`, `peek`, and `pop`.
 
 Since `Rope` implements `IPersistentVector`, `(vec rope)` returns the rope
 itself. Use `(into [] rope)` to materialize a `PersistentVector`.
+
+---
+
+## String Rope
+
+Persistent chunked text sequence optimized for structural text editing:
+O(log n) concat, split, splice, insert, and remove. Backed by a
+weight-balanced tree of `java.lang.String` chunks. Implements
+`java.lang.CharSequence` for seamless Java text interop, so it drops
+into `java.util.regex`, `clojure.string`, and any API expecting text.
+
+Small strings (≤ 1024 characters) are stored as a raw `String`
+internally with zero tree overhead. Edits that grow past the threshold
+transparently promote to the chunked form.
+
+### Constructors
+
+- `string-rope`
+  - `(string-rope)`
+  - `(string-rope s)` — accepts a `String`, another `StringRope`, or
+    anything `str` can coerce.
+- `string-rope-concat`
+  - `(string-rope-concat x)` — coerce one argument
+  - `(string-rope-concat a b)` — O(log n) binary join
+  - `(string-rope-concat a b & more)` — O(total chunks) bulk
+
+### Collection-specific operations
+
+All operations from the shared `PRope` protocol work on StringRope via
+the same public functions documented for Rope:
+
+| Function | Signature(s) | Notes |
+|---|---|---|
+| `rope-concat` | `[x]` `[a b]` `[a b & more]` | Prefer `string-rope-concat` for type-preserving concat. |
+| `rope-split` | `[sr i]` | Split at index, returns `[left right]`. O(log n). |
+| `rope-sub` | `[sr start end]` | Structure-sharing subrange. O(log n). |
+| `rope-insert` | `[sr i coll]` | Insert text at index. `coll` may be a `String`, another `StringRope`, or anything `(str coll)` can coerce. |
+| `rope-remove` | `[sr start end]` | Remove range `[start, end)`. O(log n). |
+| `rope-splice` | `[sr start end coll]` | Replace range with new text. O(log n). |
+| `rope-chunks` | `[sr]` | Seq of internal `String` chunks. |
+| `rope-str` | `[sr]` | Materialize to `java.lang.String` (same as `(str sr)`). |
+
+### Standard collection operations
+
+| Operation | Signature(s) | Notes |
+|---|---|---|
+| `count` | `[sr]` | O(1). |
+| `nth` | `[sr i]` `[sr i not-found]` | Returns a `Character`. O(log n) on tree mode, O(1) on flat mode. |
+| `get` / IFn | `[sr i]` `[sr i not-found]` | Same as `nth`. |
+| `conj` | `[sr c]` | Append a single character. |
+| `assoc` | `[sr i c]` | Replace character at index (or append if `i = count`). |
+| `peek` | `[sr]` | Last character. |
+| `pop` | `[sr]` | Remove last character. |
+| `seq` / `rseq` | `[sr]` | Forward / reverse `Character` seq. |
+| `reduce` | `[f sr]` `[f init sr]` | Chunk-aware reduction with `reduced` support. |
+| `r/fold` | `[n combinef reducef sr]` | Parallel fork-join fold. |
+| `str` | `[sr]` | Materialize content to a `java.lang.String`. |
+| `compare` | `[a b]` | Lexicographic, matches `String.compareTo`. |
+
+### Java interop
+
+Because `StringRope` implements `java.lang.CharSequence`, it works
+directly with:
+
+- `java.util.regex.Pattern` / `Matcher` — `re-find`, `re-seq`,
+  `re-matches`, `re-matcher`
+- All `clojure.string` functions (they accept `CharSequence`)
+- `java.io.Writer.append(CharSequence)` and friends
+
+```clojure
+(def doc (oc/string-rope "the quick brown fox"))
+
+(re-find #"\w+" doc)                    ;=> "the"
+(clojure.string/upper-case (str doc))   ;=> "THE QUICK BROWN FOX"
+(count doc)                             ;=> 19
+(.charAt ^CharSequence doc 4)           ;=> \q
+```
+
+### Equality and hashing
+
+- `(= (string-rope "x") "x")` is true — StringRope is equal to any
+  `CharSequence` with the same content.
+- `(hash (string-rope "x"))` matches `(hash "x")`, so StringRope and
+  String can be used interchangeably as hash-map keys.
+- `(= (string-rope "x") (oc/rope [\x]))` is false — the generic rope
+  and the string rope have different identity.
+
+### Printed form
+
+```clojure
+#string/rope "hello world"
+```
+
+Round-trips through EDN via the `#string/rope` tagged literal.
+
+### Transient
+
+`(transient string-rope)` returns a `TransientStringRope` backed by a
+`StringBuilder` tail buffer. Call `conj!` with characters (or
+single-character strings) and `persistent!` to finalize. Useful for
+batch construction of large strings.
+
+---
+
+## Byte Rope
+
+Persistent chunked binary sequence: O(log n) concat, split, splice,
+insert, and remove. Backed by a weight-balanced tree of `byte[]`
+chunks. Bytes are exposed as unsigned longs in `[0, 255]` throughout
+the API — storage is signed Java bytes (same bits), avoiding the usual
+signed-byte pitfalls.
+
+Small byte sequences (≤ 1024 bytes) are stored as a raw `byte[]`
+internally. Edits that grow past the threshold transparently promote
+to chunked form.
+
+ByteRope is the immutable persistent counterpart to `java.nio.ByteBuffer`
+/ protobuf `ByteString` / Okio `ByteString` — same conventions
+(unsigned bytes, big-endian default, lexicographic compare via
+`Arrays/compareUnsigned`), different semantics (persistent snapshots,
+structural sharing, O(log n) edits).
+
+### Constructors
+
+- `byte-rope`
+  - `(byte-rope)`
+  - `(byte-rope x)` — accepts any of:
+    - `byte[]` (defensively copied)
+    - another `ByteRope`
+    - `String` (UTF-8 encoded)
+    - `java.io.InputStream` (fully consumed)
+    - sequential of unsigned integers in `[0, 255]`
+- `byte-rope-concat`
+  - `(byte-rope-concat x)` — coerce one argument
+  - `(byte-rope-concat a b)` — O(log n) binary join
+  - `(byte-rope-concat a b & more)` — O(total chunks) bulk
+
+### Collection-specific operations
+
+From the shared `PRope` protocol:
+
+| Function | Signature(s) | Notes |
+|---|---|---|
+| `rope-split` | `[br i]` | Split at index. O(log n). |
+| `rope-sub` | `[br start end]` | Structure-sharing subrange. O(log n). |
+| `rope-insert` | `[br i coll]` | Insert bytes at index. `coll` may be a `byte[]`, another `ByteRope`, or a sequential of unsigned integers. |
+| `rope-remove` | `[br start end]` | Remove range `[start, end)`. O(log n). |
+| `rope-splice` | `[br start end coll]` | Replace range with new bytes. O(log n). |
+| `rope-chunks` | `[br]` | Seq of internal `byte[]` chunks. |
+| `rope-str` | `[br]` | Materialize to a defensively-copied `byte[]`. |
+
+### Byte-specific operations
+
+| Function | Signature(s) | Notes |
+|---|---|---|
+| `byte-rope-bytes` | `[br]` | Defensive-copy `byte[]` materialization. Same as `rope-str` but with a more precise name. |
+| `byte-rope-hex` | `[br]` | Return a lowercase hex string. |
+| `byte-rope-write` | `[br out]` | Stream chunks to a `java.io.OutputStream`. |
+| `byte-rope-input-stream` | `[br]` | Return a fresh `java.io.InputStream` over the contents. |
+| `byte-rope-get-byte` | `[br offset]` | Unsigned byte value (long in `[0, 255]`). |
+| `byte-rope-get-short` | `[br offset]` | Big-endian unsigned 16-bit integer. |
+| `byte-rope-get-short-le` | `[br offset]` | Little-endian unsigned 16-bit integer. |
+| `byte-rope-get-int` | `[br offset]` | Big-endian signed 32-bit integer. |
+| `byte-rope-get-int-le` | `[br offset]` | Little-endian signed 32-bit integer. |
+| `byte-rope-get-long` | `[br offset]` | Big-endian signed 64-bit integer. |
+| `byte-rope-get-long-le` | `[br offset]` | Little-endian signed 64-bit integer. |
+| `byte-rope-index-of` | `[br b]` `[br b from]` | First index of the unsigned byte value, or -1. |
+| `byte-rope-digest` | `[br algorithm]` | Compute a cryptographic digest (`"SHA-256"`, `"MD5"`, etc.) by streaming chunks through `java.security.MessageDigest`. Returns a ByteRope of the digest. |
+
+### Standard collection operations
+
+| Operation | Signature(s) | Notes |
+|---|---|---|
+| `count` | `[br]` | O(1). |
+| `nth` | `[br i]` `[br i not-found]` | Returns an unsigned long in `[0, 255]`. O(log n) on tree mode, O(1) on flat mode. |
+| `get` / IFn | `[br i]` `[br i not-found]` | Same as `nth`. |
+| `conj` | `[br b]` | Append a single byte (accepts an integer in `[0, 255]`). |
+| `assoc` | `[br i b]` | Replace byte at index (or append if `i = count`). |
+| `peek` | `[br]` | Last byte as an unsigned long. |
+| `pop` | `[br]` | Remove last byte. |
+| `seq` / `rseq` | `[br]` | Forward / reverse seq of unsigned longs. |
+| `reduce` | `[f br]` `[f init br]` | Chunk-aware reduction with `reduced` support. |
+| `r/fold` | `[n combinef reducef br]` | Parallel fork-join fold. |
+| `compare` | `[a b]` | Unsigned lexicographic via `Arrays/compareUnsigned`. |
+
+### Equality and hashing
+
+- `(= (byte-rope (byte-array [1 2 3])) (byte-array [1 2 3]))` is true —
+  ByteRope is equal to a `byte[]` with the same content.
+- `(= (byte-rope [1 2 3]) [1 2 3])` is **false** — intentionally not equal
+  to a Clojure vector, to avoid signed vs unsigned confusion.
+- `(hash (byte-rope [1 2 3]))` is a content-based Murmur3 hash over the
+  unsigned byte values. (Clojure's default `hash` on a raw `byte[]` is
+  identity-based, not content-based, so ByteRope hash and byte[] hash
+  are not comparable — use ByteRope instances as hash-map keys.)
+
+### Printed form
+
+```clojure
+#byte/rope "48656c6c6f"
+```
+
+Round-trips through EDN via the `#byte/rope` tagged literal. The literal
+content is a lowercase hex string.
+
+### Transient
+
+`(transient byte-rope)` returns a `TransientByteRope` backed by a
+`ByteArrayOutputStream` tail buffer. Call `conj!` with unsigned integer
+values and `persistent!` to finalize.
+
+### Does NOT implement
+
+- `java.lang.CharSequence` — ByteRope is not text. Convert explicitly
+  via `(String. (byte-rope-bytes br) "UTF-8")` or similar.
+- `IPersistentVector` — ByteRope is a specialized byte sequence, not
+  a general vector.
+- `java.util.List` — too many mutable method stubs to implement
+  meaningfully for an unsigned byte domain.

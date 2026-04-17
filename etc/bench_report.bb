@@ -23,7 +23,10 @@
             sizes           (sort (set (map :size target-rows)))
             headlines       (analyze/headline-wins target-rows sizes)
             parity          (analyze/parity-cases scorecard)
+            wins            (analyze/significant-wins scorecard)
             losses          (analyze/significant-losses scorecard)
+            categories      (analyze/category-summary scorecard)
+            rope-family     (analyze/rope-family-summary target-rows sizes)
             regressions     (->> (analyze/regression-report target-rows baseline-rows)
                                  (filter #(#{:regression :major-regression} (:status %)))
                                  (sort-by :ratio >))
@@ -34,15 +37,22 @@
         (render/render-header opts target-summary baseline-summary)
         (render/render-executive-summary summary)
         (render/render-headline-wins headlines sizes)
+        (render/render-category-summary categories)
+        (render/render-rope-family rope-family)
+        (render/render-significant-wins wins opts)
         (render/render-parity parity opts)
         (render/render-significant-losses losses opts)
-        (render/render-scorecard
-          (sort-by (juxt (comp #(.indexOf analyze/category-order %) :category)
-                         #(- (:speedup %)))
-                   scorecard)
-          opts)
-        (render/render-regressions "Regressions" regressions opts)
-        (render/render-regressions "Improvements" improvements opts)
+        ;; Full Scorecard, Regressions, and Improvements are for interactive
+        ;; A/B review. They are noisy for an outside reader of the committed
+        ;; doc/report.txt snapshot, so --publish suppresses them.
+        (when-not (:publish opts)
+          (render/render-scorecard
+            (sort-by (juxt (comp #(.indexOf analyze/category-order %) :category)
+                           #(- (:speedup %)))
+                     scorecard)
+            opts)
+          (render/render-regressions "Regressions" regressions opts)
+          (render/render-regressions "Improvements" improvements opts))
         (println)))))
 
 (apply -main *command-line-args*)

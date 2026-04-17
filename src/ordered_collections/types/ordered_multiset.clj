@@ -252,7 +252,7 @@
   java.io.Serializable
 
   INodeCollection
-  (getAllocator [_] nil)
+  (getAllocator [_] tree/node-create-weight-balanced)
   (getRoot [_] root)
 
   IOrderedCollection
@@ -263,7 +263,7 @@
   (isSimilar [_ _] false)
 
   IBalancedCollection
-  (getStitch [_] nil)
+  (getStitch [_] tree/node-stitch)
 
   clojure.lang.IMeta
   (meta [_] _meta)
@@ -522,7 +522,7 @@
 
 (defmethod print-method OrderedMultiset [^OrderedMultiset ms ^java.io.Writer w]
   (if (order/default-comparator? (.cmp ms))
-    (do (.write w "#ordered/multiset [")
+    (do (.write w "#multi/set [")
         (when-let [s (seq ms)]
           (print-method (first s) w)
           (doseq [x (rest s)]
