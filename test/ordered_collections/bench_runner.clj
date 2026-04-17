@@ -231,6 +231,26 @@
        :data-avl    #(reduce (fn [^long acc x] (+ acc (long x))) 0 as)
        :ordered-set #(reduce (fn [^long acc x] (+ acc (long x))) 0 os)})))
 
+(defn- iterate-sum-longs
+  "Sum a Java Iterable of Long values via its .iterator(). Exercises the
+   collection's iterator path rather than its CollReduce path."
+  ^long [^Iterable coll]
+  (let [it (.iterator coll)]
+    (loop [acc (long 0)]
+      (if (.hasNext it)
+        (recur (unchecked-add acc (long (.next it))))
+        acc))))
+
+(defn bench-set-iteration-iterator [n]
+  (let [elems (generate-elements n)
+        ss    (into (sorted-set) elems)
+        as    (into (avl/sorted-set) elems)
+        os    (core/ordered-set elems)]
+    (run-cases
+      {:sorted-set  #(iterate-sum-longs ss)
+       :data-avl    #(iterate-sum-longs as)
+       :ordered-set #(iterate-sum-longs os)})))
+
 (defn bench-set-equality [n]
   (let [{equal :equal
          different :different
@@ -422,6 +442,13 @@
        :data-avl     #(reduce (fn [^long acc x] (+ acc (long x))) 0 data-avl)
        :long-ordered #(reduce (fn [^long acc x] (+ acc (long x))) 0 long-ordered)})))
 
+(defn bench-long-rank-lookup [n & {:keys [num-lookups] :or {num-lookups 10000}}]
+  (let [{:keys [data-avl long-ordered]} (make-long-sets n)
+        ^longs ks (long-array (repeatedly num-lookups #(rand-int n)))]
+    (run-cases
+      {:data-avl     #(dotimes [i num-lookups] (avl/rank-of data-avl (aget ks i)))
+       :long-ordered #(dotimes [i num-lookups] (core/rank long-ordered (aget ks i)))})))
+
 (defn bench-long-fold [n]
   (let [{:keys [sorted-set data-avl long-ordered]} (make-long-sets n)
         sum-fn (fn [^long acc x] (+ acc (long x)))]
@@ -536,6 +563,16 @@
        :data-avl        #(dotimes [i num-lookups] (contains? as (aget look i)))
        :string-ordered  #(dotimes [i num-lookups] (contains? os (aget look i)))})))
 
+(defn bench-string-rank-lookup [n & {:keys [num-lookups] :or {num-lookups 10000}}]
+  (let [ks   (generate-string-keys n)
+        cmp  #(compare (str %1) (str %2))
+        as   (into (avl/sorted-set-by cmp) ks)
+        os   (core/string-ordered-set ks)
+        ^objects look (object-array (repeatedly num-lookups #(nth ks (rand-int n))))]
+    (run-cases
+      {:data-avl       #(dotimes [i num-lookups] (avl/rank-of as (aget look i)))
+       :string-ordered #(dotimes [i num-lookups] (core/rank os (aget look i)))})))
+
 (defn bench-string-set-union [n]
   (let [{left :left right :right} (make-string-set-pair n)]
     (run-cases
@@ -609,6 +646,17 @@
     (run-cases
       {:guava-range-map #(build-guava-range-map entries)
        :range-map       #(build-oc-range-map entries)})))
+
+(defn bench-range-map-bulk-construction
+  "Exercises the single-argument (core/range-map coll) constructor's O(n)
+   balanced-build path for pre-sorted disjoint input. Distinct from
+   bench-range-map-construction, which measures per-entry assoc."
+  [n]
+  (let [entries (gen-range-entries n)
+        pairs   (mapv (fn [[lo hi v]] [[lo hi] v]) entries)]
+    (run-cases
+      {:guava-range-map #(build-guava-range-map entries)
+       :range-map       #(core/range-map pairs)})))
 
 (defn bench-range-map-lookup [n & {:keys [num-lookups] :or {num-lookups 10000}}]
   (let [entries  (gen-range-entries n)
@@ -1384,6 +1432,7 @@
    [:set-delete bench-set-delete]
    [:set-lookup bench-set-lookup]
    [:set-iteration bench-set-iteration]
+   [:set-iteration-iterator bench-set-iteration-iterator]
    [:set-equality bench-set-equality]
    [:set-fold bench-set-fold]
    [:set-fold-freq bench-set-fold-freq]
@@ -1403,6 +1452,7 @@
    [:interval-lookup bench-interval-lookup]
    [:interval-fold bench-interval-fold]
    [:range-map-construction bench-range-map-construction]
+   [:range-map-bulk-construction bench-range-map-bulk-construction]
    [:range-map-lookup bench-range-map-lookup]
    [:range-map-carve-out bench-range-map-carve-out]
    [:range-map-iteration bench-range-map-iteration]
@@ -1432,6 +1482,7 @@
    [:long-insert bench-long-insert]
    [:long-delete bench-long-delete]
    [:long-iteration bench-long-iteration]
+   [:long-rank-lookup bench-long-rank-lookup]
    [:long-fold bench-long-fold]
    [:long-union bench-long-union]
    [:long-intersection bench-long-intersection]
@@ -1439,6 +1490,7 @@
    [:long-split bench-long-split]
    [:string-set-construction bench-string-set-construction]
    [:string-set-lookup bench-string-set-lookup]
+   [:string-rank-lookup bench-string-rank-lookup]
    [:string-set-union bench-string-set-union]
    [:string-set-intersection bench-string-set-intersection]
    [:string-set-difference bench-string-set-difference]

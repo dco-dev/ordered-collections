@@ -187,9 +187,11 @@
    {:pattern #"^set-iteration$"     :oc :ordered-set      :peer :sorted-set       :label "Iteration"     :section "Ordered Set vs sorted-set"}
    {:pattern #"^set-fold$"          :oc :ordered-set-fold :peer :sorted-set-fold  :label "Fold"          :section "Ordered Set vs sorted-set"}
    {:pattern #"^split$"             :oc :ordered-set      :peer :data-avl         :label "Split"         :section "Ordered Set vs sorted-set"}
+   {:pattern #"^set-iteration-iterator$" :oc :ordered-set :peer :sorted-set      :label "Iteration (Iterator)" :section "Ordered Set vs sorted-set"}
    {:pattern #"^set-construction$"  :oc :ordered-set      :peer :data-avl         :label "Construction"  :section "Ordered Set vs data.avl"}
    {:pattern #"^set-lookup$"        :oc :ordered-set      :peer :data-avl         :label "Lookup"        :section "Ordered Set vs data.avl"}
    {:pattern #"^set-iteration$"     :oc :ordered-set      :peer :data-avl         :label "Iteration"     :section "Ordered Set vs data.avl"}
+   {:pattern #"^set-iteration-iterator$" :oc :ordered-set :peer :data-avl         :label "Iteration (Iterator)" :section "Ordered Set vs data.avl"}
    ;; Ordered Map vs competitors
    {:pattern #"^map-construction$"  :oc :ordered-map      :peer :sorted-map       :label "Construction"  :section "Ordered Map vs sorted-map"}
    {:pattern #"^map-lookup$"        :oc :ordered-map      :peer :sorted-map       :label "Lookup"        :section "Ordered Map vs sorted-map"}
@@ -204,12 +206,14 @@
    {:pattern #"^long-union$"        :oc :long-ordered     :peer :sorted-set       :label "Union"         :section "Long-Specialized vs sorted-set"}
    {:pattern #"^long-intersection$" :oc :long-ordered     :peer :sorted-set       :label "Intersection"  :section "Long-Specialized vs sorted-set"}
    {:pattern #"^long-difference$"   :oc :long-ordered     :peer :sorted-set       :label "Difference"    :section "Long-Specialized vs sorted-set"}
+   {:pattern #"^long-rank-lookup$"  :oc :long-ordered     :peer :data-avl         :label "Rank lookup"   :section "Long-Specialized vs data.avl"}
    ;; String-specialized
    {:pattern #"^string-set-construction$" :oc :string-ordered :peer :sorted-set-by :label "Construction" :section "String-Specialized vs sorted-set-by"}
    {:pattern #"^string-set-lookup$"       :oc :string-ordered :peer :sorted-set-by :label "Lookup"       :section "String-Specialized vs sorted-set-by"}
    {:pattern #"^string-set-union$"        :oc :string-ordered :peer :sorted-set-by :label "Union"        :section "String-Specialized vs sorted-set-by"}
    {:pattern #"^string-set-intersection$" :oc :string-ordered :peer :sorted-set-by :label "Intersection" :section "String-Specialized vs sorted-set-by"}
    {:pattern #"^string-set-difference$"   :oc :string-ordered :peer :sorted-set-by :label "Difference"   :section "String-Specialized vs sorted-set-by"}
+   {:pattern #"^string-rank-lookup$"      :oc :string-ordered :peer :data-avl      :label "Rank lookup"  :section "String-Specialized vs data.avl"}
    ;; Rope vs PersistentVector (matches bench_runner groups)
    {:pattern #"^rope-repeated-edits$"  :oc :rope   :peer :vector  :label "200 Random Edits"  :section "Rope vs PersistentVector"}
    {:pattern #"^rope-splice$"          :oc :rope   :peer :vector  :label "Single Splice"     :section "Rope vs PersistentVector"}
@@ -254,8 +258,9 @@
    {:pattern #"^byte-rope-bytes$"           :oc :byte-rope :peer :byte-array :label "Materialization"    :section "ByteRope vs byte[]"}
    {:pattern #"^byte-rope-digest$"          :oc :byte-rope :peer :byte-array :label "SHA-256"            :section "ByteRope vs byte[]"}
    ;; Range Map vs Guava TreeRangeMap
-   {:pattern #"^range-map-construction$"    :oc :range-map :peer :guava-range-map :label "Construction"   :section "Range Map vs Guava TreeRangeMap"}
-   {:pattern #"^range-map-lookup$"          :oc :range-map :peer :guava-range-map :label "Point Lookup"   :section "Range Map vs Guava TreeRangeMap"}
+   {:pattern #"^range-map-construction$"       :oc :range-map :peer :guava-range-map :label "Construction"        :section "Range Map vs Guava TreeRangeMap"}
+   {:pattern #"^range-map-bulk-construction$"  :oc :range-map :peer :guava-range-map :label "Bulk Construction"   :section "Range Map vs Guava TreeRangeMap"}
+   {:pattern #"^range-map-lookup$"             :oc :range-map :peer :guava-range-map :label "Point Lookup"        :section "Range Map vs Guava TreeRangeMap"}
    {:pattern #"^range-map-carve-out$"       :oc :range-map :peer :guava-range-map :label "Carve-out Insert" :section "Range Map vs Guava TreeRangeMap"}
    {:pattern #"^range-map-iteration$"       :oc :range-map :peer :guava-range-map :label "Iteration"      :section "Range Map vs Guava TreeRangeMap"}
    ;; Segment Tree vs sorted-map range reduction
