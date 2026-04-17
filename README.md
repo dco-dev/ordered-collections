@@ -89,32 +89,6 @@ cardinality. Set algebra is the standout, with 18-60x wins at 500K.
 Even against unordered `clojure.core/set` the benchmarks still show
 roughly 4-28x wins.
 
-### Rope vs PersistentVector
-
-| Workload | N=1K | N=5K | N=10K | N=100K | N=500K |
-|---|---:|---:|---:|---:|---:|
-| 200 random edits | **4.7x** | **14x** | **26x** | **261x** | **1237x** |
-| Single splice | **4.8x** | **13x** | **106x** | **762x** | **863x** |
-| Concat pieces | **169x** | **22x** | **29x** | **39x** | **36x** |
-| Reduce (sum) | **1.0x** | **1.7x** | **1.4x** | **1.5x** | **1.3x** |
-| Fold (sum) | **2.9x** | **1.4x** | **1.2x** | **1.3x** | **1.6x** |
-| Random nth (1000) | 0.5x | 0.2x | 0.2x | 0.2x | 0.2x |
-
-### StringRope vs String
-
-| Workload | N=1K | N=5K | N=10K | N=100K | N=500K |
-|---|---:|---:|---:|---:|---:|
-| 200 random edits | 0.6x | **2.6x** | **5.7x** | **38x** | **130x** |
-| Single splice | 0.4x | **3.2x** | **5.9x** | **42x** | **349x** |
-| Single insert | 0.4x | **2.7x** | **6.2x** | **40x** | **154x** |
-| Single remove | **1.5x** | **3.6x** | **7.1x** | **44x** | **412x** |
-| Concat halves | 0.9x | 0.5x | **2.5x** | **20x** | **29x** |
-| Reduce (sum chars) | 0.4x | 0.5x | 0.5x | 0.5x | 0.5x |
-| `re-find` / `re-seq` | 0.6-1.3x | 0.1-0.2x | 0.1-0.2x | 0.1-0.2x | 0.1-0.2x |
-
-The rope family wins decisively on structural editing at scale; the advantage
-grows with collection size. See [Ropes](doc/ropes.md) for the full tutorial.
-
 ### Set algebra
 
 #### vs clojure.core/sorted-set
@@ -149,6 +123,32 @@ grows with collection size. See [Ropes](doc/ropes.md) for the full tutorial.
 | Lookup | 1.1x / 1.0x / 0.9x | 1.0x / 0.9x / 0.9x |
 | Split | — | **4.9x / 6.1x / 6.8x** |
 | Fold | **2.5x / 4.0x / 3.5x** | **3.1x / 5.4x / 4.8x** |
+
+### Rope vs PersistentVector
+
+| Workload | N=1K | N=5K | N=10K | N=100K | N=500K |
+|---|---:|---:|---:|---:|---:|
+| 200 random edits | **4.7x** | **14x** | **26x** | **261x** | **1237x** |
+| Single splice | **4.8x** | **13x** | **106x** | **762x** | **863x** |
+| Concat pieces | **169x** | **22x** | **29x** | **39x** | **36x** |
+| Reduce (sum) | **1.0x** | **1.7x** | **1.4x** | **1.5x** | **1.3x** |
+| Fold (sum) | **2.9x** | **1.4x** | **1.2x** | **1.3x** | **1.6x** |
+| Random nth (1000) | 0.5x | 0.2x | 0.2x | 0.2x | 0.2x |
+
+### StringRope vs String
+
+| Workload | N=1K | N=5K | N=10K | N=100K | N=500K |
+|---|---:|---:|---:|---:|---:|
+| 200 random edits | 0.6x | **2.6x** | **5.7x** | **38x** | **130x** |
+| Single splice | 0.4x | **3.2x** | **5.9x** | **42x** | **349x** |
+| Single insert | 0.4x | **2.7x** | **6.2x** | **40x** | **154x** |
+| Single remove | **1.5x** | **3.6x** | **7.1x** | **44x** | **412x** |
+| Concat halves | 0.9x | 0.5x | **2.5x** | **20x** | **29x** |
+| Reduce (sum chars) | 0.4x | 0.5x | 0.5x | 0.5x | 0.5x |
+| `re-find` / `re-seq` | 0.6-1.3x | 0.1-0.2x | 0.1-0.2x | 0.1-0.2x | 0.1-0.2x |
+
+The rope family wins decisively on structural editing at scale; the advantage
+grows with collection size. See [Ropes](doc/ropes.md) for the full tutorial.
 
 *Benchmarked on Apple M2 (aarch64), OpenJDK 25.0.2, Clojure 1.12.4. See [report.txt](doc/report.txt) for full results and [benchmarks.md](doc/benchmarks.md) for methodology.*
 
