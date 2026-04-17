@@ -231,6 +231,234 @@
         root)
       arr)))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; RopeSeq / RopeSeqReverse — direct seq types over vector chunks
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; These monomorphic seq types walk a rope tree's vector chunks using
+;; `.count ^Counted` and `.nth ^Indexed`. They are specific to the generic
+;; Rope (whose chunks are APersistentVector); the StringRope and ByteRope
+;; carry their own specialized seq types with .charAt and aget fast paths.
+
+(defn- seq-equiv
+  "Element-wise sequential equivalence."
+  [s1 o]
+  (if-not (or (instance? clojure.lang.Sequential o)
+              (instance? java.util.List o))
+    false
+    (loop [s1 (seq s1) s2 (seq o)]
+      (cond
+        (nil? s1) (nil? s2)
+        (nil? s2) false
+        (not (Util/equiv (first s1) (first s2))) false
+        :else (recur (next s1) (next s2))))))
+
+(deftype RopeSeq [enum chunk ^long i cnt _meta]
+  clojure.lang.ISeq
+  (first [_]
+    (.nth ^clojure.lang.Indexed chunk (unchecked-int i)))
+  (next [_]
+    (let [next-cnt (when cnt (unchecked-dec-int cnt))
+          next-i   (unchecked-inc i)]
+      (if (< next-i (count chunk))
+        (RopeSeq. enum chunk next-i next-cnt nil)
+        (when-let [e (tree/node-enum-rest enum)]
+          (let [chunk' (-k (tree/node-enum-first e))]
+            (RopeSeq. e chunk' 0 next-cnt nil))))))
+  (more [this]
+    (or (.next this) ()))
+  (cons [this o]
+    (clojure.lang.Cons. o this))
+
+  clojure.lang.Seqable
+  (seq [this] this)
+
+  clojure.lang.Sequential
+
+  java.lang.Iterable
+  (iterator [this]
+    (SeqIterator. this))
+
+  clojure.lang.Counted
+  (count [_]
+    (or cnt
+        (loop [e enum
+               chunk chunk
+               i i
+               n 0]
+          (let [n (+ n (- (count chunk) i))]
+            (if-let [e' (tree/node-enum-rest e)]
+              (let [chunk' (-k (tree/node-enum-first e'))]
+                (recur e' chunk' 0 n))
+              n)))))
+
+  clojure.lang.IReduceInit
+  (reduce [_ f init]
+    (loop [e enum
+           chunk chunk
+           i i
+           acc init]
+      (let [acc (loop [idx i
+                       acc acc]
+                  (if (< idx (count chunk))
+                    (let [ret (f acc (.nth ^clojure.lang.Indexed chunk (unchecked-int idx)))]
+                      (if (reduced? ret)
+                        ret
+                        (recur (unchecked-inc idx) ret)))
+                    acc))]
+        (if (reduced? acc)
+          @acc
+          (if-let [e' (tree/node-enum-rest e)]
+            (let [chunk' (-k (tree/node-enum-first e'))]
+              (recur e' chunk' 0 acc))
+            acc)))))
+
+  clojure.lang.IReduce
+  (reduce [this f]
+    (if enum
+      (let [acc (.nth ^clojure.lang.Indexed chunk (unchecked-int i))
+            next-i (unchecked-inc i)]
+        (if (< next-i (count chunk))
+          (.reduce ^clojure.lang.IReduceInit
+            (RopeSeq. enum chunk next-i nil nil) f acc)
+          (if-let [e' (tree/node-enum-rest enum)]
+            (let [chunk' (-k (tree/node-enum-first e'))]
+              (.reduce ^clojure.lang.IReduceInit
+                (RopeSeq. e' chunk' 0 nil nil) f acc))
+            acc)))
+      (f)))
+
+  clojure.lang.IHashEq
+  (hasheq [this]
+    (Murmur3/hashOrdered this))
+
+  clojure.lang.IPersistentCollection
+  (empty [_] ())
+  (equiv [this o]
+    (seq-equiv this o))
+
+  Object
+  (hashCode [this]
+    (Util/hash this))
+  (equals [this o]
+    (Util/equals this o))
+
+  clojure.lang.IMeta
+  (meta [_] _meta)
+
+  clojure.lang.IObj
+  (withMeta [_ m]
+    (RopeSeq. enum chunk i cnt m)))
+
+(deftype RopeSeqReverse [enum chunk ^long i cnt _meta]
+  clojure.lang.ISeq
+  (first [_]
+    (.nth ^clojure.lang.Indexed chunk (unchecked-int i)))
+  (next [_]
+    (let [next-cnt (when cnt (unchecked-dec-int cnt))]
+      (if (pos? i)
+        (RopeSeqReverse. enum chunk (unchecked-dec i) next-cnt nil)
+        (when-let [e (tree/node-enum-prior enum)]
+          (let [chunk' (-k (tree/node-enum-first e))]
+            (RopeSeqReverse. e chunk' (dec (count chunk')) next-cnt nil))))))
+  (more [this]
+    (or (.next this) ()))
+  (cons [this o]
+    (clojure.lang.Cons. o this))
+
+  clojure.lang.Seqable
+  (seq [this] this)
+
+  clojure.lang.Sequential
+
+  java.lang.Iterable
+  (iterator [this]
+    (SeqIterator. this))
+
+  clojure.lang.Counted
+  (count [_]
+    (or cnt
+        (loop [e enum
+               chunk chunk
+               i i
+               n 0]
+          (let [n (+ n (inc i))]
+            (if-let [e' (tree/node-enum-prior e)]
+              (let [chunk' (-k (tree/node-enum-first e'))]
+                (recur e' chunk' (dec (count chunk')) n))
+              n)))))
+
+  clojure.lang.IReduceInit
+  (reduce [_ f init]
+    (loop [e enum
+           chunk chunk
+           i i
+           acc init]
+      (let [acc (loop [idx i
+                       acc acc]
+                  (if (neg? idx)
+                    acc
+                    (let [ret (f acc (.nth ^clojure.lang.Indexed chunk (unchecked-int idx)))]
+                      (if (reduced? ret)
+                        ret
+                        (recur (unchecked-dec idx) ret)))))]
+        (if (reduced? acc)
+          @acc
+          (if-let [e' (tree/node-enum-prior e)]
+            (let [chunk' (-k (tree/node-enum-first e'))]
+              (recur e' chunk' (dec (count chunk')) acc))
+            acc)))))
+
+  clojure.lang.IReduce
+  (reduce [this f]
+    (if enum
+      (let [acc (.nth ^clojure.lang.Indexed chunk (unchecked-int i))]
+        (if (pos? i)
+          (.reduce ^clojure.lang.IReduceInit
+            (RopeSeqReverse. enum chunk (unchecked-dec i) nil nil) f acc)
+          (if-let [e' (tree/node-enum-prior enum)]
+            (let [chunk' (-k (tree/node-enum-first e'))]
+              (.reduce ^clojure.lang.IReduceInit
+                (RopeSeqReverse. e' chunk' (dec (count chunk')) nil nil) f acc))
+            acc)))
+      (f)))
+
+  clojure.lang.IHashEq
+  (hasheq [this]
+    (Murmur3/hashOrdered this))
+
+  clojure.lang.IPersistentCollection
+  (empty [_] ())
+  (equiv [this o]
+    (seq-equiv this o))
+
+  Object
+  (hashCode [this]
+    (Util/hash this))
+  (equals [this o]
+    (Util/equals this o))
+
+  clojure.lang.IMeta
+  (meta [_] _meta)
+
+  clojure.lang.IObj
+  (withMeta [_ m]
+    (RopeSeqReverse. enum chunk i cnt m)))
+
+(defn- rope-seq
+  "Forward seq over a rope tree's elements."
+  [root]
+  (when-let [enum (tree/node-enumerator root)]
+    (let [chunk (-k (tree/node-enum-first enum))]
+      (RopeSeq. enum chunk 0 (ropetree/rope-size root) nil))))
+
+(defn- rope-rseq
+  "Reverse seq over a rope tree's elements."
+  [root]
+  (when-let [enum (tree/node-enumerator-reverse root)]
+    (let [chunk (-k (tree/node-enum-first enum))]
+      (RopeSeqReverse. enum chunk (dec (count chunk)) (ropetree/rope-size root) nil))))
+
 (declare ->TransientRope)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -398,14 +626,14 @@
     (cond
       (nil? root)  nil
       (flat? root) (seq root)
-      :else        (ropetree/rope-seq root)))
+      :else        (rope-seq root)))
 
   clojure.lang.Reversible
   (rseq [_]
     (cond
       (nil? root)  nil
       (flat? root) (rseq ^clojure.lang.Reversible root)
-      :else        (ropetree/rope-rseq root)))
+      :else        (rope-rseq root)))
 
   clojure.lang.Sequential
 
