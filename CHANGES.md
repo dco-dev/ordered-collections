@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.2.1-SNAPSHOT] - unreleased
+## [0.2.1] - 2026-04-17
 
 ### New Collection Types
 
@@ -10,7 +10,8 @@
   expecting text. Equality with `String` is content-based and hash-compatible.
   `#string/rope "…"` tagged literal with EDN round-trip. Constructor:
   `string-rope` / `string-rope-concat`. At 100K+ characters, up to
-  ~35x faster than `String` on repeated structural edits.
+  ~38x faster than `String` on repeated structural edits, growing to
+  ~130x at 500K.
 - **ByteRope** (`byte-rope`) — persistent chunked binary sequence backed by
   `byte[]` chunks. Unsigned byte semantics (0–255 as long). Unsigned
   lexicographic `Comparable` via `Arrays.compareUnsigned`. `#byte/rope "hex"`
@@ -88,6 +89,43 @@
   intermediate `chunk-splice` allocation on the overflow path via
   `chunk-splice-split`.
 
+### Performance Improvements
+
+- **Primitive rank for `long-ordered-set` / `string-ordered-set` /
+  `long-ordered-map` / `string-ordered-map`.** `rank-of` and `indexOf`
+  now dispatch to `node-rank-long` / `node-rank-string` on primitive-
+  specialized collections, bypassing the generic `Comparator` dispatch.
+  Matches the existing primitive fast-path pattern already used for
+  `contains` / `find` / `find-val`. At N=1K, rank on a
+  `long-ordered-set` is ~4x faster than on a `data.avl/sorted-set`;
+  `string-ordered-set` rank is ~3.4x faster.
+- **Range-map bulk construction.** `(range-map coll)` with sorted
+  disjoint input now takes an O(n) balanced-build path (`node-build-
+  sorted`) instead of per-entry `assoc` with carve-out. Input with
+  overlapping ranges falls through to the general carving path,
+  preserving "later wins" semantics. ~10x faster than the previous
+  per-insert path; at N=1K the bulk path is already ~2.2x faster than
+  Guava's `TreeRangeMap` construction.
+- **Non-allocating `java.util.Iterator` for `OrderedSet` /
+  `OrderedMap`.** A new `tree/NodeIterator` deftype advances the tree
+  enumerator in place via an unsynchronized-mutable field, avoiding
+  the per-step seq-cell allocation of `clojure.lang.SeqIterator` over
+  a lazy seq. Thread-safety contract is unchanged: the iterator is
+  per-call fresh (no shared state on the collection), matching the
+  memory model of `SeqIterator`. Java-style iteration on
+  `OrderedSet` is now ~2x faster than on `sorted-set` and ~3.6x
+  faster than on `data.avl` at N=1K.
+
+### Refactoring
+
+- **`RopeSeq` / `RopeSeqReverse` moved from `kernel/rope.clj` into
+  `types/rope.clj`.** These generic-Rope-specific seq types were
+  only used by the generic `Rope` deftype — `StringRope` and
+  `ByteRope` carry their own monomorphic seq types. Relocating them
+  makes `kernel/rope.clj` honestly chunk-protocol-agnostic and cuts
+  ~220 lines from the kernel (now 1001 lines). No user-visible
+  change.
+
 ### Bug Fixes
 
 - **Primitive node specialization preserved across mutations.**
@@ -110,6 +148,13 @@
   `(combinef)`.
 - **ByteRope `InputStream.read(buf, off, 0)`** returned -1 at EOF
   instead of 0 per `InputStream` contract.
+- **Auto-boxing in `str->root` and `bytes->root`.** The loop variable
+  `pos` was inferred as primitive `long` but the recur argument came
+  from `clojure.core/min` (Object) and `unchecked-dec-int` (int),
+  forcing auto-boxing per iteration. Threaded as primitive `long`
+  throughout using `unchecked-add` / `unchecked-dec` / `unchecked-int`
+  consistently. Pre-existing latent warning exposed when compiling
+  under `*warn-on-reflection*`.
 
 ### Benchmarks and Tooling
 
@@ -169,6 +214,22 @@
   score, with the equal-weight geomean shown as a secondary `all`
   column. The old equal-weight geomean was misleadingly driven by
   concat scaling.
+- **`lein bench-report --publish`** suppresses the Full Scorecard,
+  Regressions, and Improvements sections. These are useful for
+  interactive A/B review during development but are noise for outside
+  readers of the committed `doc/report.txt` snapshot. The default
+  (no flag) still shows everything. Recommended snapshot workflow:
+  `lein bench-report --publish > doc/report.txt`.
+- **New bench cases exercising the primitive-rank / range-map-bulk /
+  iterator optimizations.** `bench-long-rank-lookup` and
+  `bench-string-rank-lookup` hit the primitive `node-rank-long` /
+  `node-rank-string` paths that the generic `bench-rank-lookup`
+  missed. `bench-range-map-bulk-construction` uses the single-argument
+  `(core/range-map coll)` constructor to exercise the new O(n)
+  balanced-build path alongside the existing per-insert
+  `bench-range-map-construction`. `bench-set-iteration-iterator`
+  traverses via `.iterator()` to exercise `NodeIterator` (the
+  existing `bench-set-iteration` goes through `reduce`).
 
 ### Documentation
 
