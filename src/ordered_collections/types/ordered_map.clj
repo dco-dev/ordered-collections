@@ -153,7 +153,7 @@
     (with-compare this
       (set (tree/node-vec root :accessor :kv))))
   (iterator [this]
-    (clojure.lang.SeqIterator. (seq this)))
+    (tree/node-iterator root node/-kv))
 
   clojure.lang.IPersistentCollection
   (equiv [this o]
@@ -295,7 +295,11 @@
 
   PRanked
   (rank-of [_ k]
-    (or (tree/node-rank root k cmp) -1))
+    (or (cond
+          (identical? cmp order/long-compare)   (tree/node-rank-long root (long k))
+          (identical? cmp order/string-compare) (tree/node-rank-string root k)
+          :else                                 (tree/node-rank root k cmp))
+        -1))
   (slice [_ start end]
     (let [n (tree/node-size root)
           start (max 0 (long start))
