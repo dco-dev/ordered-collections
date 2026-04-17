@@ -42,13 +42,17 @@
         (render/render-significant-wins wins opts)
         (render/render-parity parity opts)
         (render/render-significant-losses losses opts)
-        (render/render-scorecard
-          (sort-by (juxt (comp #(.indexOf analyze/category-order %) :category)
-                         #(- (:speedup %)))
-                   scorecard)
-          opts)
-        (render/render-regressions "Regressions" regressions opts)
-        (render/render-regressions "Improvements" improvements opts)
+        ;; Full Scorecard, Regressions, and Improvements are for interactive
+        ;; A/B review. They are noisy for an outside reader of the committed
+        ;; doc/report.txt snapshot, so --publish suppresses them.
+        (when-not (:publish opts)
+          (render/render-scorecard
+            (sort-by (juxt (comp #(.indexOf analyze/category-order %) :category)
+                           #(- (:speedup %)))
+                     scorecard)
+            opts)
+          (render/render-regressions "Regressions" regressions opts)
+          (render/render-regressions "Improvements" improvements opts))
         (println)))))
 
 (apply -main *command-line-args*)

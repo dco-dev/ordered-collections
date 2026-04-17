@@ -35,6 +35,7 @@
       (nil? arg) opts
       (#{"--help" "-h"} arg) (recur more (assoc opts :help true))
       (= "--all" arg)        (recur more (assoc opts :all true))
+      (= "--publish" arg)    (recur more (assoc opts :publish true))
       (= "--file" arg)       (recur (rest more) (assoc opts :file (first more)))
       (= "--baseline" arg)   (recur (rest more) (assoc opts :baseline (first more)))
       (= "--top" arg)        (recur (rest more) (assoc opts :top (Long/parseLong (first more))))
@@ -69,4 +70,8 @@
      "  --baseline PATH    Compare against a baseline result file"
      "  --top N            Number of ranked rows to show (default 12)"
      "  --all              Show all ranked rows"
+     "  --publish          Publish mode: omit the Full Scorecard, Regressions,"
+     "                     and Improvements sections. Use when redirecting to"
+     "                     doc/report.txt — those sections are intended for"
+     "                     interactive A/B review, not the committed snapshot."
      "  --help             Show this help"]))

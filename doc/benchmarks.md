@@ -129,9 +129,9 @@ The analyze layer (`bench_analyze.clj`) provides:
 6. **Significant Wins** — ranked wins above 1.2x
 7. **At Parity** — cases within 5% of 1.0x
 8. **Significant Losses** — ranked losses below 0.83x
-9. **Full Scorecard** — all measured comparisons with times and status
-10. **Regressions** — A/B deltas flagged as slower
-11. **Improvements** — A/B deltas flagged as faster
+9. **Full Scorecard** — all measured comparisons with times and status *(omitted under `--publish`)*
+10. **Regressions** — A/B deltas flagged as slower *(omitted under `--publish`)*
+11. **Improvements** — A/B deltas flagged as faster *(omitted under `--publish`)*
 
 
 ## Running
@@ -150,14 +150,20 @@ $ lein bench-rope-tuning      # Rope chunk-size sweep
 
 $ lein bench-report           # Analyze latest results (auto-selects baseline)
 $ lein bench-report --all     # Show all rows instead of top 30
+$ lein bench-report --publish # Omit scorecard, regressions, improvements
 ```
 
 Results are written to `bench-results/<timestamp>.edn`. The report tool
 reads the EDN and produces formatted output. To commit a snapshot:
 
 ```
-$ lein bench-report > doc/report.txt
+$ lein bench-report --publish > doc/report.txt
 ```
+
+`--publish` suppresses the Full Scorecard, Regressions, and Improvements
+sections — those are useful for interactive A/B review but are noise for
+outside readers of the committed snapshot. The full report remains the
+default for `lein bench-report` so local inspection still sees everything.
 
 ## Methodology
 
